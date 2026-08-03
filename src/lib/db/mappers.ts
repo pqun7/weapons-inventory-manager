@@ -1,0 +1,820 @@
+import type {
+  Weapon,
+  Accessory,
+  Ammunition,
+  Shipment,
+  Invoice,
+  PaymentRecord,
+  Customer,
+  Supplier,
+  AuditLog,
+  AppNotification,
+  User,
+  SystemSettings,
+  SavedFilter,
+  StorageLocation,
+  WeaponMovement,
+  ShipmentTimelineEntry,
+  ShipmentLineItem,
+  ShipmentDocument,
+  SaleLineItem,
+  MoneyValuation,
+  UserPermissions,
+  PackageType,
+  UserPreferences,
+} from "../types"
+
+export interface DbResult<T> {
+  data: T | null
+  error: string | null
+}
+
+export interface AllData {
+  weapons: Weapon[]
+  accessories: Accessory[]
+  ammunition: Ammunition[]
+  shipments: Shipment[]
+  invoices: Invoice[]
+  payments: PaymentRecord[]
+  customers: Customer[]
+  suppliers: Supplier[]
+  auditLogs: AuditLog[]
+  notifications: AppNotification[]
+  users: User[]
+  settings: SystemSettings
+}
+
+export interface MasterDataAll {
+  weaponTypes: { id: string; label: string; sort_order: number }[]
+  weaponSubtypes: { id: string; weapon_type_id: string; label: string; sort_order: number }[]
+  calibers: { id: string; label: string }[]
+  subtypeCalibers: { subtype_id: string; caliber_id: string }[]
+  brands: { id: string; label: string }[]
+  models: { id: string; label: string; brand_id: string | null }[]
+  warehouses: { id: string; label: string }[]
+  storageLocations: { id: string; warehouse_id: string; shelf: string; bin: string }[]
+}
+
+export interface CurrencyRow {
+  iso_code: string
+  name: string
+  symbol: string
+  decimal_precision: number
+  is_active: number
+  last_known_rate: string | number
+  last_rate_updated_at: string | null
+}
+
+export interface ExchangeRateOverrideRow {
+  currency_code: string
+  mode: "automatic" | "manual"
+  manual_rate: number | null
+  updated_by: string | null
+  updated_at: string
+  reason: string | null
+}
+
+export interface AuditLogEntry {
+  id: string
+  currencyCode: string
+  oldRate: number | null
+  newRate: number | null
+  changedBy: string | null
+  changedAt: string
+  reason: string | null
+}
+
+// Row shapes as they come back from SQLite (snake_case, integers for booleans)
+interface WeaponRow {
+  id: string
+  serial_number: string
+  brand: string
+  model: string
+  weapon_type: string
+  sub_type: string
+  caliber: string
+  condition: string
+  status: string
+  purchase_price: number
+  retail_price: number
+  wholesale_price: number
+  actual_final_price: number | null
+  supplier_id: string
+  shipment_id: string | null
+  date_added: string
+  batch_id: string | null
+  notes: string
+  images: string
+  movement_history: string
+  warehouse: string
+  shelf: string
+  bin: string
+  purchase_price_valuation: string | null
+  retail_price_valuation: string | null
+  sale_price_valuation: string | null
+  deleted_at: string | null
+}
+
+interface ShipmentRow {
+  id: string
+  shipment_number: string
+  supplier_id: string
+  shipment_date: string
+  expected_arrival_date: string
+  total_expected_items: number
+  attachments: string
+  notes: string
+  status: string
+  timeline: string
+  purchase_order_number: string | null
+  invoice_number: string | null
+  shipping_carrier: string | null
+  container_number: string | null
+  currency: string | null
+  purchase_date: string | null
+  actual_arrival_date: string | null
+  line_items: string
+  documents: string
+  total_cost_valuation: string | null
+}
+
+interface InvoiceRow {
+  id: string
+  invoice_number: string
+  type: string
+  customer_id: string | null
+  supplier_id: string | null
+  customer_name: string
+  date: string
+  due_date: string
+  total_original: number
+  total_negotiated: number
+  total_paid: number
+  balance: number
+  status: string
+  weapon_ids: string
+  line_items: string
+  sale_mode: string
+  employee_id: string
+  employee_name: string
+  attachments: string
+  shipment_id: string | null
+  notes: string
+  voided: number
+  tax_amount: number
+  total_valuation: string | null
+}
+
+interface PaymentRow {
+  id: string
+  invoice_id: string
+  invoice_number: string
+  date: string
+  amount: number
+  method: string
+  employee: string
+  notes: string
+}
+
+interface AccessoryRow {
+  id: string
+  name: string
+  type: string
+  quantity: number
+  safety_threshold: number
+  price: number
+  date_added: string
+  warehouse: string
+  shelf: string
+  bin: string
+}
+
+interface AmmoRow {
+  id: string
+  caliber: string
+  package_type: string
+  units_per_package: number
+  full_packages: number
+  loose_rounds: number
+  safety_threshold: number
+  price: number
+  date_added: string
+  warehouse: string
+  shelf: string
+  bin: string
+}
+
+interface CustomerRow {
+  id: string
+  name: string
+  phone: string
+  email: string
+  address: string
+  is_wholesale_buyer: number
+  wholesale_discount_percent: number
+  date_added: string
+}
+
+interface SupplierRow {
+  id: string
+  name: string
+  contact_person: string
+  phone: string
+  email: string
+  address: string
+  date_added: string
+}
+
+interface AuditRow {
+  id: string
+  timestamp: string
+  date: string
+  user_id: string
+  action_type: string
+  description: string
+  metadata: string
+}
+
+interface NotificationRow {
+  id: string
+  type: string
+  title: string
+  message: string
+  date: string
+  is_read: number
+  entity_id: string | null
+}
+
+interface UserRow {
+  id: string
+  username: string
+  name: string
+  role: string
+  permissions: string
+  password_set: number
+  password_hash: string
+}
+
+interface SettingsRow {
+  id: number
+  currency_symbol: string
+  currency_code: string
+  supported_currencies: string
+  currency_frequency: string
+  tax_percent: number
+  invoice_header: string
+  invoice_footer: string
+  store_logo: string
+  thermal_printer_width: number
+  label_format: string
+  hourly_snapshot: number
+  daily_closing_prompt: number
+  weekly_verification: number
+  min_profit_margin_percent: number
+  preferred_display_currency: string | null
+  show_demo_data: number
+  app_language: string
+  date_format: string
+  number_format: string
+  company_name: string
+  company_address: string
+  company_phone: string
+  company_email: string
+  company_tax_id: string
+}
+
+interface UserPreferencesRow {
+  user_id: string
+  display_currency: string | null
+  report_view_mode: string
+  language: string | null
+  date_format: string | null
+}
+
+interface SavedFilterRow {
+  id: string
+  name: string
+  entity_type: string
+  filter_state: string
+}
+
+function parseJSON<T>(value: string | null, fallback: T): T {
+  if (!value) return fallback
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return fallback
+  }
+}
+
+function parseValuation(value: string | null): MoneyValuation | undefined {
+  if (!value) return undefined
+  return parseJSON<MoneyValuation>(value, undefined as unknown as MoneyValuation) ?? undefined
+}
+
+function parseLocation(warehouse: string, shelf: string, bin: string): StorageLocation {
+  return { warehouse, shelf, bin }
+}
+
+function locationToCols(loc: StorageLocation) {
+  return { warehouse: loc.warehouse, shelf: loc.shelf, bin: loc.bin }
+}
+
+function rowToWeapon(r: WeaponRow): Weapon {
+  return {
+    id: r.id,
+    serialNumber: r.serial_number,
+    brand: r.brand,
+    model: r.model,
+    weaponType: r.weapon_type,
+    subType: r.sub_type,
+    caliber: r.caliber,
+    condition: r.condition as Weapon["condition"],
+    status: r.status as Weapon["status"],
+    purchasePrice: r.purchase_price,
+    retailPrice: r.retail_price,
+    wholesalePrice: r.wholesale_price,
+    actualFinalPrice: r.actual_final_price,
+    supplierId: r.supplier_id,
+    shipmentId: r.shipment_id,
+    dateAdded: r.date_added,
+    batchId: r.batch_id ?? undefined,
+    notes: r.notes,
+    images: parseJSON(r.images, []),
+    movementHistory: parseJSON(r.movement_history, []),
+    location: parseLocation(r.warehouse, r.shelf, r.bin),
+    purchasePriceValuation: parseValuation(r.purchase_price_valuation),
+    retailPriceValuation: parseValuation(r.retail_price_valuation),
+    salePriceValuation: parseValuation(r.sale_price_valuation),
+  }
+}
+
+function weaponToRow(w: Weapon): Record<string, unknown> {
+  const loc = locationToCols(w.location)
+  return {
+    id: w.id,
+    serial_number: w.serialNumber,
+    brand: w.brand,
+    model: w.model,
+    weapon_type: w.weaponType,
+    sub_type: w.subType,
+    caliber: w.caliber,
+    condition: w.condition,
+    status: w.status,
+    purchase_price: w.purchasePrice,
+    retail_price: w.retailPrice,
+    wholesale_price: w.wholesalePrice,
+    actual_final_price: w.actualFinalPrice,
+    supplier_id: w.supplierId,
+    shipment_id: w.shipmentId,
+    date_added: w.dateAdded,
+    batch_id: w.batchId ?? null,
+    notes: w.notes,
+    images: JSON.stringify(w.images),
+    movement_history: JSON.stringify(w.movementHistory),
+    warehouse: loc.warehouse,
+    shelf: loc.shelf,
+    bin: loc.bin,
+    purchase_price_valuation: w.purchasePriceValuation ? JSON.stringify(w.purchasePriceValuation) : null,
+    retail_price_valuation: w.retailPriceValuation ? JSON.stringify(w.retailPriceValuation) : null,
+    sale_price_valuation: w.salePriceValuation ? JSON.stringify(w.salePriceValuation) : null,
+    deleted_at: null,
+  }
+}
+
+function rowToShipment(r: ShipmentRow): Shipment {
+  return {
+    id: r.id,
+    shipmentNumber: r.shipment_number,
+    supplierId: r.supplier_id,
+    shipmentDate: r.shipment_date,
+    expectedArrivalDate: r.expected_arrival_date,
+    totalExpectedItems: r.total_expected_items,
+    attachments: parseJSON(r.attachments, []),
+    notes: r.notes,
+    status: r.status as Shipment["status"],
+    timeline: parseJSON(r.timeline, []),
+    purchaseOrderNumber: r.purchase_order_number ?? undefined,
+    invoiceNumber: r.invoice_number ?? undefined,
+    shippingCarrier: r.shipping_carrier ?? undefined,
+    containerNumber: r.container_number ?? undefined,
+    currency: r.currency ?? undefined,
+    purchaseDate: r.purchase_date ?? undefined,
+    actualArrivalDate: r.actual_arrival_date ?? undefined,
+    lineItems: parseJSON(r.line_items, []),
+    documents: parseJSON(r.documents, []),
+    totalCostValuation: parseValuation(r.total_cost_valuation),
+  }
+}
+
+function shipmentToRow(s: Shipment): Record<string, unknown> {
+  return {
+    id: s.id,
+    shipment_number: s.shipmentNumber,
+    supplier_id: s.supplierId,
+    shipment_date: s.shipmentDate,
+    expected_arrival_date: s.expectedArrivalDate,
+    total_expected_items: s.totalExpectedItems,
+    attachments: JSON.stringify(s.attachments),
+    notes: s.notes,
+    status: s.status,
+    timeline: JSON.stringify(s.timeline),
+    purchase_order_number: s.purchaseOrderNumber ?? null,
+    invoice_number: s.invoiceNumber ?? null,
+    shipping_carrier: s.shippingCarrier ?? null,
+    container_number: s.containerNumber ?? null,
+    currency: s.currency ?? null,
+    purchase_date: s.purchaseDate ?? null,
+    actual_arrival_date: s.actualArrivalDate ?? null,
+    line_items: JSON.stringify(s.lineItems ?? []),
+    documents: JSON.stringify(s.documents ?? []),
+    total_cost_valuation: s.totalCostValuation ? JSON.stringify(s.totalCostValuation) : null,
+  }
+}
+
+function rowToInvoice(r: InvoiceRow): Invoice {
+  return {
+    id: r.id,
+    invoiceNumber: r.invoice_number,
+    type: r.type as Invoice["type"],
+    customerId: r.customer_id,
+    supplierId: r.supplier_id,
+    customerName: r.customer_name,
+    date: r.date,
+    dueDate: r.due_date,
+    totalOriginal: r.total_original,
+    totalNegotiated: r.total_negotiated,
+    totalPaid: r.total_paid,
+    balance: r.balance,
+    status: r.status as Invoice["status"],
+    weaponIds: parseJSON(r.weapon_ids, []),
+    lineItems: parseJSON(r.line_items, []),
+    saleMode: r.sale_mode as Invoice["saleMode"],
+    employeeId: r.employee_id,
+    employeeName: r.employee_name,
+    attachments: parseJSON(r.attachments, []),
+    shipmentId: r.shipment_id,
+    notes: r.notes,
+    voided: r.voided === 1,
+    taxAmount: r.tax_amount,
+    totalValuation: parseValuation(r.total_valuation),
+  }
+}
+
+function invoiceToRow(inv: Invoice): Record<string, unknown> {
+  return {
+    id: inv.id,
+    invoice_number: inv.invoiceNumber,
+    type: inv.type,
+    customer_id: inv.customerId,
+    supplier_id: inv.supplierId,
+    customer_name: inv.customerName,
+    date: inv.date,
+    due_date: inv.dueDate,
+    total_original: inv.totalOriginal,
+    total_negotiated: inv.totalNegotiated,
+    total_paid: inv.totalPaid,
+    balance: inv.balance,
+    status: inv.status,
+    weapon_ids: JSON.stringify(inv.weaponIds),
+    line_items: JSON.stringify(inv.lineItems),
+    sale_mode: inv.saleMode,
+    employee_id: inv.employeeId,
+    employee_name: inv.employeeName,
+    attachments: JSON.stringify(inv.attachments),
+    shipment_id: inv.shipmentId,
+    notes: inv.notes,
+    voided: inv.voided ? 1 : 0,
+    tax_amount: inv.taxAmount,
+    total_valuation: inv.totalValuation ? JSON.stringify(inv.totalValuation) : null,
+  }
+}
+
+function rowToPayment(r: PaymentRow): PaymentRecord {
+  return {
+    id: r.id,
+    invoiceId: r.invoice_id,
+    invoiceNumber: r.invoice_number,
+    date: r.date,
+    amount: r.amount,
+    method: r.method as PaymentRecord["method"],
+    employee: r.employee,
+    notes: r.notes,
+  }
+}
+
+function paymentToRow(p: PaymentRecord): Record<string, unknown> {
+  return {
+    id: p.id,
+    invoice_id: p.invoiceId,
+    invoice_number: p.invoiceNumber,
+    date: p.date,
+    amount: p.amount,
+    method: p.method,
+    employee: p.employee,
+    notes: p.notes,
+  }
+}
+
+function rowToAccessory(r: AccessoryRow): Accessory {
+  return {
+    id: r.id,
+    name: r.name,
+    type: r.type,
+    quantity: r.quantity,
+    safetyThreshold: r.safety_threshold,
+    price: r.price,
+    dateAdded: r.date_added,
+    location: parseLocation(r.warehouse, r.shelf, r.bin),
+  }
+}
+
+function accessoryToRow(a: Accessory): Record<string, unknown> {
+  const loc = locationToCols(a.location)
+  return {
+    id: a.id,
+    name: a.name,
+    type: a.type,
+    quantity: a.quantity,
+    safety_threshold: a.safetyThreshold,
+    price: a.price,
+    date_added: a.dateAdded,
+    warehouse: loc.warehouse,
+    shelf: loc.shelf,
+    bin: loc.bin,
+  }
+}
+
+function rowToAmmo(r: AmmoRow): Ammunition {
+  return {
+    id: r.id,
+    caliber: r.caliber,
+    packageType: r.package_type as PackageType,
+    unitsPerPackage: r.units_per_package,
+    fullPackages: r.full_packages,
+    looseRounds: r.loose_rounds,
+    safetyThreshold: r.safety_threshold,
+    price: r.price,
+    dateAdded: r.date_added,
+    location: parseLocation(r.warehouse, r.shelf, r.bin),
+  }
+}
+
+function ammoToRow(a: Ammunition): Record<string, unknown> {
+  const loc = locationToCols(a.location)
+  return {
+    id: a.id,
+    caliber: a.caliber,
+    package_type: a.packageType,
+    units_per_package: a.unitsPerPackage,
+    full_packages: a.fullPackages,
+    loose_rounds: a.looseRounds,
+    safety_threshold: a.safetyThreshold,
+    price: a.price,
+    date_added: a.dateAdded,
+    warehouse: loc.warehouse,
+    shelf: loc.shelf,
+    bin: loc.bin,
+  }
+}
+
+function rowToCustomer(r: CustomerRow): Customer {
+  return {
+    id: r.id,
+    name: r.name,
+    phone: r.phone,
+    email: r.email,
+    address: r.address,
+    isWholesaleBuyer: r.is_wholesale_buyer === 1,
+    wholesaleDiscountPercent: r.wholesale_discount_percent,
+    dateAdded: r.date_added,
+  }
+}
+
+function customerToRow(c: Customer): Record<string, unknown> {
+  return {
+    id: c.id,
+    name: c.name,
+    phone: c.phone,
+    email: c.email,
+    address: c.address,
+    is_wholesale_buyer: c.isWholesaleBuyer ? 1 : 0,
+    wholesale_discount_percent: c.wholesaleDiscountPercent,
+    date_added: c.dateAdded,
+  }
+}
+
+function rowToSupplier(r: SupplierRow): Supplier {
+  return {
+    id: r.id,
+    name: r.name,
+    contactPerson: r.contact_person,
+    phone: r.phone,
+    email: r.email,
+    address: r.address,
+    dateAdded: r.date_added,
+  }
+}
+
+function supplierToRow(s: Supplier): Record<string, unknown> {
+  return {
+    id: s.id,
+    name: s.name,
+    contact_person: s.contactPerson,
+    phone: s.phone,
+    email: s.email,
+    address: s.address,
+    date_added: s.dateAdded,
+  }
+}
+
+function rowToAuditLog(r: AuditRow): AuditLog {
+  return {
+    id: r.id,
+    timestamp: r.timestamp,
+    date: r.date,
+    userId: r.user_id,
+    actionType: r.action_type as AuditLog["actionType"],
+    description: r.description,
+    metadata: r.metadata,
+  }
+}
+
+function auditLogToRow(a: AuditLog): Record<string, unknown> {
+  return {
+    id: a.id,
+    timestamp: a.timestamp,
+    date: a.date,
+    user_id: a.userId,
+    action_type: a.actionType,
+    description: a.description,
+    metadata: a.metadata,
+  }
+}
+
+function rowToNotification(r: NotificationRow): AppNotification {
+  return {
+    id: r.id,
+    type: r.type as AppNotification["type"],
+    title: r.title,
+    message: r.message,
+    date: r.date,
+    read: r.is_read === 1,
+    entityId: r.entity_id,
+  }
+}
+
+function notificationToRow(n: AppNotification): Record<string, unknown> {
+  return {
+    id: n.id,
+    type: n.type,
+    title: n.title,
+    message: n.message,
+    date: n.date,
+    is_read: n.read ? 1 : 0,
+    entity_id: n.entityId,
+  }
+}
+
+function rowToUser(r: UserRow): User {
+  return {
+    id: r.id,
+    username: r.username,
+    name: r.name,
+    role: r.role as User["role"],
+    permissions: parseJSON<Partial<UserPermissions>>(r.permissions, {}) as UserPermissions,
+    passwordSet: r.password_set === 1,
+    passwordHash: r.password_hash,
+  }
+}
+
+function userToRow(u: User): Record<string, unknown> {
+  return {
+    id: u.id,
+    username: u.username,
+    name: u.name,
+    role: u.role,
+    permissions: JSON.stringify(u.permissions),
+    password_set: u.passwordSet ? 1 : 0,
+    password_hash: u.passwordHash,
+  }
+}
+
+function rowToSettings(r: SettingsRow): SystemSettings {
+  return {
+    currencySymbol: r.currency_symbol,
+    currencyCode: r.currency_code,
+    supportedCurrencies: parseJSON(r.supported_currencies, ["USD", "SAR", "EUR"]),
+    currencyFrequency: parseJSON(r.currency_frequency, {}),
+    taxPercent: r.tax_percent,
+    invoiceHeader: r.invoice_header,
+    invoiceFooter: r.invoice_footer,
+    storeLogo: r.store_logo,
+    thermalPrinterWidth: r.thermal_printer_width,
+    labelFormat: r.label_format,
+    hourlySnapshot: r.hourly_snapshot === 1,
+    dailyClosingPrompt: r.daily_closing_prompt === 1,
+    weeklyVerification: r.weekly_verification === 1,
+    minProfitMarginPercent: r.min_profit_margin_percent,
+    preferredDisplayCurrency: r.preferred_display_currency ?? undefined,
+    appLanguage: r.app_language,
+    dateFormat: r.date_format,
+    numberFormat: r.number_format,
+    companyName: r.company_name,
+    companyAddress: r.company_address,
+    companyPhone: r.company_phone,
+    companyEmail: r.company_email,
+    companyTaxId: r.company_tax_id,
+  }
+}
+
+function settingsToRow(s: SystemSettings): Record<string, unknown> {
+  return {
+    id: 1,
+    currency_symbol: s.currencySymbol,
+    currency_code: s.currencyCode,
+    supported_currencies: JSON.stringify(s.supportedCurrencies),
+    currency_frequency: JSON.stringify(s.currencyFrequency),
+    tax_percent: s.taxPercent,
+    invoice_header: s.invoiceHeader,
+    invoice_footer: s.invoiceFooter,
+    store_logo: s.storeLogo,
+    thermal_printer_width: s.thermalPrinterWidth,
+    label_format: s.labelFormat,
+    hourly_snapshot: s.hourlySnapshot ? 1 : 0,
+    daily_closing_prompt: s.dailyClosingPrompt ? 1 : 0,
+    weekly_verification: s.weeklyVerification ? 1 : 0,
+    min_profit_margin_percent: s.minProfitMarginPercent,
+    preferred_display_currency: s.preferredDisplayCurrency ?? null,
+    app_language: s.appLanguage ?? "en",
+    date_format: s.dateFormat ?? "YYYY-MM-DD",
+    number_format: s.numberFormat ?? "en-US",
+    company_name: s.companyName ?? "",
+    company_address: s.companyAddress ?? "",
+    company_phone: s.companyPhone ?? "",
+    company_email: s.companyEmail ?? "",
+    company_tax_id: s.companyTaxId ?? "",
+  }
+}
+
+function rowToUserPreferences(r: UserPreferencesRow): UserPreferences {
+  return {
+    userId: r.user_id,
+    displayCurrency: r.display_currency ?? undefined,
+    reportViewMode: r.report_view_mode as UserPreferences["reportViewMode"],
+    language: r.language ?? undefined,
+    dateFormat: r.date_format ?? undefined,
+  }
+}
+
+function userPreferencesToRow(p: UserPreferences): Record<string, unknown> {
+  return {
+    user_id: p.userId,
+    display_currency: p.displayCurrency ?? null,
+    report_view_mode: p.reportViewMode,
+    language: p.language ?? null,
+    date_format: p.dateFormat ?? null,
+  }
+}
+
+function rowToSavedFilter(r: SavedFilterRow): SavedFilter {
+  return {
+    id: r.id,
+    name: r.name,
+    entityType: r.entity_type,
+    filterState: parseJSON(r.filter_state, {}),
+  }
+}
+
+function savedFilterToRow(f: SavedFilter): Record<string, unknown> {
+  return {
+    id: f.id,
+    name: f.name,
+    entity_type: f.entityType,
+    filter_state: JSON.stringify(f.filterState),
+  }
+}
+
+export const mappers = {
+  rowToWeapon, weaponToRow,
+  rowToShipment, shipmentToRow,
+  rowToInvoice, invoiceToRow,
+  rowToPayment, paymentToRow,
+  rowToAccessory, accessoryToRow,
+  rowToAmmo, ammoToRow,
+  rowToCustomer, customerToRow,
+  rowToSupplier, supplierToRow,
+  rowToAuditLog, auditLogToRow,
+  rowToNotification, notificationToRow,
+  rowToUser, userToRow,
+  rowToSettings, settingsToRow,
+  rowToSavedFilter, savedFilterToRow,
+  rowToUserPreferences, userPreferencesToRow,
+}
+
+export type {
+  WeaponRow, ShipmentRow, InvoiceRow, PaymentRow,
+  AccessoryRow, AmmoRow, CustomerRow, SupplierRow,
+  AuditRow, NotificationRow, UserRow, SettingsRow, SavedFilterRow, UserPreferencesRow,
+  WeaponMovement, ShipmentTimelineEntry, ShipmentLineItem, ShipmentDocument, SaleLineItem,
+}
