@@ -22,7 +22,7 @@ import type {
   UserPermissions,
   PackageType,
   UserPreferences,
-} from "../types"
+} from "../types.js"
 
 export interface DbResult<T> {
   data: T | null
@@ -82,6 +82,12 @@ export interface AuditLogEntry {
   changedBy: string | null
   changedAt: string
   reason: string | null
+}
+
+export interface DatabaseBackupInfo {
+  fileName: string
+  createdAt: string
+  sizeBytes: number
 }
 
 // Row shapes as they come back from SQLite (snake_case, integers for booleans)
@@ -271,6 +277,7 @@ interface SettingsRow {
   daily_closing_prompt: number
   weekly_verification: number
   min_profit_margin_percent: number
+  theme: string | null
   preferred_display_currency: string | null
   show_demo_data: number
   app_language: string
@@ -716,6 +723,7 @@ function rowToSettings(r: SettingsRow): SystemSettings {
     dailyClosingPrompt: r.daily_closing_prompt === 1,
     weeklyVerification: r.weekly_verification === 1,
     minProfitMarginPercent: r.min_profit_margin_percent,
+    theme: (r.theme as SystemSettings["theme"]) ?? "system",
     preferredDisplayCurrency: r.preferred_display_currency ?? undefined,
     appLanguage: r.app_language,
     dateFormat: r.date_format,
@@ -745,6 +753,7 @@ function settingsToRow(s: SystemSettings): Record<string, unknown> {
     daily_closing_prompt: s.dailyClosingPrompt ? 1 : 0,
     weekly_verification: s.weeklyVerification ? 1 : 0,
     min_profit_margin_percent: s.minProfitMarginPercent,
+    theme: s.theme ?? "system",
     preferred_display_currency: s.preferredDisplayCurrency ?? null,
     app_language: s.appLanguage ?? "en",
     date_format: s.dateFormat ?? "YYYY-MM-DD",

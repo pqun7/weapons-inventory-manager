@@ -1,12 +1,12 @@
-import { getDb } from "../database"
-import { mappers } from "../../src/lib/db/mappers"
-import type { AllData, MasterDataAll } from "../../src/lib/db/mappers"
+import { getDb } from "../database.js"
+import { mappers } from "../../src/lib/db/mappers.js"
+import type { AllData, MasterDataAll } from "../../src/lib/db/mappers.js"
 import type {
   Weapon, Shipment, Invoice, PaymentRecord, Accessory, Ammunition,
   Customer, Supplier, AuditLog, AppNotification, User, SystemSettings,
   SavedFilter, UserPreferences,
-} from "../../src/lib/types"
-import type { CurrencyRow, ExchangeRateOverrideRow, AuditLogEntry } from "../../src/lib/db/mappers"
+} from "../../src/lib/types.js"
+import type { CurrencyRow, ExchangeRateOverrideRow, AuditLogEntry } from "../../src/lib/db/mappers.js"
 
 function rowToCurrencyRow(r: Record<string, unknown>): CurrencyRow {
   return {
@@ -75,6 +75,7 @@ export class AppRepository {
       daily_closing_prompt = @daily_closing_prompt,
       weekly_verification = @weekly_verification,
       min_profit_margin_percent = @min_profit_margin_percent,
+      theme = @theme,
       preferred_display_currency = @preferred_display_currency,
       app_language = @app_language,
       date_format = @date_format,

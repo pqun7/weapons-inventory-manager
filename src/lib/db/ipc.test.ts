@@ -38,7 +38,7 @@ describe("IPC Channel Registration & Coverage", () => {
     const channels = [
       "db:getAll", "db:getMasterData", "db:getSettings", "db:getUserPreferences",
       "db:getCurrencies", "db:getOverrides", "db:getRateAuditLog",
-      "db:seedDemoData", "db:resetBusinessData",
+      "db:listBackups", "db:createBackup", "db:restoreBackup", "db:deleteBackup",
       "settings:update", "userPreferences:upsert",
       "weapon:bulkInsert", "weapon:update", "weapon:updateStatus",
       "sale:complete", "shipment:create", "shipment:bulkCreate", "shipment:update",
@@ -211,30 +211,30 @@ describe("Renderer Isolation", () => {
   it("db/index.ts throws when called outside Electron (no electronAPI)", async () => {
     const originalElectronAPI = (globalThis as any).electronAPI
     const originalWindow = (globalThis as any).window
-    ;(globalThis as any).window = { electronAPI: undefined }
-    ;(globalThis as any).electronAPI = undefined
+      ; (globalThis as any).window = { electronAPI: undefined }
+      ; (globalThis as any).electronAPI = undefined
 
     try {
       const dbModule = await import("@/lib/db")
       await expect(dbModule.dbGetAll()).rejects.toThrow(/Electron environment/i)
     } finally {
-      ;(globalThis as any).window = originalWindow
-      ;(globalThis as any).electronAPI = originalElectronAPI
+      ; (globalThis as any).window = originalWindow
+        ; (globalThis as any).electronAPI = originalElectronAPI
     }
   })
 
   it("db/index.ts throws for dbUpdateSettings outside Electron", async () => {
     const originalElectronAPI = (globalThis as any).electronAPI
     const originalWindow = (globalThis as any).window
-    ;(globalThis as any).window = { electronAPI: undefined }
-    ;(globalThis as any).electronAPI = undefined
+      ; (globalThis as any).window = { electronAPI: undefined }
+      ; (globalThis as any).electronAPI = undefined
 
     try {
       const dbModule = await import("@/lib/db")
       await expect(dbModule.dbUpdateSettings({} as never)).rejects.toThrow(/Electron environment/i)
     } finally {
-      ;(globalThis as any).window = originalWindow
-      ;(globalThis as any).electronAPI = originalElectronAPI
+      ; (globalThis as any).window = originalWindow
+        ; (globalThis as any).electronAPI = originalElectronAPI
     }
   })
 })

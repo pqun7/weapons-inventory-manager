@@ -1,98 +1,161 @@
+import { Suspense, lazy, useEffect } from "react"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { DirectionProvider } from "@/components/ui/direction"
-import { AppSidebar } from "@/components/app-sidebar"
-import { AppHeader } from "@/components/app-header"
-import { CommandBar } from "@/components/command-bar"
 import { Toaster } from "@/components/ui/sonner"
 import { NavProvider, useNav } from "@/lib/nav"
-import { I18nProvider, useI18n } from "@/lib/i18n"
 import { CurrencyProvider } from "@/lib/currency-context"
-import { DashboardPage } from "@/pages/dashboard"
-import { InventoryPage } from "@/pages/inventory"
-import { SalesPage } from "@/pages/sales"
-import { ShipmentsPage } from "@/pages/shipments"
-import { FinancialsPage } from "@/pages/financials"
-import { CustomersPage } from "@/pages/customers"
-import { SuppliersPage } from "@/pages/suppliers"
-import { AuditPage } from "@/pages/audit"
-import { SettingsPage } from "@/pages/settings"
-import { useAppBootstrap } from "@/hooks/use-app-bootstrap"
+import { ThemeProvider } from "@/components/theme-provider"
 import { Spinner } from "@/components/ui/spinner"
+import type { Language } from "@/lib/i18n/translations"
+
+const DashboardPage = lazy(() => import("@/pages/dashboard").then((m) => ({ default: m.DashboardPage })))
+const InventoryPage = lazy(() => import("@/pages/inventory").then((m) => ({ default: m.InventoryPage })))
+const SalesPage = lazy(() => import("@/pages/sales").then((m) => ({ default: m.SalesPage })))
+const ShipmentsPage = lazy(() => import("@/pages/shipments").then((m) => ({ default: m.ShipmentsPage })))
+const FinancialsPage = lazy(() => import("@/pages/financials").then((m) => ({ default: m.FinancialsPage })))
+const CustomersPage = lazy(() => import("@/pages/customers").then((m) => ({ default: m.CustomersPage })))
+const SuppliersPage = lazy(() => import("@/pages/suppliers").then((m) => ({ default: m.SuppliersPage })))
+const AuditPage = lazy(() => import("@/pages/audit").then((m) => ({ default: m.AuditPage })))
+const SettingsPage = lazy(() => import("@/pages/settings").then((m) => ({ default: m.SettingsPage })))
+const AppSidebar = lazy(() => import("@/components/app-sidebar").then((m) => ({ default: m.AppSidebar })))
+const AppHeader = lazy(() => import("@/components/app-header").then((m) => ({ default: m.AppHeader })))
+const CommandBar = lazy(() => import("@/components/command-bar").then((m) => ({ default: m.CommandBar })))
+
+function RouteLoadingFallback() {
+  return (
+    <div className="flex h-full min-h-48 items-center justify-center">
+      <Spinner className="size-6" />
+    </div>
+  )
+}
 
 function PageRouter() {
   const { currentPage } = useNav()
+  let PageComponent: React.ComponentType
 
   switch (currentPage) {
-    case "dashboard": return <DashboardPage />
-    case "inventory": return <InventoryPage />
-    case "sales": return <SalesPage />
-    case "shipments": return <ShipmentsPage />
-    case "financials": return <FinancialsPage />
-    case "customers": return <CustomersPage />
-    case "suppliers": return <SuppliersPage />
-    case "audit": return <AuditPage />
-    case "settings": return <SettingsPage />
-    default: return <DashboardPage />
+    case "dashboard":
+      PageComponent = DashboardPage
+      break
+    case "inventory":
+      PageComponent = InventoryPage
+      break
+    case "sales":
+      PageComponent = SalesPage
+      break
+    case "shipments":
+      PageComponent = ShipmentsPage
+      break
+    case "financials":
+      PageComponent = FinancialsPage
+      break
+    case "customers":
+      PageComponent = CustomersPage
+      break
+    case "suppliers":
+      PageComponent = SuppliersPage
+      break
+    case "audit":
+      PageComponent = AuditPage
+      break
+    case "settings":
+      PageComponent = SettingsPage
+      break
+    default:
+      PageComponent = DashboardPage
+      break
   }
-}
 
-function AppContent() {
-  const { dir } = useI18n()
   return (
-    <CurrencyProvider>
-      <DirectionProvider dir={dir}>
-        <SidebarProvider>
-          <AppSidebar />
-          <SidebarInset>
-            <AppHeader />
-            <div className="flex-1 overflow-auto scrollbar-thin">
-              <PageRouter />
-            </div>
-          </SidebarInset>
-          <CommandBar />
-          <Toaster position={dir === "rtl" ? "bottom-left" : "bottom-right"} richColors />
-        </SidebarProvider>
-      </DirectionProvider>
-    </CurrencyProvider>
+    <Suspense fallback={<RouteLoadingFallback />}>
+      <PageComponent />
+    </Suspense>
   )
 }
 
-export function App() {
+export type AppProps = {
+  ready: boolean
+  lang: Language
+  theme: "dark" | "light" | "system"
+  displayCurrency: string
+  reportViewMode: "original" | "accounting" | "display"
+  locale: string
+  onThemeChange: (theme: "dark" | "light" | "system") => void
+  onDisplayCurrencyChange: (code: string) => void
+  onReportViewModeChange: (mode: "original" | "accounting" | "display") => void
+}
+
+function AppContent({
+  ready,
+  lang,
+  theme,
+  displayCurrency,
+  reportViewMode,
+  locale,
+  onThemeChange,
+  onDisplayCurrencyChange,
+  onReportViewModeChange,
+}: AppProps) {
+  const dir = lang === "ar" ? "rtl" : "ltr"
   return (
-    <I18nProvider>
-      <NavProvider>
-        <AppShell />
-      </NavProvider>
-    </I18nProvider>
+    <ThemeProvider theme={theme} onThemeChange={onThemeChange}>
+      <CurrencyProvider
+        locale={locale}
+        displayCurrency={displayCurrency}
+        reportViewMode={reportViewMode}
+        onDisplayCurrencyChange={onDisplayCurrencyChange}
+        onReportViewModeChange={onReportViewModeChange}
+      >
+        <DirectionProvider dir={dir}>
+          <SidebarProvider>
+            <Suspense fallback={null}>
+              <AppSidebar />
+              <SidebarInset>
+                <AppHeader />
+                <div className="flex-1 overflow-auto scrollbar-thin">
+                  {ready ? <PageRouter /> : <BootPlaceholder />}
+                </div>
+              </SidebarInset>
+              <CommandBar />
+            </Suspense>
+            <Toaster position={dir === "rtl" ? "bottom-left" : "bottom-right"} richColors />
+          </SidebarProvider>
+        </DirectionProvider>
+      </CurrencyProvider>
+    </ThemeProvider>
   )
 }
 
-function AppShell() {
-  const { ready, error } = useAppBootstrap()
+export function App(props: AppProps) {
+  useEffect(() => {
+    performance.mark("boot:app-shell:mounted")
+    console.info("[perf] boot:app-shell mounted")
+  }, [])
 
-  if (error) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-center space-y-2">
-          <p className="text-destructive font-medium">Database initialization failed</p>
-          <p className="text-muted-foreground text-sm">{error}</p>
+  return (
+    <NavProvider>
+      <AppContent {...props} />
+    </NavProvider>
+  )
+}
+
+function BootPlaceholder() {
+  return (
+    <div className="flex min-h-[calc(100vh-8rem)] flex-col gap-4 p-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div key={index} className="h-24 animate-pulse rounded-xl border bg-muted/40" />
+        ))}
+      </div>
+      <div className="grid flex-1 gap-4 lg:grid-cols-[1.4fr_0.9fr]">
+        <div className="min-h-72 animate-pulse rounded-xl border bg-muted/40" />
+        <div className="grid gap-4">
+          <div className="min-h-36 animate-pulse rounded-xl border bg-muted/40" />
+          <div className="min-h-36 animate-pulse rounded-xl border bg-muted/40" />
         </div>
       </div>
-    )
-  }
-
-  if (!ready) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <Spinner className="size-8" />
-          <p className="text-muted-foreground text-sm">Loading database...</p>
-        </div>
-      </div>
-    )
-  }
-
-  return <AppContent />
+    </div>
+  )
 }
 
 export default App

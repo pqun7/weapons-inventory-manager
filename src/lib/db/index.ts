@@ -1,9 +1,11 @@
-import type { DbResult, AllData, MasterDataAll, CurrencyRow, ExchangeRateOverrideRow, AuditLogEntry } from "./types"
+import type { DbResult, AllData, MasterDataAll, CurrencyRow, ExchangeRateOverrideRow, AuditLogEntry, DatabaseBackupInfo } from "./types.js"
 import type {
   Weapon, Accessory, Ammunition, Shipment, Invoice, PaymentRecord,
   Customer, Supplier, AuditLog, AppNotification, User, SystemSettings, SavedFilter,
-} from "@/lib/types"
-import type { UserPreferences } from "@/lib/types"
+} from "../types.js"
+import type { UserPreferences } from "../types.js"
+
+declare const window: any
 
 function isElectron(): boolean {
   return typeof window !== "undefined" && typeof (window as any).electronAPI?.db?.getAll === "function"
@@ -22,7 +24,7 @@ export function isDbReady(): boolean {
   return isElectron()
 }
 
-export type { DbResult, AllData, MasterDataAll, CurrencyRow, ExchangeRateOverrideRow, AuditLogEntry }
+export type { DbResult, AllData, MasterDataAll, CurrencyRow, ExchangeRateOverrideRow, AuditLogEntry, DatabaseBackupInfo }
 
 function unwrap<T>(result: { success: boolean; data?: T; error?: string }): T {
   if (!result.success) throw new Error(result.error)
@@ -219,6 +221,22 @@ export async function dbGetRateAuditLog(limit: number = 50): Promise<AuditLogEnt
   return unwrap<AuditLogEntry[]>(await getElectronAPI().db.getRateAuditLog(limit))
 }
 
+export async function dbListBackups(): Promise<DatabaseBackupInfo[]> {
+  return unwrap<DatabaseBackupInfo[]>(await getElectronAPI().db.listBackups())
+}
+
+export async function dbCreateBackup(): Promise<DatabaseBackupInfo> {
+  return unwrap<DatabaseBackupInfo>(await getElectronAPI().db.createBackup())
+}
+
+export async function dbRestoreBackup(fileName: string): Promise<void> {
+  await getElectronAPI().db.restoreBackup(fileName)
+}
+
+export async function dbDeleteBackup(fileName: string): Promise<void> {
+  await getElectronAPI().db.deleteBackup(fileName)
+}
+
 export async function dbAddCurrency(isoCode: string, name: string, symbol: string, decimalPrecision: number, initialRate: number): Promise<void> {
   await getElectronAPI().currency.add(isoCode, name, symbol, decimalPrecision, initialRate)
 }
@@ -232,6 +250,8 @@ export async function dbRecordRateAuditLog(code: string, oldRate: number | null,
 }
 
 export async function seedDemoDataIfNeeded(): Promise<void> {
-  // No-op: auto-seeding removed. The app starts clean on first launch.
-  // Demo data is only inserted via the manual `npm run seed:demo` script.
+  const api = getElectronAPI()
+  if (typeof api.db.seedDemoData !== "function") return
+  const result = await api.db.seedDemoData()
+  return unwrap<void>(result)
 }

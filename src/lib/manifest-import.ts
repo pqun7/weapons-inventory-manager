@@ -1,4 +1,5 @@
-import * as XLSX from "xlsx"
+// import * as XLSX from "xlsx"
+import type { WorkBook, } from "xlsx"
 import type { ShipmentLineItemInput } from "./store"
 import type { StorageLocation } from "./types"
 
@@ -56,8 +57,10 @@ export async function parseManifestFile(file: File): Promise<ManifestImportResul
   const errors: string[] = []
   const warnings: string[] = []
   const lineItems: ShipmentLineItemInput[] = []
+  const XLSX = await import("xlsx")
 
-  let wb: XLSX.WorkBook
+
+  let wb: WorkBook
   try {
     const arrayBuffer = await file.arrayBuffer()
     wb = XLSX.read(arrayBuffer, { type: "array" })

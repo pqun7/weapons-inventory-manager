@@ -1,8 +1,8 @@
-import { getDb } from "../database"
-import { repo } from "../repositories"
-import { CurrencyService } from "../../src/lib/currency-service"
-import type { SaleInput } from "../../src/lib/store"
-import type { Invoice, PaymentRecord, Weapon, InvoiceStatus, AppNotification, AuditLog } from "../../src/lib/types"
+import { getDb } from "../database.js"
+import { repo } from "../repositories/index.js"
+import { CurrencyService } from "../../src/lib/currency-service.js"
+import type { SaleInput } from "../../src/lib/store.js"
+import type { Invoice, PaymentRecord, Weapon, InvoiceStatus, AppNotification, AuditLog } from "../../src/lib/types.js"
 
 interface SaleResult {
   success: boolean
@@ -68,19 +68,19 @@ export function completeSale(input: SaleInput, currentUser: { id: string; name: 
     const updatedWeapons = all.weapons.map((w) =>
       input.weaponIds.includes(w.id)
         ? {
-            ...w,
-            status: "Sold" as const,
-            actualFinalPrice: Math.round(perWeaponFinal),
-            movementHistory: [...w.movementHistory, {
-              id: `MV-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-              timestamp: new Date().toISOString(),
-              fromStatus: w.status,
-              toStatus: "Sold",
-              userId: currentUser.id,
-              userName: currentUser.name,
-              reason: `Sold via invoice ${input.invoiceNumber}`,
-            }],
-          }
+          ...w,
+          status: "Sold" as const,
+          actualFinalPrice: Math.round(perWeaponFinal),
+          movementHistory: [...w.movementHistory, {
+            id: `MV-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            timestamp: new Date().toISOString(),
+            fromStatus: w.status,
+            toStatus: "Sold" as const,
+            userId: currentUser.id,
+            userName: currentUser.name,
+            reason: `Sold via invoice ${input.invoiceNumber}`,
+          }],
+        }
         : w
     )
 
@@ -143,5 +143,5 @@ export function completeSale(input: SaleInput, currentUser: { id: string; name: 
     repo.insertNotification(notif)
 
     return { success: true, invoiceId, invoiceNumber: input.invoiceNumber }
-  }) as SaleResult
+  })() as SaleResult
 }

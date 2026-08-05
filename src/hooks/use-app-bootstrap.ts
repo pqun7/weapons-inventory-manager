@@ -8,11 +8,24 @@ export function useAppBootstrap() {
 
   useEffect(() => {
     if (!ready) {
+      const perf = typeof performance !== "undefined" ? performance : null
+      perf?.mark("boot:hook-bootstrap:request")
       bootstrap().catch((e) => {
         setError(e instanceof Error ? e.message : "Failed to initialize database")
       })
     }
   }, [ready, bootstrap])
+
+  useEffect(() => {
+    if (!ready) return
+    const perf = typeof performance !== "undefined" ? performance : null
+    perf?.mark("boot:ready")
+    const navEntry = perf?.getEntriesByType("navigation")?.[0]
+    if (navEntry) {
+      const toReadyMs = navEntry.duration
+      console.info(`[perf] boot:ready navigationDuration=${toReadyMs.toFixed(1)}ms`)
+    }
+  }, [ready])
 
   return { ready, error }
 }

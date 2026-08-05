@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react"
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
 
 export type PageKey =
   | "dashboard"
@@ -25,6 +25,7 @@ interface NavContextValue {
 const NavContext = createContext<NavContextValue | undefined>(undefined)
 
 export function NavProvider({ children }: { children: ReactNode }) {
+  performance.mark("boot:provider:nav:render:start")
   const [currentPage, setCurrentPage] = useState<PageKey>("dashboard")
   const [commandBarOpen, setCommandBarOpen] = useState(false)
   const [financialFilter, setFinancialFilter] = useState<"all" | "overdue">("all")
@@ -32,6 +33,11 @@ export function NavProvider({ children }: { children: ReactNode }) {
 
   const navigate = useCallback((page: PageKey) => {
     setCurrentPage(page)
+  }, [])
+
+  useEffect(() => {
+    performance.mark("boot:provider:nav:mounted")
+    performance.measure("boot:provider:nav:mount", "boot:provider:nav:render:start", "boot:provider:nav:mounted")
   }, [])
 
   return (

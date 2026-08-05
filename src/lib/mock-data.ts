@@ -23,15 +23,36 @@ import type {
   SaleLineItem,
   StorageLocation,
   PackageType,
-} from "./types"
-import { ammoTotalRounds } from "./types"
+} from "./types.js"
+import { ammoTotalRounds } from "./types.js"
+
+const DEMO_SEED = 20260805
+const DEMO_REFERENCE_DATE = new Date("2026-08-05T00:00:00.000Z")
+
+function createRandom(seed: number): () => number {
+  let state = seed >>> 0
+  return () => {
+    state = (1664525 * state + 1013904223) >>> 0
+    return state / 0x100000000
+  }
+}
+
+let randomSource = createRandom(DEMO_SEED)
+
+function resetRandomSource(): void {
+  randomSource = createRandom(DEMO_SEED)
+}
+
+function random(): number {
+  return randomSource()
+}
 
 function randInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min
+  return Math.floor(random() * (max - min + 1)) + min
 }
 
 function pick<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)]
+  return arr[Math.floor(random() * arr.length)]
 }
 
 function pad(num: number, size: number): string {
@@ -39,19 +60,19 @@ function pad(num: number, size: number): string {
 }
 
 function dateOffset(daysAgo: number): string {
-  const d = new Date()
+  const d = new Date(DEMO_REFERENCE_DATE)
   d.setDate(d.getDate() - daysAgo)
   return d.toISOString().split("T")[0]
 }
 
 function dateOffsetFuture(daysAhead: number): string {
-  const d = new Date()
+  const d = new Date(DEMO_REFERENCE_DATE)
   d.setDate(d.getDate() + daysAhead)
   return d.toISOString().split("T")[0]
 }
 
 function dateTimeOffset(daysAgo: number): string {
-  const d = new Date()
+  const d = new Date(DEMO_REFERENCE_DATE)
   d.setDate(d.getDate() - daysAgo)
   d.setHours(randInt(8, 18), randInt(0, 59), 0, 0)
   return d.toISOString()
@@ -138,7 +159,7 @@ function generateShipments(suppliers: Supplier[]): Shipment[] {
     const daysAgo = randInt(5, 120)
     const arrivalOffset = randInt(-20, 30)
     const expectedArrivalDate = arrivalOffset >= 0 ? dateOffsetFuture(arrivalOffset) : dateOffset(Math.abs(arrivalOffset))
-    const statusRoll = Math.random()
+    const statusRoll = random()
     let status: ShipmentStatus
     if (statusRoll < 0.35) status = "Arrived"
     else if (statusRoll < 0.55) status = "In Transit"
@@ -194,13 +215,13 @@ function generateWeapons(suppliers: Supplier[], shipments: Shipment[]): Weapon[]
     const supplier = pick(suppliers)
 
     let status: WeaponStatus = "Available"
-    const roll = Math.random()
+    const roll = random()
     let cum = 0
     for (let s = 0; s < statuses.length; s++) { cum += weights[s]; if (roll < cum) { status = statuses[s]; break } }
 
     let shipmentId: string | null = null
-    if (status !== "Available" || Math.random() > 0.3) {
-      const pool = Math.random() > 0.5 ? arrivedShipments : [...arrivedShipments, ...partialShipments]
+    if (status !== "Available" || random() > 0.3) {
+      const pool = random() > 0.5 ? arrivedShipments : [...arrivedShipments, ...partialShipments]
       if (pool.length > 0) shipmentId = pick(pool).id
     }
 
@@ -216,9 +237,9 @@ function generateWeapons(suppliers: Supplier[], shipments: Shipment[]): Weapon[]
       brand: wt.brand, model: wt.model, weaponType: wt.type, subType: wt.subType, caliber: wt.caliber,
       condition: pick(conditions), status,
       purchasePrice, retailPrice, wholesalePrice,
-      actualFinalPrice: status === "Sold" ? Math.round((retailPrice * (1 - Math.random() * 0.1)) / 5) * 5 : null,
+      actualFinalPrice: status === "Sold" ? Math.round((retailPrice * (1 - random() * 0.1)) / 5) * 5 : null,
       supplierId: supplier.id, shipmentId, dateAdded: dateOffset(randInt(1, 400)),
-      notes: Math.random() > 0.8 ? "Minor surface wear on grip" : "",
+      notes: random() > 0.8 ? "Minor surface wear on grip" : "",
       images: [], movementHistory, location: randomLocation(),
     })
     serialIndex++
@@ -270,16 +291,16 @@ function generateInvoices(weapons: Weapon[], customers: Customer[], suppliers: S
   const soldWeapons = weapons.filter((w) => w.status === "Sold" || w.status === "Returned")
 
   soldWeapons.forEach((w) => {
-    const isWholesale = Math.random() > 0.6
+    const isWholesale = random() > 0.6
     const buyer = isWholesale ? pick(customers.filter((c) => c.isWholesaleBuyer)) : pick(customers.filter((c) => !c.isWholesaleBuyer))
     if (!buyer) return
     const mode: SaleMode = buyer.isWholesaleBuyer ? "Wholesale" : "Retail"
     const basePrice = mode === "Wholesale" ? w.wholesalePrice : w.retailPrice
-    const negotiated = Math.round((basePrice * (1 - Math.random() * 0.08)) / 5) * 5
+    const negotiated = Math.round((basePrice * (1 - random() * 0.08)) / 5) * 5
     const daysAgo = randInt(1, 350)
     const date = dateOffset(daysAgo)
     const dueDate = dateOffset(daysAgo - 30)
-    const paidAmount = Math.random() > 0.35 ? negotiated : Math.random() > 0.5 ? Math.round((negotiated * 0.5) / 5) * 5 : 0
+    const paidAmount = random() > 0.35 ? negotiated : random() > 0.5 ? Math.round((negotiated * 0.5) / 5) * 5 : 0
     const balance = negotiated - paidAmount
     let status: InvoiceStatus
     if (balance <= 0) status = "Paid"
@@ -318,7 +339,7 @@ function generateInvoices(weapons: Weapon[], customers: Customer[], suppliers: S
     const date = dateOffset(daysAgo)
     const dueDate = dateOffset(daysAgo - 45)
     const total = randInt(2000, 8000)
-    const paid = Math.random() > 0.3 ? total : Math.round(total * 0.6)
+    const paid = random() > 0.3 ? total : Math.round(total * 0.6)
     const balance = total - paid
     const status: InvoiceStatus = balance <= 0 ? "Paid" : new Date(dueDate) < new Date() ? "Overdue" : "Pending"
     const invoiceId = `INV${pad(invCounter, 5)}`
@@ -379,7 +400,6 @@ function generateNotifications(invoices: Invoice[], accessories: Accessory[], am
 const DEFAULT_USERS: User[] = [
   { id: "U001", username: "admin", name: "Admin User", role: "Admin", permissions: { canImportExcel: true, canExportData: true, canViewReports: true, canManageUsers: true, canRegisterPayments: true, canVoidInvoices: true, canExtendDueDates: true, canDeleteRecords: true }, passwordSet: true, passwordHash: "admin123" },
   { id: "U002", username: "sarah", name: "Sarah Chen", role: "Manager", permissions: { canImportExcel: true, canExportData: true, canViewReports: true, canManageUsers: false, canRegisterPayments: true, canVoidInvoices: true, canExtendDueDates: true, canDeleteRecords: false }, passwordSet: true, passwordHash: "sarah123" },
-  { id: "U003", username: "mike", name: "Mike Ross", role: "Sales", permissions: { canImportExcel: false, canExportData: false, canViewReports: false, canManageUsers: false, canRegisterPayments: false, canVoidInvoices: false, canExtendDueDates: false, canDeleteRecords: false }, passwordSet: true, passwordHash: "mike123" },
 ]
 
 const DEFAULT_SETTINGS: SystemSettings = {
@@ -400,6 +420,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
 }
 
 export function generateMockData() {
+  resetRandomSource()
   const suppliers = generateSuppliers()
   const customers = generateCustomers()
   const shipments = generateShipments(suppliers)

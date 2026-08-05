@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
 import { translations, LANGUAGE_META, type Language, type Locale } from "./translations"
 import { setFormatLanguage } from "../format"
-import { useStore } from "../store"
 
 interface I18nContextValue {
   lang: Language
@@ -12,33 +11,27 @@ interface I18nContextValue {
 }
 
 const I18nContext = createContext<I18nContextValue | undefined>(undefined)
+type I18nProviderProps = {
+  children: ReactNode
+  lang: Language
+  onLangChange: (lang: Language) => void
+}
 
-export function I18nProvider({ children }: { children: ReactNode }) {
-  const settings = useStore((s) => s.settings)
-  const userPreferences = useStore((s) => s.userPreferences)
-  const updateSettings = useStore((s) => s.updateSettings)
-  const updateUserPreferences = useStore((s) => s.updateUserPreferences)
-
-  const [lang, setLangState] = useState<Language>(() => {
-    const dbLang = userPreferences?.language ?? settings.appLanguage
-    if (dbLang === "en" || dbLang === "ar") return dbLang
-    return "en"
-  })
+export function I18nProvider({ children, lang: externalLang, onLangChange }: I18nProviderProps) {
+  performance.mark("boot:provider:i18n:render:start")
+  const [lang, setLangState] = useState<Language>(externalLang)
 
   useEffect(() => {
-    const dbLang = userPreferences?.language ?? settings.appLanguage
-    if (dbLang === "en" || dbLang === "ar") setLangState(dbLang)
-  }, [settings.appLanguage, userPreferences?.language])
+    setLangState(externalLang)
+  }, [externalLang])
 
   const dir = LANGUAGE_META[lang].dir
   const locale = LANGUAGE_META[lang].locale
 
   const setLang = useCallback((newLang: Language) => {
     setLangState(newLang)
-    updateUserPreferences({ language: newLang }).catch(() => {
-      updateSettings({ appLanguage: newLang }).catch(() => {})
-    })
-  }, [updateSettings, updateUserPreferences])
+    onLangChange(newLang)
+  }, [onLangChange])
 
   const t = useCallback((key: string, params?: Record<string, string | number>) => {
     const dict = translations[lang]
@@ -52,6 +45,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, [lang])
 
   useEffect(() => {
+    performance.mark("boot:provider:i18n:mounted")
+    performance.measure("boot:provider:i18n:mount", "boot:provider:i18n:render:start", "boot:provider:i18n:mounted")
     const meta = LANGUAGE_META[lang]
     document.documentElement.lang = lang
     document.documentElement.dir = meta.dir

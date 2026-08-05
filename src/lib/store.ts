@@ -5,10 +5,11 @@ import type {
   AppNotification, User, SystemSettings, WeaponStatus, WeaponCondition, SaleMode,
   InvoiceStatus, PaymentMethod, AuditActionType, NotificationType, ShipmentStatus,
   SaleLineItem, SavedFilter, StorageLocation, PackageType, UserPreferences,
-} from "./types"
-import { ammoTotalRounds } from "./types"
-import { CurrencyService } from "./currency-service"
-import * as db from "./db"
+} from "./types.js"
+import { ammoTotalRounds } from "./types.js"
+import * as db from "./db/index.js"
+
+declare const window: any
 
 // ============ Input Types ============
 
@@ -282,6 +283,10 @@ function generateId(prefix: string, existing: { id: string }[]): string {
   return `${prefix}${pad(max + 1, 4)}`
 }
 
+async function getCurrencyService() {
+  return (await import("./currency-service.js")).CurrencyService
+}
+
 const DEFAULT_SETTINGS: SystemSettings = {
   currencySymbol: "$",
   currencyCode: "USD",
@@ -297,6 +302,13 @@ const DEFAULT_SETTINGS: SystemSettings = {
   dailyClosingPrompt: true,
   weeklyVerification: false,
   minProfitMarginPercent: 5,
+  theme: "system",
+}
+
+let bootstrapPromise: Promise<void> | null = null
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export const useStore = create<StoreState>()(
@@ -326,35 +338,74 @@ export const useStore = create<StoreState>()(
     ready: false,
 
     bootstrap: async () => {
-      try {
-        await db.initDb()
-        const data = await db.dbGetAll()
-        let userPrefs: UserPreferences | null = null
+      if (bootstrapPromise) return bootstrapPromise
+
+      bootstrapPromise = (async () => {
+        const perf = typeof performance !== "undefined" ? performance : null
+        perf?.mark("boot:store-bootstrap:start")
+
         try {
-          userPrefs = await db.dbGetUserPreferences(get().currentUserId)
-        } catch {
-          // user_preferences table may not exist in older browser/test mode
+          await db.initDb()
+          const currentUserId = get().currentUserId
+          let data = null as Awaited<ReturnType<typeof db.dbGetAll>> | null
+
+          if (db.isDbReady()) {
+            const deadline = Date.now() + 15000
+            let lastError: unknown = null
+
+            while (Date.now() < deadline) {
+              try {
+                data = await db.dbGetAll()
+                break
+              } catch (error) {
+                lastError = error
+                await sleep(100)
+              }
+            }
+
+            if (!data) {
+              throw lastError instanceof Error ? lastError : new Error("Database did not become ready in time")
+            }
+
+            const [userPrefs] = await Promise.all([
+              db.dbGetUserPreferences(currentUserId).catch(() => null),
+            ])
+
+            set({
+              weapons: data.weapons,
+              accessories: data.accessories,
+              ammunition: data.ammunition,
+              shipments: data.shipments,
+              invoices: data.invoices,
+              payments: data.payments,
+              customers: data.customers,
+              suppliers: data.suppliers,
+              auditLogs: data.auditLogs,
+              notifications: data.notifications,
+              users: data.users,
+              settings: data.settings,
+              userPreferences: userPrefs,
+              ready: true,
+            })
+          } else {
+            set({ ready: true })
+          }
+        } catch (e) {
+          console.error("DB bootstrap failed:", e)
+          set({ ready: true })
+        } finally {
+          perf?.mark("boot:store-bootstrap:end")
+          perf?.measure("boot:store-bootstrap", "boot:store-bootstrap:start", "boot:store-bootstrap:end")
+          const entries = perf?.getEntriesByName("boot:store-bootstrap")
+          const last = entries?.[entries.length - 1]
+          if (last) {
+            console.info(`[perf] boot:store-bootstrap ${last.duration.toFixed(1)}ms`)
+          }
+          bootstrapPromise = null
         }
-        set({
-          weapons: data.weapons,
-          accessories: data.accessories,
-          ammunition: data.ammunition,
-          shipments: data.shipments,
-          invoices: data.invoices,
-          payments: data.payments,
-          customers: data.customers,
-          suppliers: data.suppliers,
-          auditLogs: data.auditLogs,
-          notifications: data.notifications,
-          users: data.users,
-          settings: data.settings,
-          userPreferences: userPrefs,
-          ready: true,
-        })
-      } catch (e) {
-        console.error("DB bootstrap failed:", e)
-        set({ ready: true })
-      }
+      })()
+
+      return bootstrapPromise
     },
 
     refreshFromDb: async () => {
@@ -434,6 +485,7 @@ export const useStore = create<StoreState>()(
       let serialCounter = state.weapons.length + 1
       const today = new Date().toISOString().split("T")[0]
       const currentUser = state.getCurrentUser()
+      const currencyService = await getCurrencyService()
 
       input.serialNumbers.forEach((sn) => {
         const trimmed = sn.trim()
@@ -451,8 +503,8 @@ export const useStore = create<StoreState>()(
           dateAdded: today, batchId, notes: input.notes, images: [],
           movementHistory: [{ id: `MV${pad(serialCounter, 5)}`, timestamp: new Date().toISOString(), fromStatus: "Available", toStatus: "Available", userId: currentUser.id, userName: currentUser.name, reason: "Initial intake" }],
           location: input.location,
-          purchasePriceValuation: CurrencyService.createValuation(input.purchasePrice, currency),
-          retailPriceValuation: CurrencyService.createValuation(input.retailPrice, currency),
+          purchasePriceValuation: currencyService.createValuation(input.purchasePrice, currency),
+          retailPriceValuation: currencyService.createValuation(input.retailPrice, currency),
         })
         serialCounter++
       })
@@ -524,6 +576,7 @@ export const useStore = create<StoreState>()(
       const api = getElectronAPI()
       const state = get()
       const currentUser = state.getCurrentUser()
+      const currencyService = await getCurrencyService()
       if (api) {
         const result = await api.sale.complete(input, { id: currentUser.id, name: currentUser.name })
         if (!result.success) return { success: false, error: result.error }
@@ -542,7 +595,7 @@ export const useStore = create<StoreState>()(
       const balance = input.balance ?? (input.totalNegotiated - paid)
       const actualBalance = Math.max(0, balance)
       const saleCurrency = input.currency || "USD"
-      const totalValuation = CurrencyService.createValuation(input.totalNegotiated, saleCurrency)
+      const totalValuation = currencyService.createValuation(input.totalNegotiated, saleCurrency)
       let status: InvoiceStatus = "Pending"
       if (actualBalance <= 0) status = "Paid"
       else if (new Date(input.dueDate) < new Date()) status = "Overdue"

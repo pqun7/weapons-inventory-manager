@@ -1,7 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
 import { CurrencyService, type CurrencyInfo } from "@/lib/currency-service"
-import { useI18n } from "@/lib/i18n"
-import { useStore } from "@/lib/store"
 
 type ReportViewMode = "original" | "accounting" | "display"
 
@@ -19,30 +17,37 @@ interface CurrencyContextValue {
 }
 
 const CurrencyContext = createContext<CurrencyContextValue | undefined>(undefined)
+type CurrencyProviderProps = {
+  children: ReactNode
+  locale: string
+  displayCurrency: string
+  reportViewMode: ReportViewMode
+  onDisplayCurrencyChange: (code: string) => void
+  onReportViewModeChange: (mode: ReportViewMode) => void
+}
 
-export function CurrencyProvider({ children }: { children: ReactNode }) {
-  const { locale } = useI18n()
-  const settings = useStore((s) => s.settings)
-  const userPreferences = useStore((s) => s.userPreferences)
-  const updateUserPreferences = useStore((s) => s.updateUserPreferences)
-  const updateSettings = useStore((s) => s.updateSettings)
-
-  const [displayCurrency, setDisplayCurrencyState] = useState<string>(
-    () => userPreferences?.displayCurrency ?? settings.preferredDisplayCurrency ?? "USD"
-  )
-  const [reportViewMode, setReportViewModeState] = useState<ReportViewMode>(
-    () => userPreferences?.reportViewMode ?? "accounting"
-  )
+export function CurrencyProvider({
+  children,
+  locale,
+  displayCurrency: externalDisplayCurrency,
+  reportViewMode: externalReportViewMode,
+  onDisplayCurrencyChange,
+  onReportViewModeChange,
+}: CurrencyProviderProps) {
+  performance.mark("boot:provider:currency:render:start")
+  const [displayCurrency, setDisplayCurrencyState] = useState<string>(externalDisplayCurrency)
+  const [reportViewMode, setReportViewModeState] = useState<ReportViewMode>(externalReportViewMode)
   const [currencies, setCurrencies] = useState<CurrencyInfo[]>([])
   const [isLoaded, setIsLoaded] = useState(false)
   const [, forceUpdate] = useState({})
 
   useEffect(() => {
-    const dbCurrency = userPreferences?.displayCurrency ?? settings.preferredDisplayCurrency
-    if (dbCurrency) setDisplayCurrencyState(dbCurrency)
-    const dbReportView = userPreferences?.reportViewMode
-    if (dbReportView) setReportViewModeState(dbReportView as ReportViewMode)
-  }, [settings.preferredDisplayCurrency, userPreferences?.displayCurrency, userPreferences?.reportViewMode])
+    setDisplayCurrencyState(externalDisplayCurrency)
+  }, [externalDisplayCurrency])
+
+  useEffect(() => {
+    setReportViewModeState(externalReportViewMode)
+  }, [externalReportViewMode])
 
   const refresh = useCallback(() => {
     setCurrencies(CurrencyService.getCurrencies())
@@ -50,30 +55,36 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    (async () => {
-      await CurrencyService.load()
-      setCurrencies(CurrencyService.getCurrencies())
-      setIsLoaded(true)
-    })()
+    performance.mark("boot:provider:currency:effect:start")
+    let mounted = true;
 
-    const unsub = CurrencyService.subscribe(() => {
-      setCurrencies(CurrencyService.getCurrencies())
-      forceUpdate({})
-    })
-    return unsub
+    CurrencyService.load()
+      .then(() => {
+        if (!mounted) return;
+        setCurrencies(CurrencyService.getCurrencies());
+        setIsLoaded(true);
+      })
+      .catch(console.error);
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    performance.mark("boot:provider:currency:mounted")
+    performance.measure("boot:provider:currency:mount", "boot:provider:currency:render:start", "boot:provider:currency:mounted")
   }, [])
 
   const setDisplayCurrency = useCallback((code: string) => {
     setDisplayCurrencyState(code)
-    updateUserPreferences({ displayCurrency: code }).catch(() => {
-      updateSettings({ preferredDisplayCurrency: code }).catch(() => {})
-    })
-  }, [updateSettings, updateUserPreferences])
+    onDisplayCurrencyChange(code)
+  }, [onDisplayCurrencyChange])
 
   const setReportViewMode = useCallback((mode: ReportViewMode) => {
     setReportViewModeState(mode)
-    updateUserPreferences({ reportViewMode: mode }).catch(() => {})
-  }, [updateUserPreferences])
+    onReportViewModeChange(mode)
+  }, [onReportViewModeChange])
 
   const convertToDisplay = useCallback(
     (usdAmount: number) => CurrencyService.convertFromUSD(usdAmount, displayCurrency),

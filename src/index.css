@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "@fontsource-variable/noto-sans-arabic";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -54,34 +53,6 @@
   --color-status-returned-fg: var(--status-returned-fg);
 }
 
-/*
-  ============================================================
-  THEME CONFIGURATION
-  ============================================================
-
-  Theme: neutral (default)
-  Mode:  light (:root) / dark (.dark)
-
-  To switch to dark mode by default, change the ThemeProvider
-  defaultTheme prop in src/main.tsx:
-    <ThemeProvider defaultTheme="dark">
-
-  To change theme colors, replace the OKLCH values below.
-  Visit https://ui.shadcn.com/themes to generate theme CSS.
-
-  To change the base color palette (e.g. stone, zinc, gray),
-  re-initialize with the shadcn CLI:
-    npx shadcn@latest init -t vite --preset nova -y -f
-    npx shadcn@latest init -t vite --preset vega -y -f
-
-  Available presets: nova, vega, maia, lyra, mira
-  Available base colors: neutral, stone, zinc, gray, mauve,
-                         olive, mist, taupe
-
-  CLI non-interactive theme change:
-    npx shadcn@latest init -t vite -d -y -f
-  ============================================================
-*/
 
 :root {
   --radius: 0.625rem;
@@ -178,6 +149,7 @@
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
   }
@@ -187,30 +159,38 @@
   .row-available {
     background-color: color-mix(in oklch, var(--status-available) 8%, transparent);
   }
+
   .row-sold {
     background-color: color-mix(in oklch, var(--status-sold) 12%, transparent);
   }
+
   .row-reserved {
     background-color: color-mix(in oklch, var(--status-reserved) 14%, transparent);
   }
+
   .row-damaged {
     background-color: color-mix(in oklch, var(--status-damaged) 14%, transparent);
   }
+
   .row-returned {
     background-color: color-mix(in oklch, var(--status-returned) 12%, transparent);
   }
+
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: var(--muted-foreground) transparent;
   }
+
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
+
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background-color: var(--muted-foreground);
     border-radius: 3px;
   }
+
   .scrollbar-thin::-webkit-scrollbar-track {
     background: transparent;
   }

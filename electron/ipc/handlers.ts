@@ -1,25 +1,26 @@
 import { ipcMain, type BrowserWindow } from "electron"
-import { repo } from "../repositories"
-import { getDb } from "../database"
-import { completeSale } from "../services/sale-service"
-import type { AllData, MasterDataAll } from "../../src/lib/db/mappers"
+import { repo } from "../repositories/index.js"
+import { getDb, createDatabaseBackup, deleteDatabaseBackup, listDatabaseBackups, restoreDatabaseBackup } from "../database.js"
+import { seedDemoDataIfNeeded } from "../services/demo-seed-service.js"
+import { completeSale } from "../services/sale-service.js"
+import type { AllData, MasterDataAll } from "../../src/lib/db/mappers.js"
 import type {
   Weapon, Shipment, Invoice, PaymentRecord, Accessory, Ammunition,
   Customer, Supplier, AuditLog, AppNotification, User, SystemSettings,
   SavedFilter, UserPreferences,
-} from "../../src/lib/types"
-import type { CurrencyRow, ExchangeRateOverrideRow, AuditLogEntry } from "../../src/lib/db/mappers"
+} from "../../src/lib/types.js"
+import type { CurrencyRow, ExchangeRateOverrideRow, AuditLogEntry } from "../../src/lib/db/mappers.js"
 
 import type {
   BulkIntakeInput, ShipmentInput, BulkShipmentCreateInput,
   PaymentInput, DueDateExtensionInput, AddStockInput,
   ReceiveAmmoByPackagesInput, ReceiveAmmoByRoundsInput, SellAmmoInput,
+  SaleInput,
   UpdateAmmoPackageInput,
-} from "../../src/lib/store"
+} from "../../src/lib/store.js"
 
-import { CurrencyService } from "../../src/lib/currency-service"
-import { ammoTotalRounds } from "../../src/lib/types"
-import { generateMockData } from "../../src/lib/mock-data"
+import { CurrencyService } from "../../src/lib/currency-service.js"
+import { ammoTotalRounds } from "../../src/lib/types.js"
 
 function pad(num: number, size: number): string {
   return num.toString().padStart(size, "0")
@@ -46,7 +47,8 @@ function fail(error: string): IpcResult<never> {
   return { success: false, error }
 }
 
-export function registerIpcHandlers(_mainWindow: BrowserWindow): void {
+export function registerIpcHandlers(): void {
+  console.log('ipc: registerIpcHandlers called')
   // ===== Read =====
   ipcMain.handle("db:getAll", (): IpcResult<AllData> => {
     try { return ok(repo.getAll()) } catch (e) { return fail(String(e)) }
@@ -74,6 +76,31 @@ export function registerIpcHandlers(_mainWindow: BrowserWindow): void {
 
   ipcMain.handle("db:getRateAuditLog", (_, limit: number): IpcResult<AuditLogEntry[]> => {
     try { return ok(repo.getRateAuditLog(limit)) } catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle("db:listBackups", (): IpcResult => {
+    try { return ok(listDatabaseBackups()) } catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle("db:createBackup", async (): Promise<IpcResult> => {
+    try { return ok(await createDatabaseBackup()) } catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle("db:restoreBackup", async (_, fileName: string): Promise<IpcResult> => {
+    try {
+      await restoreDatabaseBackup(fileName)
+      return ok()
+    } catch (e) {
+      return fail(String(e))
+    }
+  })
+
+  ipcMain.handle("db:deleteBackup", (_, fileName: string): IpcResult => {
+    try { deleteDatabaseBackup(fileName); return ok() } catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle("db:seedDemoData", (): IpcResult => {
+    try { return ok(seedDemoDataIfNeeded()) } catch (e) { return fail(String(e)) }
   })
 
   // ===== Settings & Preferences =====
@@ -143,7 +170,7 @@ export function registerIpcHandlers(_mainWindow: BrowserWindow): void {
         }
 
         return ok({ added: newWeapons.length, duplicates })
-      })
+      })()
     } catch (e) { return fail(String(e)) }
   })
 
@@ -226,7 +253,7 @@ export function registerIpcHandlers(_mainWindow: BrowserWindow): void {
           metadata: JSON.stringify({ shipmentId, supplierId: input.supplierId }),
         })
         return ok({ shipmentId })
-      })
+      })()
     } catch (e) { return fail(String(e)) }
   })
 
@@ -346,7 +373,7 @@ export function registerIpcHandlers(_mainWindow: BrowserWindow): void {
           date: today, read: false, entityId: shipmentId,
         })
         return ok({ shipmentId })
-      })
+      })()
     } catch (e) { return fail(String(e)) }
   })
 
@@ -438,7 +465,7 @@ export function registerIpcHandlers(_mainWindow: BrowserWindow): void {
           })
         }
         return ok({ newBalance })
-      })
+      })()
     } catch (e) { return fail(String(e)) }
   })
 
@@ -683,46 +710,6 @@ export function registerIpcHandlers(_mainWindow: BrowserWindow): void {
     try { repo.recordRateAuditLog(code, oldRate, newRate, changedBy, reason, changedAt); return ok() } catch (e) { return fail(String(e)) }
   })
 
-  // ===== Demo seeding (manual only, never called during app startup) =====
-  ipcMain.handle("db:seedDemoData", (): IpcResult => {
-    try {
-      const db = getDb()
-      db.transaction(() => {
-        const mock = generateMockData()
-        for (const w of mock.weapons) repo.insertWeapon(w)
-        for (const s of mock.shipments) repo.insertShipment(s)
-        for (const inv of mock.invoices) repo.insertInvoice(inv)
-        for (const p of mock.payments) repo.insertPayment(p)
-        for (const a of mock.accessories) repo.insertAccessory(a)
-        for (const a of mock.ammunition) repo.insertAmmunition(a)
-        for (const c of mock.customers) repo.insertCustomer(c)
-        for (const s of mock.suppliers) repo.insertSupplier(s)
-        for (const l of mock.auditLogs) repo.insertAuditLog(l)
-        for (const n of mock.notifications) repo.insertNotification(n)
-      })
-      return ok()
-    } catch (e) { return fail(String(e)) }
-  })
-
-  ipcMain.handle("db:resetBusinessData", (): IpcResult => {
-    try {
-      const db = getDb()
-      db.transaction(() => {
-        db.exec("DELETE FROM weapons")
-        db.exec("DELETE FROM shipments")
-        db.exec("DELETE FROM invoices")
-        db.exec("DELETE FROM payment_records")
-        db.exec("DELETE FROM accessories")
-        db.exec("DELETE FROM ammunition")
-        db.exec("DELETE FROM customers")
-        db.exec("DELETE FROM suppliers")
-        db.exec("DELETE FROM audit_logs")
-        db.exec("DELETE FROM app_notifications")
-      })
-      return ok()
-    } catch (e) { return fail(String(e)) }
-  })
-
   // ===== Master Data CRUD =====
   ipcMain.handle("masterData:insertWeaponType", (_e, label: string, sortOrder: number): IpcResult<string> => {
     try { return ok(repo.insertMasterWeaponType(label, sortOrder)) } catch (e) { return fail(String(e)) }
@@ -750,5 +737,5 @@ export function registerIpcHandlers(_mainWindow: BrowserWindow): void {
   })
   ipcMain.handle("masterData:deleteRow", (_e, table: string, id: string): IpcResult => {
     try { repo.deleteMasterRow(table, id); return ok() } catch (e) { return fail(String(e)) }
-  }
+  })
 }

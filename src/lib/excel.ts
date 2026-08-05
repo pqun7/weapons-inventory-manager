@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx"
+import type { WorkSheet } from "xlsx"
 import type {
   Weapon,
   Customer,
@@ -166,7 +166,7 @@ export const DEFAULT_SHEET_OPTIONS: ExcelSheetOption[] = [
   { key: "Logs", label: "Audit Logs", enabled: true },
 ]
 
-function autoFitColumns(ws: XLSX.WorkSheet, data: Record<string, unknown>[]) {
+function autoFitColumns(ws: WorkSheet, data: Record<string, unknown>[]) {
   if (data.length === 0) return
   const keys = Object.keys(data[0])
   const colWidths = keys.map((key) => {
@@ -180,8 +180,10 @@ function autoFitColumns(ws: XLSX.WorkSheet, data: Record<string, unknown>[]) {
   ws["!cols"] = colWidths
 }
 
-export function exportExcelChecklist(sheets: ExcelSheetOption[]): void {
+export async function exportExcelChecklist(sheets: ExcelSheetOption[]): Promise<void> {
   const state = useStore.getState()
+  const XLSX = await import("xlsx")
+
   const wb = XLSX.utils.book_new()
 
   if (sheets.find((s) => s.key === "Inventory" && s.enabled)) {
@@ -281,6 +283,7 @@ export interface ImportConflictReport {
 
 export async function analyzeExcelImport(file: File): Promise<ImportConflictReport> {
   const arrayBuffer = await file.arrayBuffer()
+  const XLSX = await import("xlsx")
   const wb = XLSX.read(arrayBuffer, { type: "array" })
   const state = useStore.getState()
   const report: ImportConflictReport = {

@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron"
 
+
 export const electronAPI = {
   db: {
     getAll: () => ipcRenderer.invoke("db:getAll"),
@@ -9,8 +10,10 @@ export const electronAPI = {
     getCurrencies: () => ipcRenderer.invoke("db:getCurrencies"),
     getOverrides: () => ipcRenderer.invoke("db:getOverrides"),
     getRateAuditLog: (limit: number) => ipcRenderer.invoke("db:getRateAuditLog", limit),
-    seedDemoData: () => ipcRenderer.invoke("db:seedDemoData"),
-    resetBusinessData: () => ipcRenderer.invoke("db:resetBusinessData"),
+    listBackups: () => ipcRenderer.invoke("db:listBackups"),
+    createBackup: () => ipcRenderer.invoke("db:createBackup"),
+    restoreBackup: (fileName: string) => ipcRenderer.invoke("db:restoreBackup", fileName),
+    deleteBackup: (fileName: string) => ipcRenderer.invoke("db:deleteBackup", fileName),
   },
   masterData: {
     insertWeaponType: (label: string, sortOrder: number) => ipcRenderer.invoke("masterData:insertWeaponType", label, sortOrder),

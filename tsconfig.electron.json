@@ -2,11 +2,15 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.electron.tsbuildinfo",
     "target": "ES2023",
-    "lib": ["ES2023"],
-    "module": "ESNext",
-    "types": ["node"],
+    "lib": [
+      "ES2023"
+    ],
+    "module": "NodeNext",
+    "types": [
+      "node"
+    ],
     "skipLibCheck": true,
-    "moduleResolution": "bundler",
+    "moduleResolution": "NodeNext",
     "allowImportingTsExtensions": false,
     "verbatimModuleSyntax": false,
     "moduleDetection": "force",
@@ -25,11 +29,15 @@
     "resolveJsonModule": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": [
+        "./src/*"
+      ]
     }
   },
   "include": [
     "electron/**/*.ts",
+    "electron/**/*.cts",
+    "electron/**/*.d.ts",
     "src/lib/db/schema.ts",
     "src/lib/db/mappers.ts",
     "src/lib/types.ts",
@@ -37,5 +45,10 @@
     "src/lib/currency-service.ts",
     "src/lib/store.ts"
   ],
-  "exclude": ["node_modules", "dist", "dist-electron", "src/**/*.test.*"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "dist-electron",
+    "src/**/*.test.*"
+  ]
 }

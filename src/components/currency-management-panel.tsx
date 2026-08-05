@@ -143,6 +143,7 @@ export function CurrencyManagementPanel() {
 
   return (
     <div className="flex flex-col gap-3">
+      
       <Tabs defaultValue="registry">
         <TabsList className="h-8">
           <TabsTrigger value="registry" className="text-xs"><Coins className="size-3" /> {t("settings.currencyRegistry")}</TabsTrigger>

@@ -14,7 +14,7 @@ export type PaymentMethod = "Cash" | "Card" | "Bank Transfer" | "Check" | "Other
 
 export type SaleMode = "Retail" | "Wholesale"
 
-export type UserRole = "Admin" | "Manager" | "Sales" | "Inventory" | "Accountant" | "Read-Only"
+export type UserRole = "Admin" | "Manager"
 
 export type ShipmentStatus = "Pending" | "In Transit" | "Delayed" | "Arrived" | "Cancelled" | "Partial"
 
@@ -445,6 +445,7 @@ export interface SystemSettings {
   dailyClosingPrompt: boolean
   weeklyVerification: boolean
   minProfitMarginPercent: number
+  theme?: "dark" | "light" | "system"
   // Multi-currency display preferences
   preferredDisplayCurrency?: string
   // Application-wide preferences (stored in SQLite, not localStorage)

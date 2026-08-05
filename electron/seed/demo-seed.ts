@@ -1,10 +1,10 @@
 import { app } from "electron"
-import { initDatabase, closeDatabase, getDbPath } from "../database"
-import { repo } from "../repositories"
-import { generateMockData } from "../../src/lib/mock-data"
+import { initDatabase, closeDatabase, getDbPath } from "../database.js"
+import { repo } from "../repositories/index.js"
+import { generateMockData } from "../../src/lib/mock-data.js"
 import fs from "fs"
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   const dbPath = getDbPath()
   console.log(`Database path: ${dbPath}`)
 
@@ -14,7 +14,7 @@ app.whenReady().then(() => {
     return
   }
 
-  initDatabase()
+  await initDatabase()
 
   const mock = generateMockData()
 

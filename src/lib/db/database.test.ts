@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import Database from "better-sqlite3"
 import { CREATE_TABLES_SQL, SEED_MASTER_DATA_SQL, SCHEMA_VERSION } from "@/lib/db/schema"
 import type { Database as DB } from "better-sqlite3"
+import os from "os"
+import path from "path"
+import fs from "fs"
+
 
 function createInMemoryDb(): DB {
   const db = new Database(":memory:")
@@ -589,17 +593,49 @@ describe("Error Handling", () => {
 
 describe("Persistence Across Restarts", () => {
   it("data survives a close and reopen of a file-based database", () => {
-    const tmpPath = `/tmp/test-persist-${Date.now()}.db`
+    const dir = path.join(os.tmpdir(), "weapon-store-tests")
+    fs.mkdirSync(dir, { recursive: true })
+
+    const tmpPath = path.join(dir, `test-persist-${Date.now()}.db`)
+
     const db1 = new Database(tmpPath)
     db1.pragma("foreign_keys = ON")
     db1.exec(CREATE_TABLES_SQL)
-    db1.prepare("INSERT INTO customers (id, name, phone, email, address, is_wholesale_buyer, wholesale_discount_percent, date_added) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run("cust-persist-1", "Persistent Customer", "", "", "", 0, 0, "2026-01-01")
+
+    db1.prepare(`
+      INSERT INTO customers (
+        id,
+        name,
+        phone,
+        email,
+        address,
+        is_wholesale_buyer,
+        wholesale_discount_percent,
+        date_added
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "cust-persist-1",
+      "Persistent Customer",
+      "",
+      "",
+      "",
+      0,
+      0,
+      "2026-01-01"
+    )
+
     db1.close()
 
     const db2 = new Database(tmpPath)
-    const row = db2.prepare("SELECT * FROM customers WHERE id = ?").get("cust-persist-1") as { name: string }
+
+    const row = db2
+      .prepare("SELECT name FROM customers WHERE id = ?")
+      .get("cust-persist-1") as { name: string }
+
     expect(row.name).toBe("Persistent Customer")
+
     db2.close()
+
+    fs.unlinkSync(tmpPath)
   })
 })

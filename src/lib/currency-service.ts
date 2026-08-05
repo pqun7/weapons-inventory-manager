@@ -1,6 +1,20 @@
 import Decimal from "decimal.js"
+import {
+  dbAddCurrency,
+  dbGetCurrencies,
+  dbGetOverrides,
+  dbGetRateAuditLog,
+  dbRecordRateAuditLog,
+  dbRecordRateHistory,
+  dbSetAutomaticMode,
+  dbSetManualOverride,
+  dbToggleCurrencyActive,
+  dbUpdateCurrencyRate,
+} from "./db/index.js"
 
-Decimal.set({ rounding: Decimal.ROUND_HALF_UP, precision: 28 })
+const DecimalAny: any = Decimal as unknown as any
+
+DecimalAny.set({ rounding: DecimalAny.ROUND_HALF_UP, precision: 28 })
 
 export interface CurrencyInfo {
   isoCode: string
@@ -114,7 +128,6 @@ class CurrencyServiceClass {
   }
 
   private async loadCurrencies(): Promise<void> {
-    const { dbGetCurrencies } = await import("@/lib/db")
     const rows = await dbGetCurrencies()
     this.currencies.clear()
     for (const row of rows) {
@@ -134,7 +147,6 @@ class CurrencyServiceClass {
   }
 
   private async loadOverrides(): Promise<void> {
-    const { dbGetOverrides } = await import("@/lib/db")
     const rows = await dbGetOverrides()
     this.overrides.clear()
     for (const row of rows) {
@@ -198,8 +210,8 @@ class CurrencyServiceClass {
     const rate = this.getRate(fromCurrency)
     if (rate === 0) return 0
 
-    const decAmount = new Decimal(amount)
-    const decRate = new Decimal(rate)
+    const decAmount = new DecimalAny(amount)
+    const decRate = new DecimalAny(rate)
     return decAmount.dividedBy(decRate).toNumber()
   }
 
@@ -207,8 +219,8 @@ class CurrencyServiceClass {
     if (toCurrency === ACCOUNTING_CURRENCY) return usdAmount
     const rate = this.getRate(toCurrency)
 
-    const decUsd = new Decimal(usdAmount)
-    const decRate = new Decimal(rate)
+    const decUsd = new DecimalAny(usdAmount)
+    const decRate = new DecimalAny(rate)
     return decUsd.times(decRate).toNumber()
   }
 
@@ -236,13 +248,13 @@ class CurrencyServiceClass {
   }
 
   roundAccounting(amount: number): number {
-    return new Decimal(amount).toDecimalPlaces(4, Decimal.ROUND_HALF_UP).toNumber()
+    return new DecimalAny(amount).toDecimalPlaces(4, DecimalAny.ROUND_HALF_UP).toNumber()
   }
 
   roundDisplay(amount: number, currencyCode: string): number {
     const currency = this.currencies.get(currencyCode)
     const precision = currency?.decimalPrecision ?? 2
-    return new Decimal(amount).toDecimalPlaces(precision, Decimal.ROUND_HALF_UP).toNumber()
+    return new DecimalAny(amount).toDecimalPlaces(precision, DecimalAny.ROUND_HALF_UP).toNumber()
   }
 
   createValuation(originalAmount: number, originalCurrency: string): {
@@ -263,7 +275,6 @@ class CurrencyServiceClass {
   }
 
   async updateCurrencyRate(code: string, rate: number, source: RateSource = "api"): Promise<void> {
-    const { dbUpdateCurrencyRate } = await import("@/lib/db")
     const now = new Date().toISOString()
     await dbUpdateCurrencyRate(code, rate, now)
 
@@ -278,7 +289,6 @@ class CurrencyServiceClass {
   }
 
   async recordRateHistory(code: string, rate: number, source: string): Promise<void> {
-    const { dbRecordRateHistory } = await import("@/lib/db")
     await dbRecordRateHistory(code, rate, source)
   }
 
@@ -289,7 +299,6 @@ class CurrencyServiceClass {
     changedBy: string,
     reason: string
   ): Promise<void> {
-    const { dbRecordRateAuditLog } = await import("@/lib/db")
     const now = new Date().toISOString()
     await dbRecordRateAuditLog(code, oldRate, newRate, changedBy, reason, now)
   }
@@ -311,8 +320,6 @@ class CurrencyServiceClass {
 
     const oldRate = this.getRate(code)
     const now = new Date().toISOString()
-
-    const { dbSetManualOverride, dbUpdateCurrencyRate, dbRecordRateHistory, dbRecordRateAuditLog } = await import("@/lib/db")
 
     await dbSetManualOverride(code, rate, changedBy, reason, now)
     await dbUpdateCurrencyRate(code, rate, now)
@@ -340,8 +347,6 @@ class CurrencyServiceClass {
     const oldRate = this.getRate(code)
     const now = new Date().toISOString()
 
-    const { dbSetAutomaticMode, dbRecordRateAuditLog } = await import("@/lib/db")
-
     await dbSetAutomaticMode(code, changedBy, now)
     await dbRecordRateAuditLog(code, oldRate, null, changedBy, "Switched to automatic mode", now)
 
@@ -359,7 +364,6 @@ class CurrencyServiceClass {
   }
 
   async getAuditLog(limit: number = 50): Promise<AuditLogEntry[]> {
-    const { dbGetRateAuditLog } = await import("@/lib/db")
     return dbGetRateAuditLog(limit)
   }
 
@@ -378,24 +382,41 @@ class CurrencyServiceClass {
       throw new Error("Initial rate must be greater than zero.")
     }
 
-    const { dbAddCurrency } = await import("@/lib/db")
     await dbAddCurrency(isoCode.toUpperCase(), name, symbol, decimalPrecision, initialRate)
+
+    const code = isoCode.toUpperCase()
+    this.currencies.set(code, {
+      isoCode: code,
+      name,
+      symbol,
+      decimalPrecision,
+      isActive: true,
+      lastKnownRate: initialRate,
+      lastRateUpdatedAt: new Date().toISOString(),
+    })
+    this.overrides.set(code, {
+      currencyCode: code,
+      mode: "automatic",
+      manualRate: null,
+      updatedBy: null,
+      updatedAt: new Date().toISOString(),
+      reason: null,
+    })
+    this.rateCache.delete(code)
+    this.notify()
 
     if (userRole && userRole.toLowerCase() === "admin") {
       await this.recordRateAuditLog(
-        isoCode.toUpperCase(),
+        code,
         null,
         initialRate,
         "system",
-        `Currency ${isoCode.toUpperCase()} added with initial rate ${initialRate}`
+        `Currency ${code} added with initial rate ${initialRate}`
       )
     }
-
-    await this.load()
   }
 
   async toggleCurrencyActive(code: string, isActive: boolean): Promise<void> {
-    const { dbToggleCurrencyActive } = await import("@/lib/db")
     await dbToggleCurrencyActive(code, isActive)
 
     const currency = this.currencies.get(code)
