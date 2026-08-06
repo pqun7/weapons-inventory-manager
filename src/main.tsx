@@ -1,6 +1,9 @@
+
+import "./index.css";
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { Spinner } from "@/components/ui/spinner"
+
 
 const rootElement = document.getElementById("root")
 

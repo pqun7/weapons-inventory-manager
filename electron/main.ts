@@ -1,18 +1,20 @@
+// electron/main.ts
 import { app, BrowserWindow, shell } from "electron"
-import path from "path"
-import fs from "fs";
+import path from "node:path"
 import { performance } from "node:perf_hooks"
-import { initDatabase, closeDatabase, databaseExists } from "./database.js"
+import { fileURLToPath } from "node:url"
+import { initDatabase, closeDatabase } from "./database.js"
 import { registerIpcHandlers } from "./ipc/handlers.js"
 import { seedDemoDataIfNeeded } from "./services/demo-seed-service.js"
-import { fileURLToPath } from "node:url";
+import fs from "node:fs";
 
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const isDev = !!process.env.VITE_DEV_SERVER_URL
+// Determine dev mode more robustly than VITE_DEV_SERVER_URL
+const isDev = !app.isPackaged && !!process.env.VITE_DEV_SERVER_URL
+
 const bootStart = performance.now()
-
 function logBoot(stage: string): void {
   const elapsed = performance.now() - bootStart
   console.log(`[boot][main] +${elapsed.toFixed(1)}ms ${stage}`)
@@ -20,13 +22,16 @@ function logBoot(stage: string): void {
 
 let mainWindow: BrowserWindow | null = null
 
-const preloadPath = path.join(__dirname, "preload.cjs");
-
-console.log("preload =", preloadPath);
-console.log("exists =", fs.existsSync(preloadPath));
-
 function createWindow(): BrowserWindow {
   logBoot("createWindow:start")
+
+  // Preload path: compiled preload.cts → preload.cjs next to main.js
+  const preloadPath = path.join(__dirname, "preload.cjs")
+  // Safety check (logs in dev, but won't block startup)
+  if (!fs.existsSync(preloadPath)) {
+    console.error(`Preload script not found: ${preloadPath}`)
+  }
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -35,84 +40,95 @@ function createWindow(): BrowserWindow {
     show: false,
     title: "Armory Store Management System",
     webPreferences: {
-      preload: path.join(__dirname, "preload.cjs"),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
     },
   })
 
-  mainWindow.on("ready-to-show", () => {
-    logBoot("window:ready-to-show")
+
+
+  // Show window when ready
+  mainWindow.once("ready-to-show", () => {
     mainWindow?.show()
-    logBoot("window:show-called")
+    logBoot("window:shown")
   })
 
-  mainWindow.webContents.on("did-start-loading", () => {
-    logBoot("webContents:did-start-loading")
-  })
-
-  mainWindow.webContents.on("dom-ready", () => {
-    logBoot("webContents:dom-ready")
-  })
-
-  mainWindow.webContents.on("did-finish-load", () => {
-    logBoot("webContents:did-finish-load")
-  })
-
+  // Prevent new windows (open in external browser)
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: "deny" }
   })
 
+  // Dev-only error/log forwarding (cleaned up on window close)
   if (isDev) {
+    const onFailLoad = (_: Electron.Event, code: number, desc: string) =>
+      console.error("did-fail-load:", code, desc)
+    const onRenderGone = (_: Electron.Event, details: Electron.RenderProcessGoneDetails) =>
+      console.error("render-process-gone:", details)
+    const onConsole = (_: Electron.Event, level: number, message: string) =>
+      console.log("Renderer:", message)
+
+    mainWindow.webContents.on("did-fail-load", onFailLoad)
+    mainWindow.webContents.on("render-process-gone", onRenderGone)
+    mainWindow.webContents.on("console-message", onConsole)
+
+    mainWindow.webContents.on("did-finish-load", () => {
+      console.log("Renderer loaded")
+    })
+
     mainWindow.webContents.on("did-fail-load", (_, code, desc) => {
-      console.error("did-fail-load:", code, desc);
-    });
+      console.error("did-fail-load", code, desc)
+    })
 
     mainWindow.webContents.on("render-process-gone", (_, details) => {
-      console.error("render-process-gone:", details);
-    });
+    console.error("render-process-gone", details)
+    })
 
     mainWindow.webContents.on("console-message", (_, level, message) => {
-      console.log("Renderer:", message);
-    });
-    logBoot("window:loadURL")
+      console.log("[Renderer]", level, message)
+    })
+
+    // Remove listeners when window is closed to avoid memory leaks on recreation
+    mainWindow.once("closed", () => {
+      mainWindow?.webContents.removeListener("did-fail-load", onFailLoad)
+      mainWindow?.webContents.removeListener("render-process-gone", onRenderGone)
+      mainWindow?.webContents.removeListener("console-message", onConsole)
+  })
+
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL!)
     mainWindow.webContents.openDevTools({ mode: "detach" })
+    logBoot("window:loadURL")
   } else {
+    // Production: load built index.html
+    const indexPath = path.resolve(process.cwd(), "dist/index.html")
+
+    mainWindow.loadFile(indexPath)
+    mainWindow.webContents.openDevTools({ mode: "detach" })
     logBoot("window:loadFile")
-    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"))
   }
 
   logBoot("createWindow:end")
-  return mainWindow!
+  return mainWindow
 }
 
+// App lifecycle
 app.whenReady().then(async () => {
   logBoot("app.whenReady")
   try {
-    console.log('main: initializing database')
-    logBoot("initDatabase:await")
     await initDatabase()
     logBoot("initDatabase:completed")
 
-    console.log('main: seeding demo data if needed')
-    const seedResult = seedDemoDataIfNeeded()
-    console.log('main: demo seed result', seedResult)
-
-    console.log('main: registering IPC handlers')
+    seedDemoDataIfNeeded()
     registerIpcHandlers()
     logBoot("ipc:registered")
-    console.log('main: IPC handlers registered')
 
-    console.log('main: creating BrowserWindow')
     createWindow()
     logBoot("window:created")
-    console.log('main: BrowserWindow created')
   } catch (err) {
-    console.error('main: startup failed', err)
-    throw err
+    console.error("main: startup failed", err)
+    app.quit()
   }
 
   app.on("activate", () => {
@@ -121,22 +137,10 @@ app.whenReady().then(async () => {
 })
 
 app.on("window-all-closed", () => {
-  console.log('main: window-all-closed')
-  try { closeDatabase() } catch (e) { console.error('main: closeDatabase error', e) }
+  closeDatabase()
   if (process.platform !== "darwin") app.quit()
 })
 
 app.on("before-quit", () => {
-  console.log('main: before-quit')
-  try { closeDatabase() } catch (e) { console.error('main: closeDatabase error', e) }
+  closeDatabase()
 })
-
-process.on('uncaughtException', (err) => {
-  console.error('main: uncaughtException', err)
-})
-
-process.on('unhandledRejection', (reason) => {
-  console.error('main: unhandledRejection', reason)
-})
-
-export { databaseExists }

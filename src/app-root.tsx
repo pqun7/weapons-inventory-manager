@@ -16,17 +16,17 @@ type LoadedModules = {
 
 performance.mark("boot:app-root:module:start")
 console.info("[perf] app-root.tsx module start")
-
 async function loadAppModules(): Promise<LoadedModules> {
-    performance.mark("boot:app-root:css-import:start")
-    await import("./index.css")
-    performance.mark("boot:app-root:css-import:end")
-    performance.measure("boot:app-root:css-import", "boot:app-root:css-import:start", "boot:app-root:css-import:end")
-
     performance.mark("boot:app-root:app-import:start")
-    const appModule = await import("./App.tsx")
+
+    const appModule = await import("./App")
+
     performance.mark("boot:app-root:app-import:end")
-    performance.measure("boot:app-root:app-import", "boot:app-root:app-import:start", "boot:app-root:app-import:end")
+    performance.measure(
+        "boot:app-root:app-import",
+        "boot:app-root:app-import:start",
+        "boot:app-root:app-import:end"
+    )
 
     return {
         App: appModule.default,
@@ -76,6 +76,9 @@ export function AppRoot() {
 
     const { App } = modules
     const lang = (settings.appLanguage ?? "en") as Language
+    const handleLangChange = (newLang: Language) => {
+        updateSettings({ appLanguage: newLang })
+    }
 
     return (
         <App
@@ -88,6 +91,7 @@ export function AppRoot() {
             onThemeChange={(theme: AppProps["theme"]) => { void updateSettings({ theme }) }}
             onDisplayCurrencyChange={(code: string) => { void updateSettings({ preferredDisplayCurrency: code }) }}
             onReportViewModeChange={(mode: AppProps["reportViewMode"]) => { void updateUserPreferences({ reportViewMode: mode }) }}
+            onLangChange={handleLangChange}
         />
     )
 }

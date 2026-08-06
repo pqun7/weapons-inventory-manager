@@ -1,43 +1,21 @@
+// electron/database.ts
 import Database from "better-sqlite3"
-import path from "path"
-import { pathToFileURL, fileURLToPath } from "url"
+import path from "node:path"
 import { app } from "electron"
-import fs from "fs"
+import fs from "node:fs"
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
+// ---- Static schema import (no dynamic loading) ----
+// These must be compiled together with the main process.
+// Adjust tsconfig.electron.json to include "src/lib/db/schema.ts".
+import {
+  CREATE_TABLES_SQL,
+  SEED_MASTER_DATA_SQL,
+  SCHEMA_VERSION,
+} from "../src/lib/db/schema.js"
 
 let db: Database.Database | null = null
 
-let CREATE_TABLES_SQL: string | null = null
-let SEED_MASTER_DATA_SQL: string | null = null
-let SCHEMA_VERSION: number | null = null
-
-async function loadSchema(): Promise<void> {
-  if (CREATE_TABLES_SQL !== null) return
-
-
-  const schemaPath = path.join(__dirname, "../src/lib/db/schema.js")
-  const fileUrl = pathToFileURL(schemaPath).href
-
-  try {
-    console.log('--- loadSchema: about to import schema ---')
-    console.log('module specifier to import:', fileUrl)
-    try { console.log('process.cwd():', process.cwd()) } catch (e) { console.log('process.cwd() error:', e) }
-    console.log('computed schemaPath:', schemaPath)
-    try { console.log('fs.existsSync(schemaPath):', fs.existsSync(schemaPath)) } catch (e) { console.log('fs.existsSync(schemaPath) failed:', e) }
-    console.log('final URL passed to import():', fileUrl)
-    const mod = await import(fileUrl)
-    console.log('loadSchema: import succeeded for', fileUrl)
-    CREATE_TABLES_SQL = mod.CREATE_TABLES_SQL
-    SEED_MASTER_DATA_SQL = mod.SEED_MASTER_DATA_SQL
-    SCHEMA_VERSION = mod.SCHEMA_VERSION
-  } catch (err) {
-    console.error('loadSchema: import failed for', fileUrl, err)
-    throw err
-  }
-}
+// ============== Utility functions ==============
 
 export interface DatabaseBackupInfo {
   fileName: string
@@ -67,8 +45,10 @@ function clearDatabaseSidecars(dbPath: string): void {
   }
 }
 
+// ============== Public API ==============
+
 export function getDbDirectory(): string {
-  const dbDir = path.join(app.getPath("userData"), "db");
+  const dbDir = path.join(app.getPath("userData"), "db")
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true })
   }
@@ -97,42 +77,34 @@ export function listDatabaseBackups(): DatabaseBackupInfo[] {
   if (!fs.existsSync(dbDir)) return []
 
   return fs.readdirSync(dbDir)
-    .filter((fileName) => isBackupName(fileName))
+    .filter(isBackupName)
     .map((fileName) => {
       const fullPath = path.join(dbDir, fileName)
       const stat = fs.statSync(fullPath)
-      return {
-        fileName,
-        createdAt: stat.mtime.toISOString(),
-        sizeBytes: stat.size,
-      }
+      return { fileName, createdAt: stat.mtime.toISOString(), sizeBytes: stat.size }
     })
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
 export async function createDatabaseBackup(): Promise<DatabaseBackupInfo> {
-  if (!db) throw new Error("Database not initialized. Call initDatabase() first.")
-
+  if (!db) throw new Error("Database not initialized")
   const dbPath = getDbPath()
   if (!fs.existsSync(dbPath)) throw new Error("Database file not found")
 
   const timestamp = formatBackupTimestamp()
-  const baseName = `backup_${timestamp}.db`
-  let fileName = baseName
+  let fileName = `backup_${timestamp}.db`
   let suffix = 1
   while (fs.existsSync(path.join(getDbDirectory(), fileName))) {
     fileName = `backup_${timestamp}_${suffix}.db`
-    suffix += 1
+    suffix++
   }
 
   const backupPath = path.join(getDbDirectory(), fileName)
-
   try {
     db.pragma("wal_checkpoint(FULL)")
   } catch (err) {
     log("warn", "backup-wal-checkpoint-failed", { error: String(err) })
   }
-
   fs.copyFileSync(dbPath, backupPath)
   const stat = fs.statSync(backupPath)
   const info = { fileName, createdAt: stat.mtime.toISOString(), sizeBytes: stat.size }
@@ -142,14 +114,9 @@ export async function createDatabaseBackup(): Promise<DatabaseBackupInfo> {
 
 export async function restoreDatabaseBackup(fileName: string): Promise<void> {
   const safeFileName = path.basename(fileName)
-  if (!isBackupName(safeFileName)) {
-    throw new Error("Invalid backup file name")
-  }
-
+  if (!isBackupName(safeFileName)) throw new Error("Invalid backup file name")
   const backupPath = path.join(getDbDirectory(), safeFileName)
-  if (!fs.existsSync(backupPath)) {
-    throw new Error("Backup file not found")
-  }
+  if (!fs.existsSync(backupPath)) throw new Error("Backup file not found")
 
   const dbPath = getDbPath()
   log("info", "backup-restore-started", { fileName: safeFileName })
@@ -163,86 +130,46 @@ export async function restoreDatabaseBackup(fileName: string): Promise<void> {
 
 export function deleteDatabaseBackup(fileName: string): void {
   const safeFileName = path.basename(fileName)
-  if (!isBackupName(safeFileName)) {
-    throw new Error("Invalid backup file name")
-  }
-
+  if (!isBackupName(safeFileName)) throw new Error("Invalid backup file name")
   const backupPath = path.join(getDbDirectory(), safeFileName)
-  if (!fs.existsSync(backupPath)) {
-    throw new Error("Backup file not found")
-  }
-
+  if (!fs.existsSync(backupPath)) throw new Error("Backup file not found")
   fs.unlinkSync(backupPath)
   log("info", "backup-deleted", { fileName: safeFileName })
 }
 
+// ---- Initialization (now fully synchronous after static import) ----
 export async function initDatabase(): Promise<void> {
   if (db) return
-  await loadSchema();
 
+  // Schema is already available via static import – no async loading needed.
   const dbPath = getDbPath()
   const isFirstLaunch = !fs.existsSync(dbPath)
 
-  try {
-    log("info", "database-open-start", { dbPath, exists: fs.existsSync(dbPath), isFirstLaunch })
-    db = new Database(dbPath)
-    log("info", "database-open-success", { dbPath })
-  } catch (err) {
-    console.error('database.initDatabase: failed to open database', err)
-    throw err
-  }
+  log("info", "database-open-start", { dbPath, exists: fs.existsSync(dbPath), isFirstLaunch })
+  db = new Database(dbPath)
+  log("info", "database-open-success", { dbPath })
 
-  try {
-    db.pragma("journal_mode = WAL")
-    db.pragma("synchronous = NORMAL")
-    db.pragma("foreign_keys = ON")
-    log("info", "database-pragmas-applied", { dbPath })
-  } catch (err) {
-    console.error('database.initDatabase: failed to set pragmas', err)
-    throw err
-  }
+  db.pragma("journal_mode = WAL")
+  db.pragma("synchronous = NORMAL")
+  db.pragma("foreign_keys = ON")
 
   if (isFirstLaunch) {
-    if (!CREATE_TABLES_SQL || !SEED_MASTER_DATA_SQL || SCHEMA_VERSION == null) {
-      const e = new Error('Schema not loaded before initializing database')
-      console.error('database.initDatabase:', e)
-      throw e
-    }
-    try {
-      db.exec(CREATE_TABLES_SQL)
-      log("info", "database-schema-created", { dbPath })
-      db.exec(SEED_MASTER_DATA_SQL)
-      log("info", "database-master-seed-applied", { dbPath })
-      db.pragma(`user_version = ${SCHEMA_VERSION}`)
-      log("info", "database-version-set", { dbPath, schemaVersion: SCHEMA_VERSION })
-    } catch (err) {
-      console.error('database.initDatabase: error during first-launch setup', err)
-      throw err
-    }
+    db.exec(CREATE_TABLES_SQL)
+    db.exec(SEED_MASTER_DATA_SQL)
+    db.pragma(`user_version = ${SCHEMA_VERSION}`)
+    log("info", "database-schema-created", { schemaVersion: SCHEMA_VERSION })
   } else {
-    try {
-      runMigrations(db)
-      log("info", "database-migrations-completed", { dbPath, schemaVersion: SCHEMA_VERSION })
-    } catch (err) {
-      console.error('database.initDatabase: migrations failed', err)
-      throw err
-    }
+    runMigrations(db)
   }
 
-  try {
-    ensureDefaultUserPreferences(db)
-    log("info", "database-default-preferences-ensured", { dbPath })
-  } catch (err) {
-    console.error('database.initDatabase: ensureDefaultUserPreferences failed', err)
-    throw err
-  }
+  ensureDefaultUserPreferences(db)
+  log("info", "database-default-preferences-ensured")
 }
 
 function runMigrations(database: Database.Database): void {
-  database.exec(CREATE_TABLES_SQL!)
-
+  database.exec(CREATE_TABLES_SQL)
   const currentVersion = database.pragma("user_version", { simple: true }) as number
-  if (currentVersion < (SCHEMA_VERSION!)) {
+  if (currentVersion < SCHEMA_VERSION) {
     addColumnsIfMissing(database)
     database.pragma(`user_version = ${SCHEMA_VERSION}`)
   }
@@ -250,7 +177,7 @@ function runMigrations(database: Database.Database): void {
 
 function addColumnsIfMissing(database: Database.Database): void {
   const settingsCols = database.prepare("PRAGMA table_info(system_settings)").all() as { name: string }[]
-  const colNames = new Set(settingsCols.map((c) => c.name))
+  const colNames = new Set(settingsCols.map(c => c.name))
 
   const newCols: [string, string][] = [
     ["number_format", "TEXT NOT NULL DEFAULT 'en-US'"],

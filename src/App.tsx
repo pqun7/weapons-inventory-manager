@@ -7,6 +7,10 @@ import { CurrencyProvider } from "@/lib/currency-context"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Spinner } from "@/components/ui/spinner"
 import type { Language } from "@/lib/i18n/translations"
+import { I18nProvider } from "@/lib/i18n"                  
+             // <-- new import
+
+import { ErrorBoundary } from "@/components/ErrorBoundary"
 
 const DashboardPage = lazy(() => import("@/pages/dashboard").then((m) => ({ default: m.DashboardPage })))
 const InventoryPage = lazy(() => import("@/pages/inventory").then((m) => ({ default: m.InventoryPage })))
@@ -83,6 +87,7 @@ export type AppProps = {
   onThemeChange: (theme: "dark" | "light" | "system") => void
   onDisplayCurrencyChange: (code: string) => void
   onReportViewModeChange: (mode: "original" | "accounting" | "display") => void
+  onLangChange: (lang: Language) => void
 }
 
 function AppContent({
@@ -95,33 +100,38 @@ function AppContent({
   onThemeChange,
   onDisplayCurrencyChange,
   onReportViewModeChange,
+  onLangChange,
 }: AppProps) {
   const dir = lang === "ar" ? "rtl" : "ltr"
   return (
     <ThemeProvider theme={theme} onThemeChange={onThemeChange}>
-      <CurrencyProvider
-        locale={locale}
-        displayCurrency={displayCurrency}
-        reportViewMode={reportViewMode}
-        onDisplayCurrencyChange={onDisplayCurrencyChange}
-        onReportViewModeChange={onReportViewModeChange}
-      >
-        <DirectionProvider dir={dir}>
-          <SidebarProvider>
-            <Suspense fallback={null}>
-              <AppSidebar />
-              <SidebarInset>
-                <AppHeader />
-                <div className="flex-1 overflow-auto scrollbar-thin">
-                  {ready ? <PageRouter /> : <BootPlaceholder />}
-                </div>
-              </SidebarInset>
-              <CommandBar />
-            </Suspense>
-            <Toaster position={dir === "rtl" ? "bottom-left" : "bottom-right"} richColors />
-          </SidebarProvider>
-        </DirectionProvider>
-      </CurrencyProvider>
+      {/* I18nProvider must be placed high enough to cover all components that use useI18n */}
+      <I18nProvider lang={lang} onLangChange={onLangChange}>
+        <CurrencyProvider
+          locale={locale}
+          displayCurrency={displayCurrency}
+          reportViewMode={reportViewMode}
+          onDisplayCurrencyChange={onDisplayCurrencyChange}
+          onReportViewModeChange={onReportViewModeChange}
+        >
+          <DirectionProvider dir={dir}>
+            <SidebarProvider>
+              <Suspense fallback={<div className="p-4">Loading sidebar...</div>}> {/* better fallback */}
+                <AppSidebar />
+                <SidebarInset>
+                  <AppHeader />
+                  <div className="flex-1 overflow-auto scrollbar-thin">
+                    {ready ? <PageRouter /> : <BootPlaceholder />}
+                  </div>
+                </SidebarInset>
+                <CommandBar />
+              </Suspense>
+              {/* Toaster is now inside I18nProvider, so useI18n will work */}
+              <Toaster position={dir === "rtl" ? "bottom-left" : "bottom-right"} richColors />
+            </SidebarProvider>
+          </DirectionProvider>
+        </CurrencyProvider>
+      </I18nProvider>
     </ThemeProvider>
   )
 }
@@ -134,7 +144,9 @@ export function App(props: AppProps) {
 
   return (
     <NavProvider>
-      <AppContent {...props} />
+      <ErrorBoundary>
+        <AppContent {...props} />
+      </ErrorBoundary>
     </NavProvider>
   )
 }
