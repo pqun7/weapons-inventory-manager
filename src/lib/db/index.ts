@@ -7,6 +7,7 @@ import type { UserPreferences } from "../types.js"
 
 declare const window: any
 
+
 function isElectron(): boolean {
   return typeof window !== "undefined" && typeof (window as any).electronAPI?.db?.getAll === "function"
 }
@@ -17,7 +18,7 @@ function getElectronAPI(): any {
 }
 
 export async function initDb(): Promise<void> {
-  if (!isElectron()) throw new Error("initDb: Electron environment required")
+if (!isElectron()) throw new Error("initDb: Electron environment required")
 }
 
 export function isDbReady(): boolean {
@@ -247,6 +248,11 @@ export async function dbToggleCurrencyActive(code: string, isActive: boolean): P
 
 export async function dbRecordRateAuditLog(code: string, oldRate: number | null, newRate: number | null, changedBy: string, reason: string, changedAt: string): Promise<void> {
   await getElectronAPI().currency.recordRateAuditLog(code, oldRate, newRate, changedBy, reason, changedAt)
+}
+
+// ✅ NEW: Delete a currency and all associated data
+export async function dbDeleteCurrency(code: string): Promise<void> {
+  await getElectronAPI().currency.delete(code)
 }
 
 export async function seedDemoDataIfNeeded(): Promise<void> {

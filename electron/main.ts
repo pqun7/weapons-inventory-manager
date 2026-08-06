@@ -12,7 +12,8 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 // Determine dev mode more robustly than VITE_DEV_SERVER_URL
-const isDev = !app.isPackaged && !!process.env.VITE_DEV_SERVER_URL
+const devServerUrl = process.env.RSBUILD_DEV_SERVER_URL;
+const isDev = !!devServerUrl;
 
 const bootStart = performance.now()
 function logBoot(stage: string): void {
@@ -21,7 +22,6 @@ function logBoot(stage: string): void {
 }
 
 let mainWindow: BrowserWindow | null = null
-
 function createWindow(): BrowserWindow {
   logBoot("createWindow:start")
 
@@ -47,8 +47,6 @@ function createWindow(): BrowserWindow {
     },
   })
 
-
-
   // Show window when ready
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show()
@@ -63,41 +61,35 @@ function createWindow(): BrowserWindow {
 
   // Dev-only error/log forwarding (cleaned up on window close)
   if (isDev) {
+    // 1. حساب الرابط مع القيمة الافتراضية
+    const DEV_SERVER_URL =
+      process.env.RSBUILD_DEV_SERVER_URL ||
+      process.env.DEV_SERVER_URL ||
+      "http://localhost:3000";
+
     const onFailLoad = (_: Electron.Event, code: number, desc: string) =>
       console.error("did-fail-load:", code, desc)
     const onRenderGone = (_: Electron.Event, details: Electron.RenderProcessGoneDetails) =>
       console.error("render-process-gone:", details)
     const onConsole = (_: Electron.Event, level: number, message: string) =>
-      console.log("Renderer:", message)
+      console.log(`[Renderer L${level}]:`, message)
+    const onFinishLoad = () => console.log("Renderer loaded")
 
     mainWindow.webContents.on("did-fail-load", onFailLoad)
     mainWindow.webContents.on("render-process-gone", onRenderGone)
     mainWindow.webContents.on("console-message", onConsole)
+    mainWindow.webContents.on("did-finish-load", onFinishLoad)
 
-    mainWindow.webContents.on("did-finish-load", () => {
-      console.log("Renderer loaded")
-    })
-
-    mainWindow.webContents.on("did-fail-load", (_, code, desc) => {
-      console.error("did-fail-load", code, desc)
-    })
-
-    mainWindow.webContents.on("render-process-gone", (_, details) => {
-    console.error("render-process-gone", details)
-    })
-
-    mainWindow.webContents.on("console-message", (_, level, message) => {
-      console.log("[Renderer]", level, message)
-    })
-
-    // Remove listeners when window is closed to avoid memory leaks on recreation
+    // Remove listeners when window is closed to avoid memory leaks
     mainWindow.once("closed", () => {
       mainWindow?.webContents.removeListener("did-fail-load", onFailLoad)
       mainWindow?.webContents.removeListener("render-process-gone", onRenderGone)
       mainWindow?.webContents.removeListener("console-message", onConsole)
-  })
+      mainWindow?.webContents.removeListener("did-finish-load", onFinishLoad)
+    })
 
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL!)
+    // 2. ✅ استخدام المتغير DEV_SERVER_URL المحسوب
+    mainWindow.loadURL(devServerUrl!)
     mainWindow.webContents.openDevTools({ mode: "detach" })
     logBoot("window:loadURL")
   } else {
@@ -105,7 +97,7 @@ function createWindow(): BrowserWindow {
     const indexPath = path.resolve(process.cwd(), "dist/index.html")
 
     mainWindow.loadFile(indexPath)
-    mainWindow.webContents.openDevTools({ mode: "detach" })
+    // mainWindow.webContents.openDevTools({ mode: "detach" })
     logBoot("window:loadFile")
   }
 

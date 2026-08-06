@@ -7,8 +7,8 @@ import { CurrencyProvider } from "@/lib/currency-context"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Spinner } from "@/components/ui/spinner"
 import type { Language } from "@/lib/i18n/translations"
-import { I18nProvider } from "@/lib/i18n"                  
-             // <-- new import
+import { I18nProvider } from "@/lib/i18n"
+// <-- new import
 
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 
@@ -116,7 +116,13 @@ function AppContent({
         >
           <DirectionProvider dir={dir}>
             <SidebarProvider>
-              <Suspense fallback={<div className="p-4">Loading sidebar...</div>}> {/* better fallback */}
+              <Suspense
+                fallback={
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
+                    <Spinner className="size-8 text-primary" />
+                  </div>
+                }
+              >
                 <AppSidebar />
                 <SidebarInset>
                   <AppHeader />

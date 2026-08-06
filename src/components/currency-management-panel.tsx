@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react"
 import {
-  Coins, RefreshCw, Plus, AlertTriangle, History, ToggleLeft, ToggleRight,
+  Coins, RefreshCw, Plus, AlertTriangle, History, ToggleLeft, ToggleRight, Trash2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -36,9 +36,15 @@ export function CurrencyManagementPanel() {
   const [newPrecision, setNewPrecision] = useState("2")
   const [newRate, setNewRate] = useState("")
 
+  // ✅ حالة نافذة تأكيد الحذف
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [currencyToDelete, setCurrencyToDelete] = useState<CurrencyInfo | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  // ✅ استخدام getAllCurrencies() لعرض جميع العملات في لوحة الإدارة
   const refreshData = useCallback(async () => {
     await CurrencyService.load()
-    setCurrencies(CurrencyService.getCurrencies())
+    setCurrencies(CurrencyService.getAllCurrencies())
     setOverrides(CurrencyService.getOverrides())
     const log = await CurrencyService.getAuditLog(50)
     setAuditLog(log)
@@ -47,7 +53,7 @@ export function CurrencyManagementPanel() {
   useEffect(() => {
     refreshData()
     const unsub = CurrencyService.subscribe(() => {
-      setCurrencies(CurrencyService.getCurrencies())
+      setCurrencies(CurrencyService.getAllCurrencies())
       setOverrides(CurrencyService.getOverrides())
     })
     return unsub
@@ -129,6 +135,33 @@ export function CurrencyManagementPanel() {
     }
   }
 
+  // ✅ معالج فتح نافذة تأكيد الحذف
+  const handleDeleteRequest = (currency: CurrencyInfo) => {
+    if (currency.isoCode === "USD") {
+      toast.error(t("settings.cannotDeleteUSD"))
+      return
+    }
+    setCurrencyToDelete(currency)
+    setDeleteDialogOpen(true)
+  }
+
+  // ✅ معالج تنفيذ الحذف
+  const handleDeleteConfirm = async () => {
+    if (!currencyToDelete) return
+    setDeleting(true)
+    try {
+      await CurrencyService.deleteCurrency(currencyToDelete.isoCode)
+      toast.success(`${currencyToDelete.isoCode} ${t("settings.currencyDeleted")}`)
+      setDeleteDialogOpen(false)
+      setCurrencyToDelete(null)
+      await refreshData()
+    } catch (err) {
+      toast.error(`${t("settings.currencyDeleteFailed")}: ${err instanceof Error ? err.message : "Unknown"}`)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const getOverride = (code: string) => overrides.find((o) => o.currencyCode === code)
 
   if (!isAdmin) {
@@ -143,7 +176,7 @@ export function CurrencyManagementPanel() {
 
   return (
     <div className="flex flex-col gap-3">
-      
+
       <Tabs defaultValue="registry">
         <TabsList className="h-8">
           <TabsTrigger value="registry" className="text-xs"><Coins className="size-3" /> {t("settings.currencyRegistry")}</TabsTrigger>
@@ -209,31 +242,64 @@ export function CurrencyManagementPanel() {
                       <TableHead className="h-8 text-[10px]">{t("settings.lastKnownRate")}</TableHead>
                       <TableHead className="h-8 text-[10px]">{t("settings.lastUpdated")}</TableHead>
                       <TableHead className="h-8 text-[10px]">{t("common.status")}</TableHead>
-                      <TableHead className="h-8 text-[10px]"></TableHead>
+                      <TableHead className="h-8 text-[10px]">{t("common.actions")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {currencies.map((c) => (
-                      <TableRow key={c.isoCode}>
-                        <TableCell className="py-1.5 text-[11px] font-mono font-medium">{c.isoCode}</TableCell>
-                        <TableCell className="py-1.5 text-[11px]">{c.name}</TableCell>
-                        <TableCell className="py-1.5 text-[11px]">{c.symbol}</TableCell>
-                        <TableCell className="py-1.5 text-[11px] tabular-nums">{c.decimalPrecision}</TableCell>
-                        <TableCell className="py-1.5 text-[11px] tabular-nums">{c.lastKnownRate.toFixed(4)}</TableCell>
-                        <TableCell className="py-1.5 text-[11px] text-muted-foreground">
-                          {c.lastRateUpdatedAt ? new Date(c.lastRateUpdatedAt).toLocaleDateString() : "—"}
-                        </TableCell>
-                        <TableCell className="py-1.5">
-                          <Switch
-                            checked={c.isActive}
-                            onCheckedChange={() => handleToggleActive(c.isoCode, c.isActive)}
-                          />
-                        </TableCell>
-                        <TableCell className="py-1.5">
-                          {c.isoCode === "USD" && <Badge variant="secondary" className="text-[9px]">{t("settings.accounting")}</Badge>}
+                    {currencies.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="py-6 text-center text-xs text-muted-foreground">
+                          {t("settings.noCurrencies")}
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      currencies.map((c) => (
+                        <TableRow key={c.isoCode} className={!c.isActive ? "opacity-50 bg-muted/20" : ""}>
+                          <TableCell className="py-1.5 text-[11px] font-mono font-medium">{c.isoCode}</TableCell>
+                          <TableCell className="py-1.5 text-[11px]">{c.name}</TableCell>
+                          <TableCell className="py-1.5 text-[11px]">{c.symbol}</TableCell>
+                          <TableCell className="py-1.5 text-[11px] tabular-nums">{c.decimalPrecision}</TableCell>
+                          <TableCell className="py-1.5 text-[11px] tabular-nums">{c.lastKnownRate.toFixed(4)}</TableCell>
+                          <TableCell className="py-1.5 text-[11px] text-muted-foreground">
+                            {c.lastRateUpdatedAt ? new Date(c.lastRateUpdatedAt).toLocaleDateString() : "—"}
+                          </TableCell>
+                          <TableCell className="py-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <Switch
+                                checked={c.isActive}
+                                onCheckedChange={() => handleToggleActive(c.isoCode, c.isActive)}
+                              />
+                              {c.isActive ? (
+                                <Badge variant="default" className="text-[9px] h-4 px-1 bg-emerald-500/15 text-emerald-600 border-emerald-500/30">
+                                  {t("common.active")}
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-[9px] h-4 px-1">
+                                  {t("common.inactive")}
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-1.5">
+                            <div className="flex items-center gap-1">
+                              {c.isoCode === "USD" ? (
+                                <Badge variant="secondary" className="text-[9px]">{t("settings.accounting")}</Badge>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  className="size-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                  onClick={() => handleDeleteRequest(c)}
+                                  title={t("common.delete")}
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </div>
@@ -280,8 +346,11 @@ export function CurrencyManagementPanel() {
                       const rate = CurrencyService.getRate(c.isoCode)
                       const source = CurrencyService.getRateSource(c.isoCode)
                       return (
-                        <TableRow key={c.isoCode}>
-                          <TableCell className="py-1.5 text-[11px] font-mono font-medium">{c.isoCode}</TableCell>
+                        <TableRow key={c.isoCode} className={!c.isActive ? "opacity-50 bg-muted/20" : ""}>
+                          <TableCell className="py-1.5 text-[11px] font-mono font-medium">
+                            {c.isoCode}
+                            {!c.isActive && <span className="ml-1 text-[9px] text-muted-foreground">({t("common.inactive")})</span>}
+                          </TableCell>
                           <TableCell className="py-1.5 text-[11px] tabular-nums">{rate.toFixed(4)}</TableCell>
                           <TableCell className="py-1.5">
                             <Badge variant="outline" className="text-[9px]">
@@ -413,6 +482,46 @@ export function CurrencyManagementPanel() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* ✅ نافذة تأكيد الحذف */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-sm flex items-center gap-2">
+              <Trash2 className="size-4 text-destructive" />
+              {t("settings.deleteCurrency")}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {t("settings.deleteCurrencyConfirm")}{" "}
+              <span className="font-bold text-foreground">
+                {currencyToDelete?.isoCode} — {currencyToDelete?.name}
+              </span>
+              {t("settings.deleteCurrencyWarning")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setDeleteDialogOpen(false)
+                setCurrencyToDelete(null)
+              }}
+              disabled={deleting}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+            >
+              {deleting ? t("common.deleting") : t("common.delete")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -8,7 +8,6 @@ import {
   Building2,
   ScrollText,
   Settings,
-  Crosshair,
 } from "lucide-react"
 
 import {
@@ -18,7 +17,6 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -68,7 +66,7 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon" side={dir === "rtl" ? "right" : "left"}>
-      <SidebarHeader>
+      {/* <SidebarHeader>
         <div className="flex h-12 items-center gap-2 px-2">
           <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Crosshair className="size-5" />
@@ -78,7 +76,7 @@ export function AppSidebar() {
             <span className="text-xs text-muted-foreground">{t("app.version")}</span>
           </div>
         </div>
-      </SidebarHeader>
+      </SidebarHeader> */}
 
       <SidebarContent>
         {NAV_GROUPS.map((group) => (

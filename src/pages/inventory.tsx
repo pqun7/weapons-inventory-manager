@@ -223,9 +223,8 @@ export function InventoryPage() {
                 <button
                   key={status}
                   onClick={() => setStatusFilter(status)}
-                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                    statusFilter === status ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-accent"
-                  }`}
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${statusFilter === status ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-accent"
+                    }`}
                 >
                   {status !== "All" && <span className={`size-1.5 rounded-full ${statusDotClass(status as WeaponStatus)}`} />}
                   {status === "All" ? t("common.all") : t(`status.${status}`)} ({statusCounts[status] ?? 0})

@@ -1,0 +1,7 @@
+{
+    "watch": [
+        "electron"
+    ],
+    "ext": "ts,js,json",
+    "exec": "tsc -p tsconfig.electron.json && electron ."
+}

@@ -157,24 +157,24 @@ export function SalesPage() {
   };
 
   // توسيع صفوف الذخيرة
-const [expandedAmmoIds, setExpandedAmmoIds] = useState(new Set());
-const toggleExpandAmmo = (id: string) => {
-  setExpandedAmmoIds((prev) => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  });
-};
+  const [expandedAmmoIds, setExpandedAmmoIds] = useState(new Set());
+  const toggleExpandAmmo = (id: string) => {
+    setExpandedAmmoIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
 
-// توسيع صفوف الإكسسوارات
-const [expandedAccessoryIds, setExpandedAccessoryIds] = useState(new Set());
-const toggleExpandAccessory = (id: string) => {
-  setExpandedAccessoryIds((prev) => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  });
-};
+  // توسيع صفوف الإكسسوارات
+  const [expandedAccessoryIds, setExpandedAccessoryIds] = useState(new Set());
+  const toggleExpandAccessory = (id: string) => {
+    setExpandedAccessoryIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
   const serialOptions = useMemo(
     () => weapons.filter((w) => w.status === "Available" && !selectedWeapons.some((sw) => sw.id === w.id)).map((w) => w.serialNumber),
     [weapons, selectedWeapons]
@@ -292,7 +292,7 @@ const toggleExpandAccessory = (id: string) => {
 
   const handleModeChange = (m: SaleMode) => { setMode(m); setSelectedCustomerId(""); setCustomPrices({}) }
 
-    const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     // استخراج الاسم بدون الامتداد
@@ -516,8 +516,8 @@ const toggleExpandAccessory = (id: string) => {
                     className={cn(
                       "flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-medium transition-all duration-200",
                       isCompleted ? "bg-primary text-primary-foreground cursor-pointer hover:bg-primary/80" :
-                      isCurrent ? "bg-primary text-primary-foreground ring-2 ring-primary/30 shadow-sm shadow-primary/20" :
-                      "bg-muted text-muted-foreground"
+                        isCurrent ? "bg-primary text-primary-foreground ring-2 ring-primary/30 shadow-sm shadow-primary/20" :
+                          "bg-muted text-muted-foreground"
                     )}
                     title={t(s.labelKey)}
                   >
@@ -534,1225 +534,1149 @@ const toggleExpandAccessory = (id: string) => {
           {/* Scrollable content */}
           <div className="flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar" style={{ maxHeight: "calc(85vh - 220px)" }}>
             {/* STEP 1: Customer */}
-{step === 1 && (
-  <div className="space-y-6">
-    {/* Sale Mode - Segmented Control style */}
-    <div className="space-y-2">
-      <Label className="text-xs font-medium">{t('sales.saleMode')}</Label>
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => handleModeChange("Retail")}
-          className={cn(
-  "flex items-center gap-2 rounded-lg border border-slate-300 bg-background px-4 py-3 text-left shadow-sm transition-all duration-200 mb-4",
-  mode === "Retail"
-    ? "border-primary bg-primary/5 shadow-md ring-1 ring-primary/20"
-    : "hover:border-slate-400 hover:shadow-md"
-)}
-        >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/1 0">
-            <ShoppingCart className="size-4 text-primary" />
-          </div>
-          <div>
-            <div className="text-sm font-semibold">{t('sales.retail')}</div>
-            <div className="text-[10px] text-muted-foreground">{t('sales.retailDesc') || 'Individual buyer'}</div>
-          </div>
-        </button>
+            {step === 1 && (
+              <div className="space-y-6">
+                {/* Sale Mode - Segmented Control style */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">{t('sales.saleMode')}</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleModeChange("Retail")}
+                      className={cn(
+                        "flex items-center gap-2 rounded-lg border border-slate-300 bg-background px-4 py-3 text-left shadow-sm transition-all duration-200 mb-4",
+                        mode === "Retail"
+                          ? "border-primary bg-primary/5 shadow-md ring-1 ring-primary/20"
+                          : "hover:border-slate-400 hover:shadow-md"
+                      )}
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/1 0">
+                        <ShoppingCart className="size-4 text-primary" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-semibold">{t('sales.retail')}</div>
+                        <div className="text-[10px] text-muted-foreground">{t('sales.retailDesc') || 'Individual buyer'}</div>
+                      </div>
+                    </button>
 
-        <button
-          type="button"
-          onClick={() => handleModeChange("Wholesale")}
-         className={cn(
-  "flex items-center gap-2 rounded-lg border border-slate-300 bg-background px-4 py-3 text-left shadow-sm transition-all duration-200 mb-4",
-  mode === "Wholesale"
-    ? "border-primary bg-primary/5 shadow-md ring-1 ring-primary/20"
-    : "hover:border-slate-400 hover:shadow-md"
-)}
-        >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-            <TrendingUp className="size-4 text-primary" />
-          </div>
-          <div>
-            <div className="text-sm font-semibold">{t('sales.wholesale')}</div>
-            <div className="text-[10px] text-muted-foreground">{t('sales.wholesaleDesc') || 'Business buyer'}</div>
-          </div>
-        </button>
-      </div>
-    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleModeChange("Wholesale")}
+                      className={cn(
+                        "flex items-center gap-2 rounded-lg border border-slate-300 bg-background px-4 py-3 text-left shadow-sm transition-all duration-200 mb-4",
+                        mode === "Wholesale"
+                          ? "border-primary bg-primary/5 shadow-md ring-1 ring-primary/20"
+                          : "hover:border-slate-400 hover:shadow-md"
+                      )}
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                        <TrendingUp className="size-4 text-primary" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-semibold">{t('sales.wholesale')}</div>
+                        <div className="text-[10px] text-muted-foreground">{t('sales.wholesaleDesc') || 'Business buyer'}</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
 
-    {/* Customer Section */}
-    <div className="space-y-3">
-      <Label className="text-xs font-medium">{t('sales.customer')}</Label>
+                {/* Customer Section */}
+                <div className="space-y-3">
+                  <Label className="text-xs font-medium">{t('sales.customer')}</Label>
 
-      {/* Toggle between Existing / New */}
-      <div className="flex items-center gap-1 rounded-lg bg-muted p-0.5 w-fit">
-        <button
-          type="button"
-          onClick={() => setBuyerType("existing")}
-          className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-            buyerType === "existing"
-              ? "bg-background shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <Search className="size-3" />
-          {t('sales.existing')}
-        </button>
-        <button
-          type="button"
-          onClick={() => setBuyerType("new")}
-          className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-            buyerType === "new"
-              ? "bg-background shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <UserPlus className="size-3" />
-          {t('sales.quickAdd')}
-        </button>
-      </div>
+                  {/* Toggle between Existing / New */}
+                  <div className="flex items-center gap-1 rounded-lg bg-muted p-0.5 w-fit">
+                    <button
+                      type="button"
+                      onClick={() => setBuyerType("existing")}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                        buyerType === "existing"
+                          ? "bg-background shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <Search className="size-3" />
+                      {t('sales.existing')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBuyerType("new")}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                        buyerType === "new"
+                          ? "bg-background shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <UserPlus className="size-3" />
+                      {t('sales.quickAdd')}
+                    </button>
+                  </div>
 
-      {/* Existing Customer Combo */}
-      {buyerType === "existing" && (
-        <div className="pt-1">
-          {buyerOptions.length > 0 ? (
-            <SearchableCombobox
-              value={buyerDisplayValue}
-              onValueChange={(val) => {
-                const buyer = buyerOptions.find(
-                  (b) => `${b.name} — ${b.phone}` === val
-                );
-                setSelectedCustomerId(buyer ? buyer.id : "");
-              }}
-              options={buyerComboboxOptions}
-              placeholder={t('sales.selectBuyer', {
-                mode:
-                  mode === "Wholesale"
-                    ? t('sales.wholesaleBuyer')
-                    : t('sales.buyer'),
-              })}
-              searchPlaceholder={t('sales.searchCustomers')}
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed py-6 text-center">
-              <UserPlus className="size-5 text-muted-foreground/50" />
-              <p className="text-xs text-muted-foreground px-4">
-                {t('sales.noSavedBuyers', {
-                  mode:
-                    mode === "Wholesale"
-                      ? t('sales.wholesaleBuyer') + 's'
-                      : t('sales.buyer') + 's',
-                })}
-              </p>
-              <Button
-                size="xs"
-                variant="outline"
-                onClick={() => setBuyerType("new")}
-              >
-                {t('sales.createFirst')}
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* New Customer Quick Form */}
-      {buyerType === "new" && (
-        <div className="grid gap-3 sm:grid-cols-2 pt-1">
-          <div className="sm:col-span-2">
-            <Label className="text-[11px]">{t('sales.fullName')}</Label>
-            <Input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder={t('sales.fullName')}
-              className="h-9 text-sm"
-            />
-          </div>
-          <div>
-            <Label className="text-[11px]">{t('sales.phone')}</Label>
-            <Input
-              value={newPhone}
-              onChange={(e) => setNewPhone(e.target.value)}
-              placeholder={t('sales.phone')}
-              className="h-9 text-sm"
-            />
-          </div>
-          <div>
-            <Label className="text-[11px]">{t('sales.emailOptional')}</Label>
-            <Input
-              value={newEmail}
-              onChange={(e) => setNewEmail(e.target.value)}
-              placeholder={t('sales.emailOptional')}
-              className="h-9 text-sm"
-            />
-          </div>
-          <div className="sm:col-span-2 flex items-start gap-2 rounded-md bg-primary/5 px-3 py-2.5 text-[10px] text-muted-foreground">
-            <Info className="size-3.5 mt-0.5 shrink-0 text-primary/70" />
-            <span>
-              {t('sales.willBeSavedAs', {
-                mode:
-                  mode === "Wholesale"
-                    ? t('sales.wholesaleBuyer')
-                    : t('sales.buyer'),
-              })}
-            </span>
-          </div>
-        </div>
-      )}
-    </div>
-  </div>
-)}
-{/* STEP 2: Weapons */}
-{step === 2 && (
-  <div className="flex flex-col gap-3">
-    {/* شريط البحث السريع بالرقم التسلسلي */}
-    <div className="flex items-center gap-2">
-      <div className="relative flex-1">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-        <Input
-          placeholder={t('sales.searchSerial')}
-          value={serialInput}
-          onChange={(e) => setSerialInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleSerialAdd())}
-          list="serial-list"
-          className="pl-8 h-8 text-xs"
-        />
-      </div>
-      <Button size="sm" onClick={handleSerialAdd} className="h-8 text-xs gap-1">
-        <Plus className="size-3.5" /> {t('common.add')}
-      </Button>
-      <datalist id="serial-list">
-        {serialOptions.map((s) => <option key={s} value={s} />)}
-      </datalist>
-    </div>
-
-    <div className="grid gap-3 lg:grid-cols-2">
-      {/* القائمة اليسرى: الأسلحة المتاحة */}
-      <div className="border rounded-lg bg-card overflow-hidden flex flex-col">
-        <div className="px-4 py-2.5 border-b flex items-center justify-between">
-          <h3 className="text-xs font-semibold">{t('sales.availableWeapons')}</h3>
-          <span className="text-[10px] text-muted-foreground">
-            {availableWeapons.length} {t('sales.available')}
-          </span>
-        </div>
-        <div className="p-2">
-          <Input
-            placeholder={t('sales.searchSerial')}
-            value={weaponSearch}
-            onChange={(e) => setWeaponSearch(e.target.value)}
-            className="h-7 text-xs"
-          />
-        </div>
-        <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ maxHeight: "320px" }}>
-          <table className="w-full">
-            <thead className="sticky top-0 bg-muted/30">
-              <tr className="text-[10px] text-muted-foreground">
-                <th className="text-left font-medium px-3 py-1.5">{t('sales.weapon')}</th>
-                <th className="text-left font-medium px-3 py-1.5">{t('sales.serial')}</th>
-                <th className="text-left font-medium px-3 py-1.5">{t('sales.type')}</th>
-                <th className="text-right font-medium px-3 py-1.5">{t('sales.price')}</th>
-                <th className="px-3 py-1.5"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {availableWeapons.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="text-center py-8 text-[10px] text-muted-foreground">
-                    <Package className="size-4 mx-auto mb-1 opacity-30" />
-                    {weaponSearch ? t('sales.noWeaponsMatch') : t('sales.allInCart')}
-                  </td>
-                </tr>
-              ) : (
-                availableWeapons.slice(0, 30).map((w) => (
-                  <tr key={w.id} className="border-b border-border/30 hover:bg-muted/30 transition-colors text-xs">
-                    <td className="px-3 py-2 font-medium truncate max-w-[110px]">
-                      {w.brand} {w.model}
-                    </td>
-                    <td className="px-3 py-2 font-mono text-[10px] text-muted-foreground">
-                      {w.serialNumber}
-                    </td>
-                    <td className="px-3 py-2 text-[10px] text-muted-foreground">
-                      {w.weaponType}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-[11px] tabular-nums">
-                      {formatCurrency(modePrice(w), settings.currencySymbol)}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleAddWeapon(w)}
-                        className="h-6 px-2 text-[10px]"
-                      >
-                        <Plus className="size-3" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* القائمة اليمنى: عربة التسوق */}
-      <div className="border rounded-lg bg-card overflow-hidden flex flex-col">
-        <div className="px-4 py-2.5 border-b flex items-center justify-between">
-          <h3 className="text-xs font-semibold">{t('sales.selectedWeapons')}</h3>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-muted-foreground">
-              {selectedWeapons.length} {t('sales.items')}
-            </span>
-            {selectedWeapons.length > 0 && (
-              <Button
-                size="xs"
-                variant="ghost"
-                onClick={() => { setSelectedWeapons([]); setCustomPrices({}); }}
-                className="h-5 text-[10px] text-muted-foreground hover:text-destructive"
-              >
-                <Trash2 className="size-3 mr-1" /> {t('sales.clear')}
-              </Button>
-            )}
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ maxHeight: "320px" }}>
-          <table className="w-full">
-            <thead className="sticky top-0 bg-muted/30">
-              <tr className="text-[10px] text-muted-foreground">
-                <th className="text-left font-medium px-3 py-1.5">{t('sales.weapon')}</th>
-                <th className="text-left font-medium px-3 py-1.5">{t('sales.sellingPrice')}</th>
-                <th className="text-right font-medium px-3 py-1.5">{t('common.profit')}</th>
-                <th className="text-right font-medium px-3 py-1.5">{t('sales.total')}</th>
-                <th className="px-3 py-1.5"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {selectedWeapons.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="text-center py-8 text-[10px] text-muted-foreground">
-                    <ShoppingCart className="size-4 mx-auto mb-1 opacity-30" />
-                    {t('sales.addWeaponsFromList')}
-                  </td>
-                </tr>
-              ) : (
-                selectedWeapons.map((w) => {
-                  const custom = customPrices[w.id];
-                  const finalPrice = custom ? Number(custom) || 0 : modePrice(w);
-                  const profit = finalPrice - w.purchasePrice;
-                  const isExpanded = expandedIds.has(w.id);
-
-                  return (
-                    <Fragment key={w.id}>
-                      {/* الصف الرئيسي */}
-                      <tr className="border-b border-border/30 hover:bg-muted/20 transition-colors text-xs">
-                        <td className="px-3 py-2">
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => toggleExpand(w.id)}
-                              className="p-0.5 hover:bg-muted rounded-sm"
-                            >
-                              <ChevronDown
-                                className={cn(
-                                  "size-3 text-muted-foreground transition-transform",
-                                  isExpanded && "rotate-180"
-                                )}
-                              />
-                            </button>
-                            <div>
-                              <div className="font-medium truncate max-w-[90px]">
-                                {w.brand} {w.model}
-                              </div>
-                              <div className="font-mono text-[10px] text-muted-foreground">
-                                {w.serialNumber}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2">
-                          <Input
-                            type="number"
-                            placeholder={formatCurrency(modePrice(w), settings.currencySymbol)}
-                            value={custom ?? ""}
-                            onChange={(e) =>
-                              setCustomPrices((prev) => ({ ...prev, [w.id]: e.target.value }))
-                            }
-                            className="h-7 w-24 text-[10px] font-mono"
-                          />
-                        </td>
-                        <td className={cn(
-                          "px-3 py-2 text-right font-mono text-[11px] tabular-nums font-medium",
-                          profit >= 0 ? "text-emerald-600" : "text-red-500"
-                        )}>
-                          {formatCurrency(profit, settings.currencySymbol)}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-[11px] font-bold tabular-nums text-primary">
-                          {formatCurrency(finalPrice, settings.currencySymbol)}
-                        </td>
-                        <td className="px-3 py-2 text-center">
+                  {/* Existing Customer Combo */}
+                  {buyerType === "existing" && (
+                    <div className="pt-1">
+                      {buyerOptions.length > 0 ? (
+                        <SearchableCombobox
+                          value={buyerDisplayValue}
+                          onValueChange={(val) => {
+                            const buyer = buyerOptions.find(
+                              (b) => `${b.name} — ${b.phone}` === val
+                            );
+                            setSelectedCustomerId(buyer ? buyer.id : "");
+                          }}
+                          options={buyerComboboxOptions}
+                          placeholder={t('sales.selectBuyer', {
+                            mode:
+                              mode === "Wholesale"
+                                ? t('sales.wholesaleBuyer')
+                                : t('sales.buyer'),
+                          })}
+                          searchPlaceholder={t('sales.searchCustomers')}
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed py-6 text-center">
+                          <UserPlus className="size-5 text-muted-foreground/50" />
+                          <p className="text-xs text-muted-foreground px-4">
+                            {t('sales.noSavedBuyers', {
+                              mode:
+                                mode === "Wholesale"
+                                  ? t('sales.wholesaleBuyer') + 's'
+                                  : t('sales.buyer') + 's',
+                            })}
+                          </p>
                           <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleRemoveWeapon(w.id)}
-                            className="size-5 hover:bg-destructive/10 hover:text-destructive"
+                            size="xs"
+                            variant="outline"
+                            onClick={() => setBuyerType("new")}
                           >
+                            {t('sales.createFirst')}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* New Customer Quick Form */}
+                  {buyerType === "new" && (
+                    <div className="grid gap-3 sm:grid-cols-2 pt-1">
+                      <div className="sm:col-span-2">
+                        <Label className="text-[11px]">{t('sales.fullName')}</Label>
+                        <Input
+                          value={newName}
+                          onChange={(e) => setNewName(e.target.value)}
+                          placeholder={t('sales.fullName')}
+                          className="h-9 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-[11px]">{t('sales.phone')}</Label>
+                        <Input
+                          value={newPhone}
+                          onChange={(e) => setNewPhone(e.target.value)}
+                          placeholder={t('sales.phone')}
+                          className="h-9 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-[11px]">{t('sales.emailOptional')}</Label>
+                        <Input
+                          value={newEmail}
+                          onChange={(e) => setNewEmail(e.target.value)}
+                          placeholder={t('sales.emailOptional')}
+                          className="h-9 text-sm"
+                        />
+                      </div>
+                      <div className="sm:col-span-2 flex items-start gap-2 rounded-md bg-primary/5 px-3 py-2.5 text-[10px] text-muted-foreground">
+                        <Info className="size-3.5 mt-0.5 shrink-0 text-primary/70" />
+                        <span>
+                          {t('sales.willBeSavedAs', {
+                            mode:
+                              mode === "Wholesale"
+                                ? t('sales.wholesaleBuyer')
+                                : t('sales.buyer'),
+                          })}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {/* STEP 2: Weapons */}
+            {step === 2 && (
+              <div className="flex flex-col gap-3">
+                {/* شريط البحث السريع بالرقم التسلسلي */}
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder={t('sales.searchSerial')}
+                      value={serialInput}
+                      onChange={(e) => setSerialInput(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleSerialAdd())}
+                      list="serial-list"
+                      className="pl-8 h-8 text-xs"
+                    />
+                  </div>
+                  <Button size="sm" onClick={handleSerialAdd} className="h-8 text-xs gap-1">
+                    <Plus className="size-3.5" /> {t('common.add')}
+                  </Button>
+                  <datalist id="serial-list">
+                    {serialOptions.map((s) => <option key={s} value={s} />)}
+                  </datalist>
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {/* القائمة اليسرى: الأسلحة المتاحة */}
+                  <div className="border rounded-lg bg-card overflow-hidden flex flex-col">
+                    <div className="px-4 py-2.5 border-b flex items-center justify-between">
+                      <h3 className="text-xs font-semibold">{t('sales.availableWeapons')}</h3>
+                      <span className="text-[10px] text-muted-foreground">
+                        {availableWeapons.length} {t('sales.available')}
+                      </span>
+                    </div>
+                    <div className="p-2">
+                      <Input
+                        placeholder={t('sales.searchSerial')}
+                        value={weaponSearch}
+                        onChange={(e) => setWeaponSearch(e.target.value)}
+                        className="h-7 text-xs"
+                      />
+                    </div>
+                    <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ maxHeight: "320px" }}>
+                      <table className="w-full">
+                        <thead className="sticky top-0 bg-muted/30">
+                          <tr className="text-[10px] text-muted-foreground">
+                            <th className="text-left font-medium px-3 py-1.5">{t('sales.weapon')}</th>
+                            <th className="text-left font-medium px-3 py-1.5">{t('sales.serial')}</th>
+                            <th className="text-left font-medium px-3 py-1.5">{t('sales.type')}</th>
+                            <th className="text-right font-medium px-3 py-1.5">{t('sales.price')}</th>
+                            <th className="px-3 py-1.5"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {availableWeapons.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="text-center py-8 text-[10px] text-muted-foreground">
+                                <Package className="size-4 mx-auto mb-1 opacity-30" />
+                                {weaponSearch ? t('sales.noWeaponsMatch') : t('sales.allInCart')}
+                              </td>
+                            </tr>
+                          ) : (
+                            availableWeapons.slice(0, 30).map((w) => (
+                              <tr key={w.id} className="border-b border-border/30 hover:bg-muted/30 transition-colors text-xs">
+                                <td className="px-3 py-2 font-medium truncate max-w-[110px]">
+                                  {w.brand} {w.model}
+                                </td>
+                                <td className="px-3 py-2 font-mono text-[10px] text-muted-foreground">
+                                  {w.serialNumber}
+                                </td>
+                                <td className="px-3 py-2 text-[10px] text-muted-foreground">
+                                  {w.weaponType}
+                                </td>
+                                <td className="px-3 py-2 text-right font-mono text-[11px] tabular-nums">
+                                  {formatCurrency(modePrice(w), settings.currencySymbol)}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleAddWeapon(w)}
+                                    className="h-6 px-2 text-[10px]"
+                                  >
+                                    <Plus className="size-3" />
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* القائمة اليمنى: عربة التسوق */}
+                  <div className="border rounded-lg bg-card overflow-hidden flex flex-col">
+                    <div className="px-4 py-2.5 border-b flex items-center justify-between">
+                      <h3 className="text-xs font-semibold">{t('sales.selectedWeapons')}</h3>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-muted-foreground">
+                          {selectedWeapons.length} {t('sales.items')}
+                        </span>
+                        {selectedWeapons.length > 0 && (
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            onClick={() => { setSelectedWeapons([]); setCustomPrices({}); }}
+                            className="h-5 text-[10px] text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="size-3 mr-1" /> {t('sales.clear')}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ maxHeight: "320px" }}>
+                      <table className="w-full">
+                        <thead className="sticky top-0 bg-muted/30">
+                          <tr className="text-[10px] text-muted-foreground">
+                            <th className="text-left font-medium px-3 py-1.5">{t('sales.weapon')}</th>
+                            <th className="text-left font-medium px-3 py-1.5">{t('sales.sellingPrice')}</th>
+                            <th className="text-right font-medium px-3 py-1.5">{t('common.profit')}</th>
+                            <th className="text-right font-medium px-3 py-1.5">{t('sales.total')}</th>
+                            <th className="px-3 py-1.5"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedWeapons.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="text-center py-8 text-[10px] text-muted-foreground">
+                                <ShoppingCart className="size-4 mx-auto mb-1 opacity-30" />
+                                {t('sales.addWeaponsFromList')}
+                              </td>
+                            </tr>
+                          ) : (
+                            selectedWeapons.map((w) => {
+                              const custom = customPrices[w.id];
+                              const finalPrice = custom ? Number(custom) || 0 : modePrice(w);
+                              const profit = finalPrice - w.purchasePrice;
+                              const isExpanded = expandedIds.has(w.id);
+
+                              return (
+                                <Fragment key={w.id}>
+                                  {/* الصف الرئيسي */}
+                                  <tr className="border-b border-border/30 hover:bg-muted/20 transition-colors text-xs">
+                                    <td className="px-3 py-2">
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          onClick={() => toggleExpand(w.id)}
+                                          className="p-0.5 hover:bg-muted rounded-sm"
+                                        >
+                                          <ChevronDown
+                                            className={cn(
+                                              "size-3 text-muted-foreground transition-transform",
+                                              isExpanded && "rotate-180"
+                                            )}
+                                          />
+                                        </button>
+                                        <div>
+                                          <div className="font-medium truncate max-w-[90px]">
+                                            {w.brand} {w.model}
+                                          </div>
+                                          <div className="font-mono text-[10px] text-muted-foreground">
+                                            {w.serialNumber}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      <Input
+                                        type="number"
+                                        placeholder={formatCurrency(modePrice(w), settings.currencySymbol)}
+                                        value={custom ?? ""}
+                                        onChange={(e) =>
+                                          setCustomPrices((prev) => ({ ...prev, [w.id]: e.target.value }))
+                                        }
+                                        className="h-7 w-24 text-[10px] font-mono"
+                                      />
+                                    </td>
+                                    <td className={cn(
+                                      "px-3 py-2 text-right font-mono text-[11px] tabular-nums font-medium",
+                                      profit >= 0 ? "text-emerald-600" : "text-red-500"
+                                    )}>
+                                      {formatCurrency(profit, settings.currencySymbol)}
+                                    </td>
+                                    <td className="px-3 py-2 text-right font-mono text-[11px] font-bold tabular-nums text-primary">
+                                      {formatCurrency(finalPrice, settings.currencySymbol)}
+                                    </td>
+                                    <td className="px-3 py-2 text-center">
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        onClick={() => handleRemoveWeapon(w.id)}
+                                        className="size-5 hover:bg-destructive/10 hover:text-destructive"
+                                      >
+                                        <X className="size-3" />
+                                      </Button>
+                                    </td>
+                                  </tr>
+                                  {/* صف التفاصيل القابل للطي */}
+                                  {isExpanded && (
+                                    <tr className="bg-muted/10 border-b border-border/20">
+                                      <td colSpan={5} className="px-4 py-2">
+                                        <div className="grid grid-cols-4 gap-2 text-[10px]">
+                                          <div>
+                                            <span className="text-muted-foreground">{t('sales.cost')}</span>
+                                            <div className="font-medium tabular-nums">
+                                              {formatCurrency(w.purchasePrice, settings.currencySymbol)}
+                                            </div>
+                                          </div>
+                                          <div>
+                                            <span className="text-muted-foreground">{t('sales.retailPrice')}</span>
+                                            <div className="font-medium tabular-nums">
+                                              {formatCurrency(w.retailPrice, settings.currencySymbol)}
+                                            </div>
+                                          </div>
+                                          <div>
+                                            <span className="text-muted-foreground">{t('sales.wholesalePrice')}</span>
+                                            <div className="font-medium tabular-nums">
+                                              {formatCurrency(w.wholesalePrice, settings.currencySymbol)}
+                                            </div>
+                                          </div>
+                                          <div>
+                                            <span className="text-muted-foreground">{t('sales.profitMargin')}</span>
+                                            <div className={cn("font-medium tabular-nums", profit >= 0 ? "text-emerald-600" : "text-red-500")}>
+                                              {((profit / (w.purchasePrice || 1)) * 100).toFixed(1)}%
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </Fragment>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    {/* التذييل */}
+                    {selectedWeapons.length > 0 && (
+                      <div className="border-t px-4 py-2.5 flex items-center justify-between bg-muted/10">
+                        <div className="text-xs text-muted-foreground">
+                          {selectedWeapons.length} {t('sales.weapons')}
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[10px] text-muted-foreground">{t('sales.subtotal')}</div>
+                          <div className="text-sm font-bold tabular-nums">
+                            {formatCurrency(weaponsSubtotal, settings.currencySymbol)}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3: Ammunition */}
+            {step === 3 && (
+              <div className="flex flex-col gap-3">
+                <SearchableCombobox
+                  value={ammoPicker}
+                  onValueChange={handleAddAmmo}
+                  options={ammoOptions}
+                  placeholder={t('sales.selectCaliber')}
+                  searchPlaceholder={t('sales.searchCalibers')}
+                />
+                {ammoLines.length === 0 ? (
+                  <div className="flex h-20 flex-col items-center justify-center gap-1 text-muted-foreground">
+                    <Package className="size-5 opacity-30" />
+                    <span className="text-[10px]">{t('sales.noAmmoAdded')}</span>
+                  </div>
+                ) : (
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full">
+                      <thead className="sticky top-0 bg-muted/30 text-[10px] text-muted-foreground">
+                        <tr>
+                          <th className="text-left font-medium px-3 py-1.5">{t('sales.caliber')}</th>
+                          <th className="text-left font-medium px-3 py-1.5">{t('sales.sellMode')}</th>
+                          <th className="text-right font-medium px-3 py-1.5">{t('sales.quantity')}</th>
+                          <th className="text-right font-medium px-3 py-1.5">{t('sales.unitPrice')}</th>
+                          <th className="text-right font-medium px-3 py-1.5">{t('sales.total')}</th>
+                          <th className="px-3 py-1.5"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ammoLines.map((l) => {
+                          const qty = Number(l.quantity) || 0
+                          const totalRounds = ammoTotalRounds(l.ammo)
+                          const over = qty > totalRounds
+                          const lineTotal = qty * l.unitPrice
+                          const isExpanded = expandedAmmoIds.has(l.ammo.id)
+
+                          return (
+                            <Fragment key={l.ammo.id}>
+                              <tr className="border-b border-border/30 hover:bg-muted/20 transition-colors text-xs">
+                                <td className="px-3 py-2 font-medium">
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      onClick={() => toggleExpandAmmo(l.ammo.id)}
+                                      className="p-0.5 hover:bg-muted rounded-sm"
+                                    >
+                                      <ChevronDown
+                                        className={cn(
+                                          "size-3 text-muted-foreground transition-transform",
+                                          isExpanded && "rotate-180"
+                                        )}
+                                      />
+                                    </button>
+                                    <span>{l.ammo.caliber}</span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <div className="flex items-center gap-0.5">
+                                    <Button
+                                      size="sm"
+                                      variant={l.sellMode === "package" ? "default" : "outline"}
+                                      className="h-5 px-1.5 text-[9px]"
+                                      onClick={() => {
+                                        if (l.sellMode === "package") return
+                                        const currentRounds = Number(l.quantity) || 0
+                                        const packages = Math.floor(
+                                          currentRounds / l.ammo.unitsPerPackage
+                                        )
+                                        setAmmoLines((prev) =>
+                                          prev.map((x) =>
+                                            x.ammo.id === l.ammo.id
+                                              ? {
+                                                ...x,
+                                                sellMode: "package",
+                                                packageInput: String(packages),
+                                                quantity: String(
+                                                  packages * x.ammo.unitsPerPackage
+                                                ),
+                                              }
+                                              : x
+                                          )
+                                        )
+                                      }}
+                                    >
+                                      {t('sales.package')}
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant={l.sellMode === "round" ? "default" : "outline"}
+                                      className="h-5 px-1.5 text-[9px]"
+                                      onClick={() => {
+                                        if (l.sellMode === "round") return
+                                        setAmmoLines((prev) =>
+                                          prev.map((x) =>
+                                            x.ammo.id === l.ammo.id
+                                              ? { ...x, sellMode: "round" }
+                                              : x
+                                          )
+                                        )
+                                      }}
+                                    >
+                                      {t('sales.round')}
+                                    </Button>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <div className="flex justify-end">
+                                    <Input
+                                      type="text"
+                                      inputMode="numeric"
+                                      dir="ltr"
+                                      value={
+                                        l.sellMode === "package"
+                                          ? l.packageInput
+                                          : l.quantity
+                                      }
+                                      onChange={(e) => {
+                                        const val = e.target.value
+                                        if (l.sellMode === "package") {
+                                          const pkgs = Number(val) || 0
+                                          setAmmoLines((prev) =>
+                                            prev.map((x) =>
+                                              x.ammo.id === l.ammo.id
+                                                ? {
+                                                  ...x,
+                                                  packageInput: val,
+                                                  quantity: String(
+                                                    pkgs * x.ammo.unitsPerPackage
+                                                  ),
+                                                }
+                                                : x
+                                            )
+                                          )
+                                        } else {
+                                          setAmmoLines((prev) =>
+                                            prev.map((x) =>
+                                              x.ammo.id === l.ammo.id
+                                                ? { ...x, quantity: val }
+                                                : x
+                                            )
+                                          )
+                                        }
+                                      }}
+                                      className="h-7 w-16 text-[10px] text-left font-mono"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {settings.currencySymbol}
+                                    </span>
+                                    <Input
+                                      type="text"
+                                      inputMode="decimal"
+                                      dir="ltr"
+                                      value={l.unitPrice}
+                                      onChange={(e) =>
+                                        setAmmoLines((prev) =>
+                                          prev.map((x) =>
+                                            x.ammo.id === l.ammo.id
+                                              ? { ...x, unitPrice: Number(e.target.value) || 0 }
+                                              : x
+                                          )
+                                        )
+                                      }
+                                      className="h-7 w-20 text-[10px] text-left font-mono"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2 text-right font-mono text-[11px] font-medium tabular-nums">
+                                  {formatCurrency(lineTotal, settings.currencySymbol)}
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => handleRemoveAmmo(l.ammo.id)}
+                                    className="size-5 hover:bg-destructive/10 hover:text-destructive"
+                                  >
+                                    <X className="size-3" />
+                                  </Button>
+                                </td>
+                              </tr>
+                              {isExpanded && (
+                                <tr className="bg-muted/10 border-b border-border/20">
+                                  <td colSpan={6} className="px-4 py-2">
+                                    <div className="grid grid-cols-3 gap-2 text-[10px]">
+                                      <div>
+                                        <span className="text-muted-foreground">
+                                          {t('sales.available')}:
+                                        </span>
+                                        <span
+                                          className={cn(
+                                            "ml-1 font-medium",
+                                            over && "text-red-500"
+                                          )}
+                                        >
+                                          {totalRounds} {t('sales.rounds')}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">
+                                          {t('sales.packages')}:
+                                        </span>
+                                        <span className="ml-1 font-medium">
+                                          {l.ammo.fullPackages} {l.ammo.packageType}s +{' '}
+                                          {l.ammo.looseRounds} {t('inv.loose')}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">
+                                          {t('sales.pricePerRound')}:
+                                        </span>
+                                        <span className="ml-1 font-medium">
+                                          {formatCurrency(
+                                            l.ammo.price,
+                                            settings.currencySymbol
+                                          )}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                    {ammoLines.length > 0 && (
+                      <div className="border-t px-4 py-2 flex justify-between bg-muted/10 text-xs">
+                        <span className="text-muted-foreground">
+                          {t('sales.ammoSubtotal')}
+                        </span>
+                        <span className="font-bold tabular-nums">
+                          {formatCurrency(ammoSubtotal, settings.currencySymbol)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* STEP 4: Accessories */}
+            {step === 4 && (
+              <div className="flex flex-col gap-3">
+                <SearchableCombobox
+                  value={accessoryPicker}
+                  onValueChange={handleAddAccessory}
+                  options={accessoryOptions}
+                  placeholder={t('sales.selectAccessory')}
+                  searchPlaceholder={t('sales.searchAccessories')}
+                />
+                {accessoryLines.length === 0 ? (
+                  <div className="flex h-20 flex-col items-center justify-center gap-1 text-muted-foreground">
+                    <Package className="size-5 opacity-30" />
+                    <span className="text-[10px]">{t('sales.noAccessoriesAdded')}</span>
+                  </div>
+                ) : (
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full">
+                      <thead className="sticky top-0 bg-muted/30 text-[10px] text-muted-foreground">
+                        <tr>
+                          <th className="text-left font-medium px-3 py-1.5">
+                            {t('sales.accessory')}
+                          </th>
+                          <th className="text-right font-medium px-3 py-1.5">
+                            {t('sales.quantity')}
+                          </th>
+                          <th className="text-right font-medium px-3 py-1.5">
+                            {t('sales.unitPrice')}
+                          </th>
+                          <th className="text-right font-medium px-3 py-1.5">
+                            {t('sales.total')}
+                          </th>
+                          <th className="px-3 py-1.5"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {accessoryLines.map((l) => {
+                          const qty = Number(l.quantity) || 0
+                          const over = qty > l.accessory.quantity
+                          const lineTotal = qty * l.unitPrice
+                          const isExpanded = expandedAccessoryIds.has(l.accessory.id)
+
+                          return (
+                            <Fragment key={l.accessory.id}>
+                              <tr className="border-b border-border/30 hover:bg-muted/20 transition-colors text-xs">
+                                <td className="px-3 py-2 font-medium">
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      onClick={() =>
+                                        toggleExpandAccessory(l.accessory.id)
+                                      }
+                                      className="p-0.5 hover:bg-muted rounded-sm"
+                                    >
+                                      <ChevronDown
+                                        className={cn(
+                                          "size-3 text-muted-foreground transition-transform",
+                                          isExpanded && "rotate-180"
+                                        )}
+                                      />
+                                    </button>
+                                    <span>{l.accessory.name}</span>
+                                    <span className="text-[10px] text-muted-foreground ml-1">
+                                      ({l.accessory.type})
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <div className="flex justify-end">
+                                    <Input
+                                      type="text"
+                                      inputMode="numeric"
+                                      dir="ltr"
+                                      value={l.quantity}
+                                      onChange={(e) =>
+                                        setAccessoryLines((prev) =>
+                                          prev.map((x) =>
+                                            x.accessory.id === l.accessory.id
+                                              ? { ...x, quantity: e.target.value }
+                                              : x
+                                          )
+                                        )
+                                      }
+                                      className="h-7 w-16 text-[10px] text-left font-mono"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {settings.currencySymbol}
+                                    </span>
+                                    <Input
+                                      type="text"
+                                      inputMode="decimal"
+                                      dir="ltr"
+                                      value={l.unitPrice}
+                                      onChange={(e) =>
+                                        setAccessoryLines((prev) =>
+                                          prev.map((x) =>
+                                            x.accessory.id === l.accessory.id
+                                              ? { ...x, unitPrice: Number(e.target.value) || 0 }
+                                              : x
+                                          )
+                                        )
+                                      }
+                                      className="h-7 w-20 text-[10px] text-left font-mono"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2 text-right font-mono text-[11px] font-medium tabular-nums">
+                                  {formatCurrency(lineTotal, settings.currencySymbol)}
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() =>
+                                      handleRemoveAccessory(l.accessory.id)
+                                    }
+                                    className="size-5 hover:bg-destructive/10 hover:text-destructive"
+                                  >
+                                    <X className="size-3" />
+                                  </Button>
+                                </td>
+                              </tr>
+                              {isExpanded && (
+                                <tr className="bg-muted/10 border-b border-border/20">
+                                  <td colSpan={5} className="px-4 py-2">
+                                    <div className="flex gap-4 text-[10px]">
+                                      <div>
+                                        <span className="text-muted-foreground">
+                                          {t('sales.stock')}:
+                                        </span>
+                                        <span
+                                          className={cn(
+                                            "ml-1 font-medium",
+                                            over && "text-red-500"
+                                          )}
+                                        >
+                                          {l.accessory.quantity}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">
+                                          {t('sales.costPrice')}:
+                                        </span>
+                                        <span className="ml-1 font-medium">
+                                          {formatCurrency(
+                                            l.accessory.price,
+                                            settings.currencySymbol
+                                          )}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                    {accessoryLines.length > 0 && (
+                      <div className="border-t px-4 py-2 flex justify-between bg-muted/10 text-xs">
+                        <span className="text-muted-foreground">
+                          {t('sales.accessorySubtotal')}
+                        </span>
+                        <span className="font-bold tabular-nums">
+                          {formatCurrency(accessorySubtotal, settings.currencySymbol)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* STEP 5: Review with Bargain Discount */}
+            {/* STEP 5: Review with Bargain Discount */}
+            {step === 5 && (
+              <div className="flex flex-col gap-3">
+                {/* 1. Sale Summary */}
+                <div className="rounded-lg border p-3">
+                  <div className="flex items-center justify-between border-b pb-2">
+                    <span className="flex items-center gap-1.5 text-xs font-semibold">
+                      <Receipt className="size-4 text-primary" /> {t('sales.saleReview')}
+                    </span>
+                    <Badge className={statusBadgeClass("Sold")}>
+                      <span className={`mr-1 size-1.5 rounded-full ${statusDotClass("Sold")}`} />
+                      {t(mode === "Wholesale" ? 'sales.wholesale' : 'sales.retail')} {t('sales.sale')}
+                    </Badge>
+                  </div>
+                  <div className="grid gap-2 py-2 text-xs sm:grid-cols-2">
+                    <div><span className="text-muted-foreground">{t('sales.invoiceColon')}</span> <span className="font-mono font-medium">{previewInvoiceNumber}</span></div>
+                    <div><span className="text-muted-foreground">{t('sales.buyerLabel')}</span> <span className="font-medium">{selectedBuyerName || "—"}</span></div>
+                    <div><span className="text-muted-foreground">{t('common.date')}</span> <span className="font-medium">{invoiceDate}</span></div>
+                    <div><span className="text-muted-foreground">{t('sales.weaponsColon')}</span> {selectedWeapons.length}</div>
+                    <div><span className="text-muted-foreground">{t('sales.ammoLines')}</span> {ammoLines.length}</div>
+                    <div><span className="text-muted-foreground">{t('sales.accessoryLines')}</span> {accessoryLines.length}</div>
+                  </div>
+                </div>
+
+                {/* 2. Weapon Pricing Details (if any) */}
+                {selectedWeapons.length > 0 && (
+                  <div className="rounded-lg border p-3">
+                    <span className="text-xs font-semibold">{t('sales.weaponPricingDetails')}</span>
+                    <div className="mt-2 overflow-x-auto custom-scrollbar">
+                      <table className="w-full text-[10px]">
+                        <thead>
+                          <tr className="text-left text-muted-foreground">
+                            <th className="pb-1 font-medium">{t('sales.weapon')}</th>
+                            <th className="pb-1 text-right font-medium">{t('sales.retailPrice')}</th>
+                            <th className="pb-1 text-right font-medium">{t('sales.wholesalePrice')}</th>
+                            <th className="pb-1 text-right font-medium">{t('sales.cost')}</th>
+                            <th className="pb-1 text-right font-medium">{t('sales.selling')}</th>
+                            <th className="pb-1 text-right font-medium">{t('common.profit')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedWeapons.map((w) => {
+                            const retail = w.retailPrice
+                            const wholesale = w.wholesalePrice
+                            const cost = w.purchasePrice
+                            const selling = customPrices[w.id] ? Number(customPrices[w.id]) || 0 : modePrice(w)
+                            const profit = selling - cost
+                            return (
+                              <tr key={w.id} className="border-t">
+                                <td className="py-1 pr-2">{w.brand} {w.model} <span className="text-muted-foreground">({w.serialNumber})</span></td>
+                                <td className="py-1 text-right tabular-nums">{formatCurrency(retail, settings.currencySymbol)}</td>
+                                <td className="py-1 text-right tabular-nums">{formatCurrency(wholesale, settings.currencySymbol)}</td>
+                                <td className="py-1 text-right tabular-nums">{formatCurrency(cost, settings.currencySymbol)}</td>
+                                <td className="py-1 text-right font-bold tabular-nums text-primary">{formatCurrency(selling, settings.currencySymbol)}</td>
+                                <td className={cn("py-1 text-right font-bold tabular-nums", profit >= 0 ? "text-status-returned" : "text-status-sold")}>
+                                  {formatCurrency(profit, settings.currencySymbol)}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Payment Method */}
+                <div className="rounded-lg border p-3">
+                  <span className="text-xs font-semibold">{t('sales.paymentMethod')}</span>
+                  <Tabs value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as PaymentMethod)} className="mt-2">
+                    <TabsList className="grid h-8 w-full grid-cols-3">
+                      <TabsTrigger value="cash" className="text-xs"><Banknote className="size-3" /> {t('sales.cash')}</TabsTrigger>
+                      <TabsTrigger value="card" className="text-xs"><CreditCard className="size-3" /> {t('sales.card')}</TabsTrigger>
+                      <TabsTrigger value="bank_transfer" className="text-xs"><Landmark className="size-3" /> {t('sales.transfer')}</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
+
+                {/* 4. Payment Summary (Discounts → Payment Terms → Tax → Total) */}
+                <div className="rounded-lg border p-4 space-y-4">
+                  <h3 className="text-sm font-semibold">{t("sales.paymentSummary")}</h3>
+
+                  {/* Discounts First */}
+                  <div className="space-y-3">
+                    {/* Bargain Discount Input */}
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">{t("sales.bargainDiscount")}</Label>
+                      <div className="flex items-center gap-2">
+                        <SmartCurrencyInput
+                          value={bargainDiscount}
+                          onValueChange={setBargainDiscount}
+                          placeholder="0"
+                          className="h-8 flex-1"
+                        />
+                        {bargainDiscountAmount > 0 && bargainDiscountValid && (
+                          <Button size="xs" variant="ghost" onClick={() => setBargainDiscount("")} className="h-8">
                             <X className="size-3" />
                           </Button>
-                        </td>
-                      </tr>
-                      {/* صف التفاصيل القابل للطي */}
-                      {isExpanded && (
-                        <tr className="bg-muted/10 border-b border-border/20">
-                          <td colSpan={5} className="px-4 py-2">
-                            <div className="grid grid-cols-4 gap-2 text-[10px]">
-                              <div>
-                                <span className="text-muted-foreground">{t('sales.cost')}</span>
-                                <div className="font-medium tabular-nums">
-                                  {formatCurrency(w.purchasePrice, settings.currencySymbol)}
-                                </div>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">{t('sales.retailPrice')}</span>
-                                <div className="font-medium tabular-nums">
-                                  {formatCurrency(w.retailPrice, settings.currencySymbol)}
-                                </div>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">{t('sales.wholesalePrice')}</span>
-                                <div className="font-medium tabular-nums">
-                                  {formatCurrency(w.wholesalePrice, settings.currencySymbol)}
-                                </div>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">{t('sales.profitMargin')}</span>
-                                <div className={cn("font-medium tabular-nums", profit >= 0 ? "text-emerald-600" : "text-red-500")}>
-                                  {((profit / (w.purchasePrice || 1)) * 100).toFixed(1)}%
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-        {/* التذييل */}
-        {selectedWeapons.length > 0 && (
-          <div className="border-t px-4 py-2.5 flex items-center justify-between bg-muted/10">
-            <div className="text-xs text-muted-foreground">
-              {selectedWeapons.length} {t('sales.weapons')}
-            </div>
-            <div className="text-right">
-              <div className="text-[10px] text-muted-foreground">{t('sales.subtotal')}</div>
-              <div className="text-sm font-bold tabular-nums">
-                {formatCurrency(weaponsSubtotal, settings.currencySymbol)}
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Original Discount */}
+                    {discountAmount > 0 && (
+                      <>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">{t("sales.discount")}</span>
+                          <span className="font-medium tabular-nums text-status-reserved-fg">-{formatCurrency(discountAmount, settings.currencySymbol)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="font-medium">{t("sales.negotiatedSubtotal")}</span>
+                          <span className="font-semibold tabular-nums">{formatCurrency(totalNegotiated, settings.currencySymbol)}</span>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Additional Discount */}
+                    {bargainDiscountAmount > 0 && bargainDiscountValid && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">{t("sales.additionalDiscount")}</span>
+                        <span className="font-medium tabular-nums text-status-reserved-fg">-{formatCurrency(bargainDiscountAmount, settings.currencySymbol)}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  {/* Payment Terms (After discount) */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-muted-foreground">{t("sales.paymentTerms")}</span>
+                    <Button
+                      variant={isDebt ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setIsDebt(!isDebt)}
+                      className="h-7 text-xs"
+                    >
+                      <Clock className="size-3 mr-1" />
+                      {isDebt ? t("sales.fullPayment") : t("sales.addDebtPayLater")}
+                    </Button>
+                  </div>
+
+                  {isDebt && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <Label className="text-[10px]">{t("sales.amountPaidNow")}</Label>
+                        <Input
+                          type="number"
+                          value={paidAmount}
+                          onChange={(e) => setPaidAmount(String(Number(e.target.value) || 0))}
+                          placeholder={t("sales.leaveEmptyFull")}
+                          className="h-8"
+                        />
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          {t("sales.remaining")}{" "}
+                          <span className="font-medium tabular-nums">{formatCurrency(balanceDue, settings.currencySymbol)}</span>
+                        </p>
+                      </div>
+                      <div>
+                        <Label className="text-[10px]">{t("sales.dueDateRemaining")}</Label>
+                        <Input type="date" value={debtDueDate} onChange={(e) => setDebtDueDate(e.target.value)} className="h-8 text-xs" />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tax */}
+                  {settings.taxPercent > 0 && (
+                    <>
+                      <Separator />
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">{t("sales.tax")} ({settings.taxPercent}%)</span>
+                        <span className="font-medium tabular-nums">{formatCurrency(taxAmount, settings.currencySymbol)}</span>
+                      </div>
+                    </>
+                  )}
+
+                  <Separator />
+
+                  {/* Grand Total */}
+                  <div className="flex justify-between items-center">
+                    <span className="text-base font-semibold">{t("sales.grandTotal")}</span>
+                    <span className="text-lg font-bold text-primary tabular-nums">{formatCurrency(grandTotal, settings.currencySymbol)}</span>
+                  </div>
+
+                  {/* Debt Info */}
+                  {isDebt && balanceDue > 0 && (
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/40 rounded-md p-2">
+                      <Info className="size-3.5 shrink-0" />
+                      {t("sales.customerWillOwe", {
+                        amount: formatCurrency(balanceDue, settings.currencySymbol),
+                        date: debtDueDate,
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* 5. Profit Summary */}
+                <div className="rounded-lg border p-3">
+                  <span className="text-xs font-semibold">{t('sales.profitSummary')}</span>
+                  <div className="mt-2 grid gap-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{t('sales.costBasis')}</span>
+                      <span className="tabular-nums">{formatCurrency(totalCost, settings.currencySymbol)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium">{t('sales.netProfit')}</span>
+                      <span className={cn("font-bold tabular-nums", netProfit >= 0 ? "text-status-returned" : "text-status-sold")}>
+                        {formatCurrency(netProfit, settings.currencySymbol)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium">{t('sales.margin')}</span>
+                      <span className={cn("font-bold", marginViolation ? "text-status-sold" : "text-status-returned")}>
+                        {marginPercent.toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                  {marginViolation && (
+                    <div className="mt-2 flex items-start gap-2 rounded-md border border-status-sold/30 bg-status-sold/10 p-2">
+                      <Shield className="size-4 shrink-0 text-status-sold" />
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium text-status-sold-fg">{t('sales.managerApprovalRequired')}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {t('sales.marginBelowMin', { margin: marginPercent.toFixed(1), min: settings.minProfitMarginPercent })}
+                        </span>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          className="mt-1.5 h-5"
+                          onClick={() => { setApproved(true); toast.success(t('sales.managerApprovalGranted')) }}
+                        >
+                          {approved ? <><Check className="size-3" /> {t('sales.approved')}</> : t('sales.approveSale')}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 6. Documents */}
+                <div className="rounded-lg border p-3">
+                  <span className="text-xs font-semibold">{t('sales.documents')}</span>
+                  <div className="mt-2 flex gap-2">
+                    <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
+                    <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()} className="h-8 text-xs">
+                      <Paperclip className="size-3.5" /> {t('sales.attach')}
+                    </Button>
+                    {pendingFile && (
+                      <>
+                        <Input placeholder={t('sales.docName')} value={newDocName} onChange={(e) => setNewDocName(e.target.value)} className="h-8 text-xs flex-1" />
+                        <Button size="sm" onClick={handleAddPendingDocument} className="h-8 text-xs">
+                          <Plus className="size-3.5" /> {t('common.add')}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                  {documents.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {documents.map((doc, i) => (
+                        <Badge key={i} variant="secondary" className="gap-1"><FileText className="size-3" /> {doc.name}</Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 7. Invoice Date & Number */}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div>
+                    <Label className="text-xs">{t('common.date')}</Label>
+                    <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className="h-8 text-xs" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">{t('sales.invoiceNum')}</Label>
+                    <div className="flex gap-1.5">
+                      <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder={previewInvoiceNumber} className="h-8 text-xs font-mono" />
+                      <Button size="sm" variant="outline" className="h-8" onClick={() => setInvoiceNumber(generateInvoiceNumber(invoices))}>
+                        {t('sales.auto')}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 8. Notes */}
+                <div>
+                  <Label className="text-xs">{t("common.notes")}</Label>
+                  <Textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder={t("sales.optionalNotes")}
+                    className="mt-1 min-h-24 resize-y text-xs"
+                  />
+                </div>
               </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  </div>
-)}
-
-{/* STEP 3: Ammunition */}
-{step === 3 && (
-  <div className="flex flex-col gap-3">
-    <SearchableCombobox
-      value={ammoPicker}
-      onValueChange={handleAddAmmo}
-      options={ammoOptions}
-      placeholder={t('sales.selectCaliber')}
-      searchPlaceholder={t('sales.searchCalibers')}
-    />
-    {ammoLines.length === 0 ? (
-      <div className="flex h-20 flex-col items-center justify-center gap-1 text-muted-foreground">
-        <Package className="size-5 opacity-30" />
-        <span className="text-[10px]">{t('sales.noAmmoAdded')}</span>
-      </div>
-    ) : (
-      <div className="border rounded-lg overflow-hidden">
-        <table className="w-full">
-          <thead className="sticky top-0 bg-muted/30 text-[10px] text-muted-foreground">
-            <tr>
-              <th className="text-left font-medium px-3 py-1.5">{t('sales.caliber')}</th>
-              <th className="text-left font-medium px-3 py-1.5">{t('sales.sellMode')}</th>
-              <th className="text-right font-medium px-3 py-1.5">{t('sales.quantity')}</th>
-              <th className="text-right font-medium px-3 py-1.5">{t('sales.unitPrice')}</th>
-              <th className="text-right font-medium px-3 py-1.5">{t('sales.total')}</th>
-              <th className="px-3 py-1.5"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {ammoLines.map((l) => {
-              const qty = Number(l.quantity) || 0
-              const totalRounds = ammoTotalRounds(l.ammo)
-              const over = qty > totalRounds
-              const lineTotal = qty * l.unitPrice
-              const isExpanded = expandedAmmoIds.has(l.ammo.id)
-
-              return (
-                <Fragment key={l.ammo.id}>
-                  <tr className="border-b border-border/30 hover:bg-muted/20 transition-colors text-xs">
-                    <td className="px-3 py-2 font-medium">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => toggleExpandAmmo(l.ammo.id)}
-                          className="p-0.5 hover:bg-muted rounded-sm"
-                        >
-                          <ChevronDown
-                            className={cn(
-                              "size-3 text-muted-foreground transition-transform",
-                              isExpanded && "rotate-180"
-                            )}
-                          />
-                        </button>
-                        <span>{l.ammo.caliber}</span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-0.5">
-                        <Button
-                          size="sm"
-                          variant={l.sellMode === "package" ? "default" : "outline"}
-                          className="h-5 px-1.5 text-[9px]"
-                          onClick={() => {
-                            if (l.sellMode === "package") return
-                            const currentRounds = Number(l.quantity) || 0
-                            const packages = Math.floor(
-                              currentRounds / l.ammo.unitsPerPackage
-                            )
-                            setAmmoLines((prev) =>
-                              prev.map((x) =>
-                                x.ammo.id === l.ammo.id
-                                  ? {
-                                      ...x,
-                                      sellMode: "package",
-                                      packageInput: String(packages),
-                                      quantity: String(
-                                        packages * x.ammo.unitsPerPackage
-                                      ),
-                                    }
-                                  : x
-                              )
-                            )
-                          }}
-                        >
-                          {t('sales.package')}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={l.sellMode === "round" ? "default" : "outline"}
-                          className="h-5 px-1.5 text-[9px]"
-                          onClick={() => {
-                            if (l.sellMode === "round") return
-                            setAmmoLines((prev) =>
-                              prev.map((x) =>
-                                x.ammo.id === l.ammo.id
-                                  ? { ...x, sellMode: "round" }
-                                  : x
-                              )
-                            )
-                          }}
-                        >
-                          {t('sales.round')}
-                        </Button>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex justify-end">
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          dir="ltr"
-                          value={
-                            l.sellMode === "package"
-                              ? l.packageInput
-                              : l.quantity
-                          }
-                          onChange={(e) => {
-                            const val = e.target.value
-                            if (l.sellMode === "package") {
-                              const pkgs = Number(val) || 0
-                              setAmmoLines((prev) =>
-                                prev.map((x) =>
-                                  x.ammo.id === l.ammo.id
-                                    ? {
-                                        ...x,
-                                        packageInput: val,
-                                        quantity: String(
-                                          pkgs * x.ammo.unitsPerPackage
-                                        ),
-                                      }
-                                    : x
-                                )
-                              )
-                            } else {
-                              setAmmoLines((prev) =>
-                                prev.map((x) =>
-                                  x.ammo.id === l.ammo.id
-                                    ? { ...x, quantity: val }
-                                    : x
-                                )
-                              )
-                            }
-                          }}
-                          className="h-7 w-16 text-[10px] text-left font-mono"
-                        />
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center justify-end gap-1">
-                        <span className="text-[10px] text-muted-foreground">
-                          {settings.currencySymbol}
-                        </span>
-                        <Input
-                          type="text"
-                          inputMode="decimal"
-                          dir="ltr"
-                          value={l.unitPrice}
-                          onChange={(e) =>
-                            setAmmoLines((prev) =>
-                              prev.map((x) =>
-                                x.ammo.id === l.ammo.id
-                                  ? { ...x, unitPrice: Number(e.target.value) || 0 }
-                                  : x
-                              )
-                            )
-                          }
-                          className="h-7 w-20 text-[10px] text-left font-mono"
-                        />
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-[11px] font-medium tabular-nums">
-                      {formatCurrency(lineTotal, settings.currencySymbol)}
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => handleRemoveAmmo(l.ammo.id)}
-                        className="size-5 hover:bg-destructive/10 hover:text-destructive"
-                      >
-                        <X className="size-3" />
-                      </Button>
-                    </td>
-                  </tr>
-                  {isExpanded && (
-                    <tr className="bg-muted/10 border-b border-border/20">
-                      <td colSpan={6} className="px-4 py-2">
-                        <div className="grid grid-cols-3 gap-2 text-[10px]">
-                          <div>
-                            <span className="text-muted-foreground">
-                              {t('sales.available')}:
-                            </span>
-                            <span
-                              className={cn(
-                                "ml-1 font-medium",
-                                over && "text-red-500"
-                              )}
-                            >
-                              {totalRounds} {t('sales.rounds')}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">
-                              {t('sales.packages')}:
-                            </span>
-                            <span className="ml-1 font-medium">
-                              {l.ammo.fullPackages} {l.ammo.packageType}s +{' '}
-                              {l.ammo.looseRounds} {t('inv.loose')}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">
-                              {t('sales.pricePerRound')}:
-                            </span>
-                            <span className="ml-1 font-medium">
-                              {formatCurrency(
-                                l.ammo.price,
-                                settings.currencySymbol
-                              )}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              )
-            })}
-          </tbody>
-        </table>
-        {ammoLines.length > 0 && (
-          <div className="border-t px-4 py-2 flex justify-between bg-muted/10 text-xs">
-            <span className="text-muted-foreground">
-              {t('sales.ammoSubtotal')}
-            </span>
-            <span className="font-bold tabular-nums">
-              {formatCurrency(ammoSubtotal, settings.currencySymbol)}
-            </span>
-          </div>
-        )}
-      </div>
-    )}
-  </div>
-)}
-            
-{/* STEP 4: Accessories */}
-{step === 4 && (
-  <div className="flex flex-col gap-3">
-    <SearchableCombobox
-      value={accessoryPicker}
-      onValueChange={handleAddAccessory}
-      options={accessoryOptions}
-      placeholder={t('sales.selectAccessory')}
-      searchPlaceholder={t('sales.searchAccessories')}
-    />
-    {accessoryLines.length === 0 ? (
-      <div className="flex h-20 flex-col items-center justify-center gap-1 text-muted-foreground">
-        <Package className="size-5 opacity-30" />
-        <span className="text-[10px]">{t('sales.noAccessoriesAdded')}</span>
-      </div>
-    ) : (
-      <div className="border rounded-lg overflow-hidden">
-        <table className="w-full">
-          <thead className="sticky top-0 bg-muted/30 text-[10px] text-muted-foreground">
-            <tr>
-              <th className="text-left font-medium px-3 py-1.5">
-                {t('sales.accessory')}
-              </th>
-              <th className="text-right font-medium px-3 py-1.5">
-                {t('sales.quantity')}
-              </th>
-              <th className="text-right font-medium px-3 py-1.5">
-                {t('sales.unitPrice')}
-              </th>
-              <th className="text-right font-medium px-3 py-1.5">
-                {t('sales.total')}
-              </th>
-              <th className="px-3 py-1.5"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {accessoryLines.map((l) => {
-              const qty = Number(l.quantity) || 0
-              const over = qty > l.accessory.quantity
-              const lineTotal = qty * l.unitPrice
-              const isExpanded = expandedAccessoryIds.has(l.accessory.id)
-
-              return (
-                <Fragment key={l.accessory.id}>
-                  <tr className="border-b border-border/30 hover:bg-muted/20 transition-colors text-xs">
-                    <td className="px-3 py-2 font-medium">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() =>
-                            toggleExpandAccessory(l.accessory.id)
-                          }
-                          className="p-0.5 hover:bg-muted rounded-sm"
-                        >
-                          <ChevronDown
-                            className={cn(
-                              "size-3 text-muted-foreground transition-transform",
-                              isExpanded && "rotate-180"
-                            )}
-                          />
-                        </button>
-                        <span>{l.accessory.name}</span>
-                        <span className="text-[10px] text-muted-foreground ml-1">
-                          ({l.accessory.type})
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex justify-end">
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          dir="ltr"
-                          value={l.quantity}
-                          onChange={(e) =>
-                            setAccessoryLines((prev) =>
-                              prev.map((x) =>
-                                x.accessory.id === l.accessory.id
-                                  ? { ...x, quantity: e.target.value }
-                                  : x
-                              )
-                            )
-                          }
-                          className="h-7 w-16 text-[10px] text-left font-mono"
-                        />
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center justify-end gap-1">
-                        <span className="text-[10px] text-muted-foreground">
-                          {settings.currencySymbol}
-                        </span>
-                        <Input
-                          type="text"
-                          inputMode="decimal"
-                          dir="ltr"
-                          value={l.unitPrice}
-                          onChange={(e) =>
-                            setAccessoryLines((prev) =>
-                              prev.map((x) =>
-                                x.accessory.id === l.accessory.id
-                                  ? { ...x, unitPrice: Number(e.target.value) || 0 }
-                                  : x
-                              )
-                            )
-                          }
-                          className="h-7 w-20 text-[10px] text-left font-mono"
-                        />
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-[11px] font-medium tabular-nums">
-                      {formatCurrency(lineTotal, settings.currencySymbol)}
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() =>
-                          handleRemoveAccessory(l.accessory.id)
-                        }
-                        className="size-5 hover:bg-destructive/10 hover:text-destructive"
-                      >
-                        <X className="size-3" />
-                      </Button>
-                    </td>
-                  </tr>
-                  {isExpanded && (
-                    <tr className="bg-muted/10 border-b border-border/20">
-                      <td colSpan={5} className="px-4 py-2">
-                        <div className="flex gap-4 text-[10px]">
-                          <div>
-                            <span className="text-muted-foreground">
-                              {t('sales.stock')}:
-                            </span>
-                            <span
-                              className={cn(
-                                "ml-1 font-medium",
-                                over && "text-red-500"
-                              )}
-                            >
-                              {l.accessory.quantity}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">
-                              {t('sales.costPrice')}:
-                            </span>
-                            <span className="ml-1 font-medium">
-                              {formatCurrency(
-                                l.accessory.price,
-                                settings.currencySymbol
-                              )}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              )
-            })}
-          </tbody>
-        </table>
-        {accessoryLines.length > 0 && (
-          <div className="border-t px-4 py-2 flex justify-between bg-muted/10 text-xs">
-            <span className="text-muted-foreground">
-              {t('sales.accessorySubtotal')}
-            </span>
-            <span className="font-bold tabular-nums">
-              {formatCurrency(accessorySubtotal, settings.currencySymbol)}
-            </span>
-          </div>
-        )}
-      </div>
-    )}
-  </div>
-)}
-            {/* STEP 5: Review with Bargain Discount */}
-{step === 5 && (
-  <div className="flex flex-col gap-3">
-    {/* Sale summary */}
-    <div className="rounded-lg border p-3">
-      <div className="flex items-center justify-between border-b pb-2">
-        <span className="flex items-center gap-1.5 text-xs font-semibold">
-          <Receipt className="size-4 text-primary" /> {t('sales.saleReview')}
-        </span>
-        <Badge className={statusBadgeClass("Sold")}>
-          <span className={`mr-1 size-1.5 rounded-full ${statusDotClass("Sold")}`} />
-          {t(mode === "Wholesale" ? 'sales.wholesale' : 'sales.retail')} {t('sales.sale')}
-        </Badge>
-      </div>
-      <div className="grid gap-2 py-2 text-xs sm:grid-cols-2">
-        <div><span className="text-muted-foreground">{t('sales.invoiceColon')}</span> <span className="font-mono font-medium">{previewInvoiceNumber}</span></div>
-        <div><span className="text-muted-foreground">{t('sales.buyerLabel')}</span> <span className="font-medium">{selectedBuyerName || "—"}</span></div>
-        <div><span className="text-muted-foreground">{t('common.date')}</span> <span className="font-medium">{invoiceDate}</span></div>
-        <div><span className="text-muted-foreground">{t('sales.weaponsColon')}</span> {selectedWeapons.length}</div>
-        <div><span className="text-muted-foreground">{t('sales.ammoLines')}</span> {ammoLines.length}</div>
-        <div><span className="text-muted-foreground">{t('sales.accessoryLines')}</span> {accessoryLines.length}</div>
-      </div>
-    </div>
-
-    {/* Weapon Pricing Details */}
-    {selectedWeapons.length > 0 && (
-      <div className="rounded-lg border p-3">
-        <span className="text-xs font-semibold">{t('sales.weaponPricingDetails')}</span>
-        <div className="mt-2 overflow-x-auto custom-scrollbar">
-          <table className="w-full text-[10px]">
-            <thead>
-              <tr className="text-left text-muted-foreground">
-                <th className="pb-1 font-medium">{t('sales.weapon')}</th>
-                <th className="pb-1 text-right font-medium">{t('sales.retailPrice')}</th>
-                <th className="pb-1 text-right font-medium">{t('sales.wholesalePrice')}</th>
-                <th className="pb-1 text-right font-medium">{t('sales.cost')}</th>
-                <th className="pb-1 text-right font-medium">{t('sales.selling')}</th>
-                <th className="pb-1 text-right font-medium">{t('common.profit')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {selectedWeapons.map((w) => {
-                const retail = w.retailPrice
-                const wholesale = w.wholesalePrice
-                const cost = w.purchasePrice
-                const selling = customPrices[w.id] ? Number(customPrices[w.id]) || 0 : modePrice(w)
-                const profit = selling - cost
-                return (
-                  <tr key={w.id} className="border-t">
-                    <td className="py-1 pr-2">{w.brand} {w.model} <span className="text-muted-foreground">({w.serialNumber})</span></td>
-                    <td className="py-1 text-right tabular-nums">{formatCurrency(retail, settings.currencySymbol)}</td>
-                    <td className="py-1 text-right tabular-nums">{formatCurrency(wholesale, settings.currencySymbol)}</td>
-                    <td className="py-1 text-right tabular-nums">{formatCurrency(cost, settings.currencySymbol)}</td>
-                    <td className="py-1 text-right font-bold tabular-nums text-primary">{formatCurrency(selling, settings.currencySymbol)}</td>
-                    <td className={cn("py-1 text-right font-bold tabular-nums", profit >= 0 ? "text-status-returned" : "text-status-sold")}>
-                      {formatCurrency(profit, settings.currencySymbol)}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    )}
-
-   
-
-    {/* Payment method */}
-    <div className="rounded-lg border p-3">
-      <span className="text-xs font-semibold">{t('sales.paymentMethod')}</span>
-      <Tabs value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as PaymentMethod)} className="mt-2">
-        <TabsList className="grid h-8 w-full grid-cols-3">
-          <TabsTrigger value="cash" className="text-xs"><Banknote className="size-3" /> {t('sales.cash')}</TabsTrigger>
-          <TabsTrigger value="card" className="text-xs"><CreditCard className="size-3" /> {t('sales.card')}</TabsTrigger>
-          <TabsTrigger value="bank_transfer" className="text-xs"><Landmark className="size-3" /> {t('sales.transfer')}</TabsTrigger>
-        </TabsList>
-      </Tabs>
-    </div>
-
-    {/* Debt / Partial payment */}
-    <div className="rounded-lg border p-3">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold">{t('sales.paymentTerms')}</span>
-        <Button variant={isDebt ? "default" : "outline"} size="sm" onClick={() => setIsDebt(!isDebt)} className="h-7 text-xs">
-          <Clock className="size-3 mr-1" /> {isDebt ? t('sales.fullPayment') : t('sales.addDebtPayLater')}
-        </Button>
-      </div>
-      {isDebt && (
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <div>
-            <Label className="text-[10px]">{t('sales.amountPaidNow')}</Label>
-           <Input
-  type="number"
-  value={paidAmount}
-  onChange={(e) => setPaidAmount(String(Number(e.target.value) || 0))}
-  placeholder={t('sales.leaveEmptyFull')}
-  className="h-8"
-/>
-            <p className="text-[10px] text-muted-foreground mt-0.5">
-              {t('sales.remaining')} <span className="font-medium tabular-nums">{formatCurrency(balanceDue, settings.currencySymbol)}</span>
-            </p>
-          </div>
-          <div>
-            <Label className="text-[10px]">{t('sales.dueDateRemaining')}</Label>
-            <Input type="date" value={debtDueDate} onChange={(e) => setDebtDueDate(e.target.value)} className="h-8 text-xs" />
-          </div>
-          {balanceDue > 0 && (
-            <div className="sm:col-span-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Info className="size-3.5" /> {t('sales.customerWillOwe', { amount: formatCurrency(balanceDue, settings.currencySymbol), date: debtDueDate })}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-
-           {/* Documents section */}
-    <div className="rounded-lg border p-3">
-      <span className="text-xs font-semibold">{t('sales.documents')}</span>
-      <div className="mt-2 flex gap-2">
-        <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
-        <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()} className="h-8 text-xs">
-          <Paperclip className="size-3.5" /> {t('sales.attach')}
-        </Button>
-        {pendingFile && (
-          <>
-            <Input placeholder={t('sales.docName')} value={newDocName} onChange={(e) => setNewDocName(e.target.value)} className="h-8 text-xs flex-1" />
-            <Button size="sm" onClick={handleAddPendingDocument} className="h-8 text-xs">
-              <Plus className="size-3.5" /> {t('common.add')}
-            </Button>
-          </>
-        )}
-      </div>
-      {documents.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-2">
-          {documents.map((doc, i) => (
-            <Badge key={i} variant="secondary" className="gap-1"><FileText className="size-3" /> {doc.name}</Badge>
-          ))}
-        </div>
-      )}
-    </div>
-
-    {/* Invoice date and number */}
-    <div className="grid gap-2 sm:grid-cols-2">
-      <div>
-        <Label className="text-xs">{t('common.date')}</Label>
-        <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className="h-8 text-xs" />
-      </div>
-      <div>
-        <Label className="text-xs">{t('sales.invoiceNum')}</Label>
-        <div className="flex gap-1.5">
-          <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder={previewInvoiceNumber} className="h-8 text-xs font-mono" />
-          <Button size="sm" variant="outline" className="h-8" onClick={() => setInvoiceNumber(generateInvoiceNumber(invoices))}>
-            {t('sales.auto')}
-          </Button>
-        </div>
-      </div>
-    </div>
-    
-
-    {/* Inventory impact */}
-    {/* <div className="rounded-lg border border-muted-foreground/20 p-3">
-      <span className="text-xs font-semibold">{t('sales.inventoryImpact')}</span>
-      <div className="mt-2 flex flex-col gap-1 text-[10px]">
-        {selectedWeapons.length > 0 && <p>{t('sales.weaponsWillBeSold', { count: selectedWeapons.length })}</p>}
-        {ammoLines.map((l) => (
-          <p key={l.ammo.id}>
-            {l.ammo.caliber}: {Number(l.quantity) || 0} {t('sales.rounds')} → {Math.max(0, ammoTotalRounds(l.ammo) - (Number(l.quantity) || 0))} {t('sales.remaining')}
-          </p>
-        ))}
-        {accessoryLines.map((l) => (
-          <p key={l.accessory.id}>
-            {l.accessory.name}: {l.quantity} → {Math.max(0, l.accessory.quantity - (Number(l.quantity) || 0))} {t('sales.remaining')}
-          </p>
-        ))}
-      </div>
-    </div> */}
-    {/* Discount & Totals */}
-<div className="rounded-lg border p-4 mt-4 mb-4">
-  <h3 className="text-sm font-semibold">
-    {t("sales.paymentSummary")}
-  </h3>
-
-  <div className="mt-4 space-y-3">
-
-    {/* Bargain Discount Input */}
-    <div className="space-y-1">
-      <Label className="text-xs text-muted-foreground">
-        {t("sales.bargainDiscount")}
-      </Label>
-
-      <div className="flex items-center gap-2">
-        <SmartCurrencyInput
-          value={bargainDiscount}
-          onValueChange={setBargainDiscount}
-          placeholder="0"
-          className="h-8 flex-1"
-        />
-
-        {bargainDiscountAmount > 0 && bargainDiscountValid && (
-          <Button
-            size="xs"
-            variant="ghost"
-            onClick={() => setBargainDiscount("")}
-            className="h-8"
-          >
-            <X className="size-3" />
-          </Button>
-        )}
-      </div>
-    </div>
-
-    <Separator />
-
-    {/* Original Total */}
-    {/* {discountAmount > 0 && (
-  <>
-    <div className="flex justify-between text-sm">
-      <span className="text-muted-foreground">
-        {t("sales.originalTotal")}
-      </span>
-
-      <span className="font-medium tabular-nums">
-        {formatCurrency(totalOriginal, settings.currencySymbol)}
-      </span>
-    </div>
-    </>)
-  } */}
-
-    {/* Original Discount */}
-    {discountAmount > 0 && (
-      <>
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">
-            {t("sales.discount")}
-          </span>
-
-          <span className="font-medium tabular-nums text-status-reserved-fg">
-            -{formatCurrency(discountAmount, settings.currencySymbol)}
-          </span>
-        </div>
-
-        <div className="flex justify-between text-sm">
-          <span className="font-medium">
-            {t("sales.negotiatedSubtotal")}
-          </span>
-
-          <span className="font-semibold tabular-nums">
-            {formatCurrency(totalNegotiated, settings.currencySymbol)}
-          </span>
-        </div>
-      </>
-    )}
-
-    {/* Additional Discount */}
-    {bargainDiscountAmount > 0 && bargainDiscountValid && (
-      <>
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">
-            {t("sales.additionalDiscount")}
-          </span>
-
-          <span className="font-medium tabular-nums text-status-reserved-fg">
-            -{formatCurrency(
-              bargainDiscountAmount,
-              settings.currencySymbol
             )}
-          </span>
-        </div>
 
-        {/* <div className="flex justify-between text-sm">
-          <span className="font-medium">
-            {t("sales.finalSubtotal")}
-          </span>
-
-          <span className="font-semibold tabular-nums">
-            {formatCurrency(
-              finalSubtotal,
-              settings.currencySymbol
-            )}
-          </span>
-        </div> */}
-      </>
-    )}
-
-    {/* Tax */}
-    {settings.taxPercent > 0 && (
-  <div className="flex justify-between text-sm">
-    <span className="text-muted-foreground">
-      {t("sales.tax")} ({settings.taxPercent}%)
-    </span>
-
-    <span className="font-medium tabular-nums">
-      {formatCurrency(taxAmount, settings.currencySymbol)}
-    </span>
-  </div>
-)}
-
-    <Separator />
-
-    {/* Grand Total */}
-    <div className="flex justify-between items-center">
-      <span className="text-base font-semibold">
-        {t("sales.grandTotal")}
-      </span>
-
-      <span className="text-lg font-bold text-primary tabular-nums">
-        {formatCurrency(grandTotal, settings.currencySymbol)}
-      </span>
-    </div>
-  </div>
-</div>
-
-    {/* Profit Summary – moved to a separate clean card */}
-    <div className="rounded-lg border p-3">
-      <span className="text-xs font-semibold">{t('sales.profitSummary')}</span>
-      <div className="mt-2 grid gap-1.5 text-xs">
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">{t('sales.costBasis')}</span>
-          <span className="tabular-nums">{formatCurrency(totalCost, settings.currencySymbol)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="font-medium">{t('sales.netProfit')}</span>
-          <span className={cn("font-bold tabular-nums", netProfit >= 0 ? "text-status-returned" : "text-status-sold")}>
-            {formatCurrency(netProfit, settings.currencySymbol)}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span className="font-medium">{t('sales.margin')}</span>
-          <span className={cn("font-bold", marginViolation ? "text-status-sold" : "text-status-returned")}>
-            {marginPercent.toFixed(1)}%
-          </span>
-        </div>
-      </div>
-      {marginViolation && (
-        <div className="mt-2 flex items-start gap-2 rounded-md border border-status-sold/30 bg-status-sold/10 p-2">
-          <Shield className="size-4 shrink-0 text-status-sold" />
-          <div className="flex flex-col">
-            <span className="text-xs font-medium text-status-sold-fg">{t('sales.managerApprovalRequired')}</span>
-            <span className="text-[10px] text-muted-foreground">
-              {t('sales.marginBelowMin', { margin: marginPercent.toFixed(1), min: settings.minProfitMarginPercent })}
-            </span>
-            <Button
-              size="xs"
-              variant="outline"
-              className="mt-1.5 h-5"
-              onClick={() => { setApproved(true); toast.success(t('sales.managerApprovalGranted')) }}
-            >
-              {approved ? <><Check className="size-3" /> {t('sales.approved')}</> : t('sales.approveSale')}
-            </Button>
-          </div>
-        </div>
-      )}
-    </div>
-
-            <div className="mt-4">
-  <Label className="text-xs">
-    {t("common.notes")}
-  </Label>
-
-  <Textarea
-    value={notes}
-    onChange={(e) => setNotes(e.target.value)}
-    placeholder={t("sales.optionalNotes")}
-    className="mt-1 min-h-24 resize-y text-xs"
-  />
-</div>
-  </div>
-)}
-             
           </div>
 
-          
+
           {/* Footer navigation */}
           <DialogFooter className="shrink-0 gap-2 sm:justify-between pt-2 border-t">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">

@@ -10,10 +10,10 @@ import {
   dbSetManualOverride,
   dbToggleCurrencyActive,
   dbUpdateCurrencyRate,
+  dbDeleteCurrency, // ← جديدة: دالة حذف العملة من قاعدة البيانات
 } from "./db/index.js"
 
 const DecimalAny: any = Decimal as unknown as any
-
 DecimalAny.set({ rounding: DecimalAny.ROUND_HALF_UP, precision: 28 })
 
 export interface CurrencyInfo {
@@ -96,7 +96,6 @@ class CurrencyServiceClass {
   async load(): Promise<void> {
     if (this.loaded) return
     if (this.loadPromise) return this.loadPromise
-
     this.loadPromise = this._doLoad()
     await this.loadPromise
   }
@@ -113,14 +112,16 @@ class CurrencyServiceClass {
     this.notify()
   }
 
+  // ✅ تعديل: تفعيل USD, SAR, SDG فقط كوضع افتراضي عند استخدام القيم الاحتياطية
   private loadFallbacks() {
+    const defaultActive = new Set(["USD", "SAR", "SDG"])
     for (const [code, rate] of Object.entries(FALLBACK_RATES)) {
       this.currencies.set(code, {
         isoCode: code,
         name: code,
         symbol: code,
         decimalPrecision: 2,
-        isActive: true,
+        isActive: defaultActive.has(code), // USD, SAR, SDG مفعلة فقط
         lastKnownRate: rate,
         lastRateUpdatedAt: null,
       })
@@ -161,8 +162,14 @@ class CurrencyServiceClass {
     }
   }
 
+  // ✅ الطريقة الأصلية: ترجع العملات المفعلة فقط (للاستخدام في القوائم المنسدلة والهيدر)
   getCurrencies(): CurrencyInfo[] {
     return Array.from(this.currencies.values()).filter((c) => c.isActive)
+  }
+
+  // ✅ جديدة: ترجع جميع العملات بغض النظر عن حالة التفعيل (للاستخدام في لوحة الإدارة)
+  getAllCurrencies(): CurrencyInfo[] {
+    return Array.from(this.currencies.values())
   }
 
   getCurrency(code: string): CurrencyInfo | undefined {
@@ -179,18 +186,14 @@ class CurrencyServiceClass {
 
   getRate(currencyCode: string): number {
     if (currencyCode === ACCOUNTING_CURRENCY) return 1
-
     const override = this.overrides.get(currencyCode)
     if (override?.mode === "manual" && override.manualRate != null) {
       return override.manualRate
     }
-
     const cached = this.rateCache.get(currencyCode)
     if (cached) return cached.rate
-
     const currency = this.currencies.get(currencyCode)
     if (currency && currency.lastKnownRate) return currency.lastKnownRate
-
     return FALLBACK_RATES[currencyCode] ?? 1
   }
 
@@ -209,7 +212,6 @@ class CurrencyServiceClass {
     if (fromCurrency === ACCOUNTING_CURRENCY) return amount
     const rate = this.getRate(fromCurrency)
     if (rate === 0) return 0
-
     const decAmount = new DecimalAny(amount)
     const decRate = new DecimalAny(rate)
     return decAmount.dividedBy(decRate).toNumber()
@@ -218,7 +220,6 @@ class CurrencyServiceClass {
   convertFromUSD(usdAmount: number, toCurrency: string): number {
     if (toCurrency === ACCOUNTING_CURRENCY) return usdAmount
     const rate = this.getRate(toCurrency)
-
     const decUsd = new DecimalAny(usdAmount)
     const decRate = new DecimalAny(rate)
     return decUsd.times(decRate).toNumber()
@@ -232,12 +233,10 @@ class CurrencyServiceClass {
   format(amount: number, currencyCode: string, locale: string = "en-US"): string {
     const currency = this.currencies.get(currencyCode)
     const precision = currency?.decimalPrecision ?? 2
-
     const formatted = new Intl.NumberFormat(locale, {
       minimumFractionDigits: precision,
       maximumFractionDigits: precision,
     }).format(amount)
-
     const symbol = currency?.symbol ?? currencyCode
     return `${symbol} ${formatted}`
   }
@@ -277,13 +276,11 @@ class CurrencyServiceClass {
   async updateCurrencyRate(code: string, rate: number, source: RateSource = "api"): Promise<void> {
     const now = new Date().toISOString()
     await dbUpdateCurrencyRate(code, rate, now)
-
     const currency = this.currencies.get(code)
     if (currency) {
       currency.lastKnownRate = rate
       currency.lastRateUpdatedAt = now
     }
-
     this.rateCache.set(code, { rate, source, fetchedAt: new Date() })
     this.notify()
   }
@@ -313,19 +310,15 @@ class CurrencyServiceClass {
     if (!userRole || userRole.toLowerCase() !== "admin") {
       throw new Error("Unauthorized: Administrator role required to modify currency rates.")
     }
-
     if (rate <= 0) {
       throw new Error("Rate must be greater than zero.")
     }
-
     const oldRate = this.getRate(code)
     const now = new Date().toISOString()
-
     await dbSetManualOverride(code, rate, changedBy, reason, now)
     await dbUpdateCurrencyRate(code, rate, now)
     await dbRecordRateHistory(code, rate, "manual")
     await dbRecordRateAuditLog(code, oldRate, rate, changedBy, reason, now)
-
     this.overrides.set(code, {
       currencyCode: code,
       mode: "manual",
@@ -334,7 +327,6 @@ class CurrencyServiceClass {
       updatedAt: now,
       reason,
     })
-
     this.rateCache.delete(code)
     this.notify()
   }
@@ -343,13 +335,10 @@ class CurrencyServiceClass {
     if (!userRole || userRole.toLowerCase() !== "admin") {
       throw new Error("Unauthorized: Administrator role required to modify currency rates.")
     }
-
     const oldRate = this.getRate(code)
     const now = new Date().toISOString()
-
     await dbSetAutomaticMode(code, changedBy, now)
     await dbRecordRateAuditLog(code, oldRate, null, changedBy, "Switched to automatic mode", now)
-
     this.overrides.set(code, {
       currencyCode: code,
       mode: "automatic",
@@ -358,7 +347,6 @@ class CurrencyServiceClass {
       updatedAt: now,
       reason: "Switched to automatic API sync",
     })
-
     this.rateCache.delete(code)
     this.notify()
   }
@@ -381,9 +369,7 @@ class CurrencyServiceClass {
     if (initialRate <= 0) {
       throw new Error("Initial rate must be greater than zero.")
     }
-
     await dbAddCurrency(isoCode.toUpperCase(), name, symbol, decimalPrecision, initialRate)
-
     const code = isoCode.toUpperCase()
     this.currencies.set(code, {
       isoCode: code,
@@ -404,7 +390,6 @@ class CurrencyServiceClass {
     })
     this.rateCache.delete(code)
     this.notify()
-
     if (userRole && userRole.toLowerCase() === "admin") {
       await this.recordRateAuditLog(
         code,
@@ -418,10 +403,23 @@ class CurrencyServiceClass {
 
   async toggleCurrencyActive(code: string, isActive: boolean): Promise<void> {
     await dbToggleCurrencyActive(code, isActive)
-
     const currency = this.currencies.get(code)
     if (currency) currency.isActive = isActive
+    this.notify()
+  }
 
+  // ✅ جديدة: حذف عملة نهائياً (مع منع حذف USD العملة المحاسبية)
+  async deleteCurrency(code: string): Promise<void> {
+    if (code === ACCOUNTING_CURRENCY) {
+      throw new Error("Cannot delete the accounting currency (USD).")
+    }
+    if (!this.currencies.has(code)) {
+      throw new Error(`Currency ${code} does not exist.`)
+    }
+    await dbDeleteCurrency(code)
+    this.currencies.delete(code)
+    this.overrides.delete(code)
+    this.rateCache.delete(code)
     this.notify()
   }
 

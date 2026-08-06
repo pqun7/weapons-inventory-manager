@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/package.json",
   "name": "armory-store",
   "private": true,
   "version": "1.0.0",
@@ -10,12 +11,12 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "dev": "rsbuild dev",
+    "dev": "concurrently \"rsbuild dev\" \"wait-on tcp:3000 && cross-env RSBUILD_DEV_SERVER_URL=http://localhost:3000 nodemon\"",
     "build": "tsc -b && rsbuild build",
     "preview": "rsbuild preview",
-    "electron:dev": "concurrently \"rsbuild dev\" \"wait-on tcp:3000 && cross-env RSBUILD_DEV_SERVER_URL=http://localhost:3000 electron .\"",
+    "electron:dev": "concurrently \"rsbuild dev\" \"wait-on tcp:3000 && cross-env RSBUILD_DEV_SERVER_URL=http://localhost:3000 nodemon --watch electron --ext js,ts,json --exec \"tsc -p tsconfig.electron.json && electron .\"\"",
     "build:electron": "tsc -p tsconfig.electron.json && rsbuild build",
-    "start": "electron .",
+    "start": "nodemon --watch electron --ext js,ts,json --exec \"tsc -p tsconfig.electron.json && electron .\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -77,17 +78,19 @@
     "@types/react-dom": "^19.2.3",
     "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "^4.1.10",
-    "concurrently": "^9.1.2",
+    "concurrently": "^9.2.4",
     "cross-env": "^7.0.3",
     "electron": "^32.3.3",
     "electron-builder": "^25.1.8",
     "electron-rebuild": "^3.2.9",
+    "electronmon": "^2.0.4",
     "jsdom": "^30.0.1",
+    "nodemon": "^3.1.14",
     "postcss": "^8.5.25",
     "rollup-plugin-visualizer": "^6.0.11",
     "source-map-explorer": "^2.5.3",
     "typescript": "~5.9.3",
     "vitest": "^4.1.10",
-    "wait-on": "^8.0.1"
+    "wait-on": "^8.0.5"
   }
 }
