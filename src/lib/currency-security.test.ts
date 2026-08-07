@@ -51,8 +51,8 @@ vi.mock("@/lib/db", () => {
       })),
       error: null,
     })),
-    updateCurrencyRate: vi.fn((code: string, rate: number, updatedAt: string) => {
-      rateStore.set(code, String(rate))
+    updateCurrencyRate: vi.fn((_code: string, _rate: number, _updatedAt: string) => {
+      rateStore.set(_code, String(_rate))
       return { data: null, error: null }
     }),
     recordRateHistory: vi.fn(() => ({ data: null, error: null })),
@@ -72,9 +72,9 @@ vi.mock("@/lib/db", () => {
       data: auditLog.slice(-limit).map((a, i) => ({ id: `ral-${i}`, ...a, oldRate: a.oldRate != null ? Number(a.oldRate) : null, newRate: a.newRate != null ? Number(a.newRate) : null })),
       error: null,
     })),
-    addCurrency: vi.fn((code: string, name: string, symbol: string, precision: number, rate: number) => {
-      rateStore.set(code, String(rate))
-      overrideStore.set(code, { mode: "automatic", manual_rate: null, updated_by: "system", updated_at: new Date().toISOString(), reason: "" })
+    addCurrency: vi.fn((_code: string, _name: string, _symbol: string, _precision: number, _rate: number) => {
+      rateStore.set(_code, String(_rate))
+      overrideStore.set(_code, { mode: "automatic", manual_rate: null, updated_by: "system", updated_at: new Date().toISOString(), reason: "" })
       return { data: null, error: null }
     }),
     toggleCurrencyActive: vi.fn(() => ({ data: null, error: null })),
@@ -87,18 +87,18 @@ vi.mock("@/lib/db", () => {
 
   return {
     getDb: vi.fn(async () => engine),
-    initDb: vi.fn(async () => {}),
-    seedDemoDataIfNeeded: vi.fn(async () => {}),
+    initDb: vi.fn(async () => { }),
+    seedDemoDataIfNeeded: vi.fn(async () => { }),
     dbGetAll: vi.fn(async () => ({ weapons: [], accessories: [], ammunition: [], shipments: [], invoices: [], payments: [], customers: [], suppliers: [], auditLogs: [], notifications: [], users: [], settings: {} })),
     dbGetMasterData: vi.fn(async () => ({ weaponTypes: [], weaponSubtypes: [], calibers: [], subtypeCalibers: [], brands: [], models: [], warehouses: [], storageLocations: [] })),
     dbGetCurrencies: vi.fn(async () => engine.getCurrencies().data),
     dbGetOverrides: vi.fn(async () => engine.getOverrides().data),
-    dbUpdateCurrencyRate: vi.fn(async (code: string, rate: number, updatedAt: string) => engine.updateCurrencyRate(code, rate, updatedAt)),
-    dbRecordRateHistory: vi.fn(async (code: string, rate: number, source: string) => engine.recordRateHistory(code, rate, source)),
-    dbSetManualOverride: vi.fn(async (code: string, rate: number, changedBy: string, reason: string, updatedAt: string) => engine.setManualOverride(code, rate, changedBy, reason, updatedAt)),
-    dbSetAutomaticMode: vi.fn(async (code: string, changedBy: string, updatedAt: string) => engine.setAutomaticMode(code, changedBy, updatedAt)),
-    dbGetRateAuditLog: vi.fn(async (limit: number) => engine.getRateAuditLog(limit).data),
-    dbAddCurrency: vi.fn(async (code: string, name: string, symbol: string, precision: number, rate: number) => engine.addCurrency(code, name, symbol, precision, rate)),
+    dbUpdateCurrencyRate: vi.fn(async (_code: string, _rate: number, _updatedAt: string) => engine.updateCurrencyRate(_code, _rate, _updatedAt)),
+    dbRecordRateHistory: vi.fn(async (_code: string, _rate: number, _source: string) => engine.recordRateHistory()),
+    dbSetManualOverride: vi.fn(async (_code: string, _rate: number, _changedBy: string, _reason: string, _updatedAt: string) => engine.setManualOverride(_code, _rate, _changedBy, _reason, _updatedAt)),
+    dbSetAutomaticMode: vi.fn(async (_code: string, _changedBy: string, _updatedAt: string) => engine.setAutomaticMode(_code, _changedBy, _updatedAt)),
+    dbGetRateAuditLog: vi.fn(async (_limit: number) => engine.getRateAuditLog(_limit).data),
+    dbAddCurrency: vi.fn(async (_code: string, _name: string, _symbol: string, _precision: number, _rate: number) => engine.addCurrency(_code, _name, _symbol, _precision, _rate)),
     dbToggleCurrencyActive: vi.fn(async () => engine.toggleCurrencyActive()),
     dbTransaction: vi.fn(async (cb: () => unknown) => engine.transaction(cb)),
     dbRecordRateAuditLog: vi.fn(async (code: string, oldRate: number | null, newRate: number | null, changedBy: string, reason: string, changedAt: string) => engine.recordRateAuditLog(code, oldRate, newRate, changedBy, reason, changedAt)),

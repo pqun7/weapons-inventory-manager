@@ -26,6 +26,8 @@ const PRODUCT_TYPES = ["weapon", "ammunition", "accessory"] as const
 
 interface WizardLineItem extends ShipmentLineItemInput {
   id: string
+  // label fields are already optional in ShipmentLineItemInput,
+  // we will treat them as required for the wizard state but allow undefined.
 }
 
 interface CreateShipmentWizardProps {
@@ -89,7 +91,16 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
   useEffect(() => {
     if (open && prefillLineItems && prefillLineItems.length > 0) {
       setStep(1)
-      setLineItems(prefillLineItems.map((item) => ({ ...item, id: `TMP-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` })))
+      setLineItems(prefillLineItems.map((item) => ({
+        ...item,
+        id: `TMP-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        // Ensure label fields exist
+        brandLabel: item.brandLabel ?? "",
+        modelLabel: item.modelLabel ?? "",
+        weaponTypeLabel: item.weaponTypeLabel ?? "",
+        subTypeLabel: item.subTypeLabel ?? "",
+        caliberLabel: item.caliberLabel ?? "",
+      })))
     }
   }, [open, prefillLineItems])
 
@@ -103,11 +114,20 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
     const newItem: WizardLineItem = {
       id: `TMP-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       productType: "weapon",
-      weaponType: "Pistol",
-      subType: "",
-      brand: "",
-      model: "",
-      caliber: "",
+      // FK IDs (will be filled on submit)
+      weaponTypeId: "",
+      weaponSubtypeId: "",
+      caliberId: "",
+      brandId: "",
+      modelId: "",
+      storageLocationId: "",
+      // Labels
+      weaponTypeLabel: "Pistol",
+      subTypeLabel: "",
+      caliberLabel: "",
+      brandLabel: "",
+      modelLabel: "",
+      // Other fields
       quantity: 1,
       purchasePrice: 0,
       retailPrice: 0,
@@ -166,7 +186,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
     if (step === 1) {
       if (lineItems.length === 0) return false
       for (const item of lineItems) {
-        if (!item.brand.trim()) return false
+        if (!(item.brandLabel ?? "").trim()) return false
         if (item.quantity <= 0) return false
         if (item.productType === "weapon" && item.serialNumbers.length !== item.quantity) return false
       }
@@ -194,6 +214,37 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
   }, [lineItems])
 
   const handleFinalSubmit = async () => {
+    // Map label fields to FK IDs using master data
+    const mappedLineItems: ShipmentLineItemInput[] = lineItems.map((item) => {
+      const brandId = md.getBrandIdByLabel(item.brandLabel ?? "") ?? ""
+      const modelId = md.getModelIdByLabel(item.modelLabel ?? "", brandId) ?? ""
+      const weaponTypeId = md.getWeaponTypeIdByLabel(item.weaponTypeLabel ?? "") ?? ""
+      const weaponSubtypeId = md.getWeaponSubtypeIdByLabel(item.subTypeLabel ?? "", weaponTypeId) ?? ""
+      const caliberId = md.getCaliberIdByLabel(item.caliberLabel ?? "") ?? ""
+      const storageLocationId = md.getStorageLocationId(
+        item.location?.warehouse ?? "",
+        item.location?.shelf ?? "",
+        item.location?.bin ?? ""
+      ) ?? ""
+
+      return {
+        ...item,
+        brandId,
+        modelId,
+        weaponTypeId,
+        weaponSubtypeId,
+        caliberId,
+        storageLocationId,
+        // keep labels for audit
+        brandLabel: item.brandLabel ?? "",
+        modelLabel: item.modelLabel ?? "",
+        weaponTypeLabel: item.weaponTypeLabel ?? "",
+        subTypeLabel: item.subTypeLabel ?? "",
+        caliberLabel: item.caliberLabel ?? "",
+        location: item.location,
+      }
+    })
+
     const input = {
       shipment: {
         shipmentNumber, supplierId, shipmentDate, expectedArrivalDate,
@@ -201,8 +252,9 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
         purchaseOrderNumber, invoiceNumber, shippingCarrier, containerNumber,
         currency, purchaseDate, actualArrivalDate: actualArrivalDate || undefined,
       },
-      lineItems: lineItems.map(({ id, ...rest }) => rest),
+      lineItems: mappedLineItems,
     }
+
     const result = await bulkCreate(input)
     if (result.success) {
       toast.success(t("ship.shipmentCreated"))
@@ -245,10 +297,9 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
           <div className="flex items-center gap-1">
             {stepLabels.map((label, idx) => (
               <div key={idx} className="flex items-center flex-1">
-                <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium ${
-                  idx === step ? "bg-primary text-primary-foreground" :
+                <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium ${idx === step ? "bg-primary text-primary-foreground" :
                   idx < step ? "bg-status-returned/20 text-status-returned-fg" : "bg-muted text-muted-foreground"
-                }`}>
+                  }`}>
                   <span className="flex size-4 items-center justify-center rounded-full text-[9px]">
                     {idx < step ? <CheckCircle2 className="size-3" /> : idx + 1}
                   </span>
@@ -347,9 +398,9 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
                           {SHIPMENT_STATUSES.map((s) => {
                             const key = s === "In Transit" ? "ship.inTransit" :
                               s === "Pending" ? "ship.pending" :
-                              s === "Arrived" ? "ship.arrived" :
-                              s === "Delayed" ? "ship.delayed" :
-                              s === "Cancelled" ? "ship.cancelled" : "ship.partial"
+                                s === "Arrived" ? "ship.arrived" :
+                                  s === "Delayed" ? "ship.delayed" :
+                                    s === "Cancelled" ? "ship.cancelled" : "ship.partial"
                             return <SelectItem key={s} value={s}>{t(key)}</SelectItem>
                           })}
                         </SelectContent>
@@ -393,29 +444,29 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
                         </div>
                         <div>
                           <Label className="text-[10px]">{t("common.warehouse")}</Label>
-                          <SearchableCombobox value={item.location.warehouse} onValueChange={(v) => updateLineItem(item.id, { location: { ...item.location, warehouse: v } })} options={md.warehouseLabels} placeholder="Warehouse" searchPlaceholder="Search" allowCreate onCreateNew={(v) => { md.createWarehouse(v); updateLineItem(item.id, { location: { ...item.location, warehouse: v } }) }} className="mt-0.5 h-7 text-[11px]" />
+                          <SearchableCombobox value={item.location?.warehouse ?? ""} onValueChange={(v) => updateLineItem(item.id, { location: { ...item.location!, warehouse: v } })} options={md.warehouseLabels} placeholder="Warehouse" searchPlaceholder="Search" allowCreate onCreateNew={(v) => { md.createWarehouse(v); updateLineItem(item.id, { location: { ...item.location!, warehouse: v } }) }} className="mt-0.5 h-7 text-[11px]" />
                         </div>
                         <div>
                           <Label className="text-[10px]">{t("common.shelf")}</Label>
-                          <SearchableCombobox value={item.location.shelf} onValueChange={(v) => updateLineItem(item.id, { location: { ...item.location, shelf: v } })} options={md.getShelvesFor(item.location.warehouse)} placeholder="Shelf" searchPlaceholder="Search" allowCreate onCreateNew={(v) => { md.createStorageLocation(item.location.warehouse, v, item.location.bin); updateLineItem(item.id, { location: { ...item.location, shelf: v } }) }} className="mt-0.5 h-7 text-[11px]" />
+                          <SearchableCombobox value={item.location?.shelf ?? ""} onValueChange={(v) => updateLineItem(item.id, { location: { ...item.location!, shelf: v } })} options={md.getShelvesFor(item.location?.warehouse ?? "")} placeholder="Shelf" searchPlaceholder="Search" allowCreate onCreateNew={(v) => { md.createStorageLocation(item.location?.warehouse ?? "", v, item.location?.bin ?? ""); updateLineItem(item.id, { location: { ...item.location!, shelf: v } }) }} className="mt-0.5 h-7 text-[11px]" />
                         </div>
                         <div>
                           <Label className="text-[10px]">{t("common.bin")}</Label>
-                          <SearchableCombobox value={item.location.bin} onValueChange={(v) => updateLineItem(item.id, { location: { ...item.location, bin: v } })} options={md.getBinsFor(item.location.warehouse, item.location.shelf)} placeholder="Bin" searchPlaceholder="Search" allowCreate onCreateNew={(v) => { md.createStorageLocation(item.location.warehouse, item.location.shelf, v); updateLineItem(item.id, { location: { ...item.location, bin: v } }) }} className="mt-0.5 h-7 text-[11px]" />
+                          <SearchableCombobox value={item.location?.bin ?? ""} onValueChange={(v) => updateLineItem(item.id, { location: { ...item.location!, bin: v } })} options={md.getBinsFor(item.location?.warehouse ?? "", item.location?.shelf ?? "")} placeholder="Bin" searchPlaceholder="Search" allowCreate onCreateNew={(v) => { md.createStorageLocation(item.location?.warehouse ?? "", item.location?.shelf ?? "", v); updateLineItem(item.id, { location: { ...item.location!, bin: v } }) }} className="mt-0.5 h-7 text-[11px]" />
                         </div>
                       </div>
                       <div className="mt-2 grid grid-cols-4 gap-2">
                         <div>
                           <Label className="text-[10px]">{t("weapon.brand")}</Label>
-                          <SearchableCombobox value={item.brand} onValueChange={(v) => updateLineItem(item.id, { brand: v })} options={md.brandLabels} placeholder="Brand" searchPlaceholder="Search" allowCreate onCreateNew={(v) => { md.createBrand(v); updateLineItem(item.id, { brand: v }) }} className="mt-0.5 h-7 text-[11px]" />
+                          <SearchableCombobox value={item.brandLabel ?? ""} onValueChange={(v) => updateLineItem(item.id, { brandLabel: v })} options={md.brandLabels} placeholder="Brand" searchPlaceholder="Search" allowCreate onCreateNew={(v) => { md.createBrand(v); updateLineItem(item.id, { brandLabel: v }) }} className="mt-0.5 h-7 text-[11px]" />
                         </div>
                         <div>
                           <Label className="text-[10px]">{t("weapon.model")}</Label>
-                          <SearchableCombobox value={item.model} onValueChange={(v) => updateLineItem(item.id, { model: v })} options={md.modelLabels} placeholder="Model" searchPlaceholder="Search" allowCreate onCreateNew={(v) => { md.createModel(v, item.brand); updateLineItem(item.id, { model: v }) }} className="mt-0.5 h-7 text-[11px]" />
+                          <SearchableCombobox value={item.modelLabel ?? ""} onValueChange={(v) => updateLineItem(item.id, { modelLabel: v })} options={md.modelLabels} placeholder="Model" searchPlaceholder="Search" allowCreate onCreateNew={(v) => { md.createModel(v, item.brandLabel ?? ""); updateLineItem(item.id, { modelLabel: v }) }} className="mt-0.5 h-7 text-[11px]" />
                         </div>
                         <div>
                           <Label className="text-[10px]">{t("weapon.caliber")}</Label>
-                          <SearchableCombobox value={item.caliber} onValueChange={(v) => updateLineItem(item.id, { caliber: v })} options={md.caliberLabels} placeholder="Caliber" searchPlaceholder="Search" allowCreate onCreateNew={(v) => { md.createCaliber(v); updateLineItem(item.id, { caliber: v }) }} className="mt-0.5 h-7 text-[11px]" />
+                          <SearchableCombobox value={item.caliberLabel ?? ""} onValueChange={(v) => updateLineItem(item.id, { caliberLabel: v })} options={md.caliberLabels} placeholder="Caliber" searchPlaceholder="Search" allowCreate onCreateNew={(v) => { md.createCaliber(v); updateLineItem(item.id, { caliberLabel: v }) }} className="mt-0.5 h-7 text-[11px]" />
                         </div>
                         <div>
                           <Label className="text-[10px]">{t("common.quantity")}</Label>
@@ -476,7 +527,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <Package className="size-4 text-muted-foreground" />
-                            <span className="text-xs font-medium">{item.brand} {item.model}</span>
+                            <span className="text-xs font-medium">{item.brandLabel ?? ""} {item.modelLabel ?? ""}</span>
                           </div>
                           <div className="flex items-center gap-2">
                             <Badge variant="outline" className={`text-[10px] ${match ? "bg-status-returned/10 text-status-returned-fg border-status-returned/30" : "bg-status-sold/10 text-status-sold-fg border-status-sold/30"}`}>

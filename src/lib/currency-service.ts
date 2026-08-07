@@ -408,7 +408,6 @@ class CurrencyServiceClass {
     this.notify()
   }
 
-  // ✅ جديدة: حذف عملة نهائياً (مع منع حذف USD العملة المحاسبية)
   async deleteCurrency(code: string): Promise<void> {
     if (code === ACCOUNTING_CURRENCY) {
       throw new Error("Cannot delete the accounting currency (USD).")

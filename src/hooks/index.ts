@@ -27,7 +27,7 @@ export function useVirtualList<T>(
   const [scrollTop, setScrollTop] = useState(0)
 
   const onScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    setScrollTop(e.currentTarget.scrollTop)
+    setScrollTop((e.currentTarget as HTMLDivElement).scrollTop)
   }, [])
 
   const { virtualItems, totalHeight } = useMemo(() => {

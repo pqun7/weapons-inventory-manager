@@ -950,6 +950,13 @@ export const en: Record<string, string> = {
   'sales.accessory': 'Accessory',
   'sales.accessorySubtotal': 'Accessory Subtotal',
   'sales.costPrice': 'Cost Price',
+  'settings.deleteCurrency': 'Delete Currency',
+  "settings.deleteCurrencyConfirm": "Are you sure you want to delete this currency? This action cannot be undone.",
+  "settings.currencyDeleted": "Currency deleted successfully",
+  "settings.currencyDeleteFailed": "Failed to delete currency",
+  "settings.currencyInUse": "Cannot delete currency — it is currently in use in transactions or settings.",
+  'settings.deleteCurrencyWarning': 'Warning: Deleting this currency will remove all associated data and may affect historical records. Proceed with caution.',
+
 }
 
 // ── Arabic translations ───────────────────────────────────────────
@@ -1891,6 +1898,12 @@ export const ar: Record<string, string> = {
   'sales.accessory': 'الملحق',
   'sales.accessorySubtotal': 'المجموع الفرعي للملحقات',
   'sales.costPrice': 'سعر التكلفة',
+  'settings.deleteCurrency': 'حذف العملة',
+  "settings.deleteCurrencyConfirm": "هل أنت أثق بأنك تريد حذف هذه العملة؟ لا يمكن التراجع عن هذا الإجراء.",
+  "settings.currencyDeleted": "تم حذف العملة بنجاح",
+  "settings.currencyDeleteFailed": "فشل حذف العملة",
+  "settings.currencyInUse": "لا يمكن حذف العملة — فهي مستخدمة حاليًا في المعاملات أو الإعدادات.",
+  'settings.deleteCurrencyWarning': 'تحذير: يؤدي حذف هذه العملة إلى إزالة جميع البيانات المرتبطة بها وقد يؤثر على السجلات التاريخية. يرجى المتابعة بحذر.'
 }
 
 export const translations: Record<Language, Record<string, string>> = { en, ar }

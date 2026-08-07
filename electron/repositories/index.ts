@@ -23,8 +23,31 @@ function rowToCurrencyRow(r: Record<string, unknown>): CurrencyRow {
 export class AppRepository {
   getAll(): AllData {
     const db = getDb()
-    const weapons = (db.prepare("SELECT * FROM weapons WHERE deleted_at IS NULL ORDER BY date_added DESC").all() as Record<string, unknown>[])
+
+    const weapons = (db.prepare(`
+      SELECT
+        w.*,
+        wt.label AS weapon_type,
+        ws.label AS sub_type,
+        c.label   AS caliber,
+        b.label   AS brand,
+        m.label   AS model,
+        COALESCE(wh.label, '') AS warehouse,
+        COALESCE(sl.shelf, '') AS shelf,
+        COALESCE(sl.bin, '')   AS bin
+      FROM weapons w
+        LEFT JOIN weapon_types wt    ON w.weapon_type_id    = wt.id
+        LEFT JOIN weapon_subtypes ws ON w.weapon_subtype_id = ws.id
+        LEFT JOIN calibers c         ON w.caliber_id        = c.id
+        LEFT JOIN brands b           ON w.brand_id          = b.id
+        LEFT JOIN models m           ON w.model_id          = m.id
+        LEFT JOIN storage_locations sl ON w.storage_location_id = sl.id
+        LEFT JOIN warehouses wh      ON sl.warehouse_id     = wh.id
+      WHERE w.deleted_at IS NULL
+      ORDER BY w.date_added DESC
+    `).all() as Record<string, unknown>[])
       .map((r) => mappers.rowToWeapon(r as never))
+
     const shipments = (db.prepare("SELECT * FROM shipments ORDER BY shipment_date DESC").all() as Record<string, unknown>[])
       .map((r) => mappers.rowToShipment(r as never))
     const invoices = (db.prepare("SELECT * FROM invoices ORDER BY date DESC").all() as Record<string, unknown>[])
@@ -111,26 +134,40 @@ export class AppRepository {
   insertWeapon(w: Weapon): void {
     const db = getDb()
     const row = mappers.weaponToRow(w)
-    db.prepare(`INSERT INTO weapons (id, serial_number, brand, model, weapon_type, sub_type, caliber, condition, status,
-      purchase_price, retail_price, wholesale_price, actual_final_price, supplier_id, shipment_id, date_added,
-      batch_id, notes, images, movement_history, warehouse, shelf, bin,
-      purchase_price_valuation, retail_price_valuation, sale_price_valuation, deleted_at)
-      VALUES (@id, @serial_number, @brand, @model, @weapon_type, @sub_type, @caliber, @condition, @status,
-      @purchase_price, @retail_price, @wholesale_price, @actual_final_price, @supplier_id, @shipment_id, @date_added,
-      @batch_id, @notes, @images, @movement_history, @warehouse, @shelf, @bin,
-      @purchase_price_valuation, @retail_price_valuation, @sale_price_valuation, @deleted_at)`).run(row)
+    db.prepare(`INSERT INTO weapons (
+      id, serial_number, weapon_type_id, weapon_subtype_id, brand_id, model_id, caliber_id,
+      storage_location_id, supplier_id, shipment_id,
+      condition, status,
+      purchase_price, retail_price, wholesale_price, actual_final_price,
+      date_added, batch_id, notes, images, movement_history,
+      purchase_price_valuation, retail_price_valuation, sale_price_valuation, deleted_at
+    ) VALUES (
+      @id, @serial_number, @weapon_type_id, @weapon_subtype_id, @brand_id, @model_id, @caliber_id,
+      @storage_location_id, @supplier_id, @shipment_id,
+      @condition, @status,
+      @purchase_price, @retail_price, @wholesale_price, @actual_final_price,
+      @date_added, @batch_id, @notes, @images, @movement_history,
+      @purchase_price_valuation, @retail_price_valuation, @sale_price_valuation, @deleted_at
+    )`).run(row)
   }
 
   bulkInsertWeapons(weapons: Weapon[]): void {
     const db = getDb()
-    const stmt = db.prepare(`INSERT INTO weapons (id, serial_number, brand, model, weapon_type, sub_type, caliber, condition, status,
-      purchase_price, retail_price, wholesale_price, actual_final_price, supplier_id, shipment_id, date_added,
-      batch_id, notes, images, movement_history, warehouse, shelf, bin,
-      purchase_price_valuation, retail_price_valuation, sale_price_valuation, deleted_at)
-      VALUES (@id, @serial_number, @brand, @model, @weapon_type, @sub_type, @caliber, @condition, @status,
-      @purchase_price, @retail_price, @wholesale_price, @actual_final_price, @supplier_id, @shipment_id, @date_added,
-      @batch_id, @notes, @images, @movement_history, @warehouse, @shelf, @bin,
-      @purchase_price_valuation, @retail_price_valuation, @sale_price_valuation, @deleted_at)`)
+    const stmt = db.prepare(`INSERT INTO weapons (
+      id, serial_number, weapon_type_id, weapon_subtype_id, brand_id, model_id, caliber_id,
+      storage_location_id, supplier_id, shipment_id,
+      condition, status,
+      purchase_price, retail_price, wholesale_price, actual_final_price,
+      date_added, batch_id, notes, images, movement_history,
+      purchase_price_valuation, retail_price_valuation, sale_price_valuation, deleted_at
+    ) VALUES (
+      @id, @serial_number, @weapon_type_id, @weapon_subtype_id, @brand_id, @model_id, @caliber_id,
+      @storage_location_id, @supplier_id, @shipment_id,
+      @condition, @status,
+      @purchase_price, @retail_price, @wholesale_price, @actual_final_price,
+      @date_added, @batch_id, @notes, @images, @movement_history,
+      @purchase_price_valuation, @retail_price_valuation, @sale_price_valuation, @deleted_at
+    )`)
     for (const w of weapons) {
       stmt.run(mappers.weaponToRow(w))
     }
@@ -140,14 +177,30 @@ export class AppRepository {
     const db = getDb()
     const row = mappers.weaponToRow(w)
     db.prepare(`UPDATE weapons SET
-      serial_number = @serial_number, brand = @brand, model = @model, weapon_type = @weapon_type,
-      sub_type = @sub_type, caliber = @caliber, condition = @condition, status = @status,
-      purchase_price = @purchase_price, retail_price = @retail_price, wholesale_price = @wholesale_price,
-      actual_final_price = @actual_final_price, supplier_id = @supplier_id, shipment_id = @shipment_id,
-      date_added = @date_added, batch_id = @batch_id, notes = @notes, images = @images,
-      movement_history = @movement_history, warehouse = @warehouse, shelf = @shelf, bin = @bin,
-      purchase_price_valuation = @purchase_price_valuation, retail_price_valuation = @retail_price_valuation,
-      sale_price_valuation = @sale_price_valuation, deleted_at = @deleted_at
+      serial_number = @serial_number,
+      weapon_type_id = @weapon_type_id,
+      weapon_subtype_id = @weapon_subtype_id,
+      brand_id = @brand_id,
+      model_id = @model_id,
+      caliber_id = @caliber_id,
+      storage_location_id = @storage_location_id,
+      supplier_id = @supplier_id,
+      shipment_id = @shipment_id,
+      condition = @condition,
+      status = @status,
+      purchase_price = @purchase_price,
+      retail_price = @retail_price,
+      wholesale_price = @wholesale_price,
+      actual_final_price = @actual_final_price,
+      date_added = @date_added,
+      batch_id = @batch_id,
+      notes = @notes,
+      images = @images,
+      movement_history = @movement_history,
+      purchase_price_valuation = @purchase_price_valuation,
+      retail_price_valuation = @retail_price_valuation,
+      sale_price_valuation = @sale_price_valuation,
+      deleted_at = @deleted_at
       WHERE id = @id`).run(row)
   }
 
@@ -399,21 +452,35 @@ export class AppRepository {
     }
   }
 
-  insertMasterWeaponType(label: string, sortOrder: number): string {
+
+  // ---------- Get‑Or‑Create Helpers ----------
+
+  getOrCreateWeaponType(label: string, sortOrder: number = 99): string {
+    const db = getDb()
+    const existing = db.prepare("SELECT id FROM weapon_types WHERE label = ?").get(label) as { id: string } | undefined
+    if (existing) return existing.id
     const id = `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    getDb().prepare("INSERT INTO weapon_types (id, label, sort_order) VALUES (?, ?, ?)").run(id, label, sortOrder)
+    db.prepare("INSERT INTO weapon_types (id, label, sort_order) VALUES (?, ?, ?)").run(id, label, sortOrder)
     return id
   }
 
-  insertMasterWeaponSubtype(weaponTypeId: string, label: string, sortOrder: number): string {
+  getOrCreateWeaponSubtype(weaponTypeId: string, label: string, sortOrder: number = 99): string {
+    const db = getDb()
+    const existing = db.prepare(
+      "SELECT id FROM weapon_subtypes WHERE weapon_type_id = ? AND label = ?"
+    ).get(weaponTypeId, label) as { id: string } | undefined
+    if (existing) return existing.id
     const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    getDb().prepare("INSERT INTO weapon_subtypes (id, weapon_type_id, label, sort_order) VALUES (?, ?, ?, ?)").run(id, weaponTypeId, label, sortOrder)
+    db.prepare("INSERT INTO weapon_subtypes (id, weapon_type_id, label, sort_order) VALUES (?, ?, ?, ?)").run(id, weaponTypeId, label, sortOrder)
     return id
   }
 
-  insertMasterCaliber(label: string): string {
+  getOrCreateCaliber(label: string): string {
+    const db = getDb()
+    const existing = db.prepare("SELECT id FROM calibers WHERE label = ?").get(label) as { id: string } | undefined
+    if (existing) return existing.id
     const id = `cal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    getDb().prepare("INSERT INTO calibers (id, label) VALUES (?, ?)").run(id, label)
+    db.prepare("INSERT INTO calibers (id, label) VALUES (?, ?)").run(id, label)
     return id
   }
 
@@ -421,27 +488,43 @@ export class AppRepository {
     getDb().prepare("INSERT OR IGNORE INTO subtype_calibers (subtype_id, caliber_id) VALUES (?, ?)").run(subtypeId, caliberId)
   }
 
-  insertMasterBrand(label: string): string {
+  getOrCreateBrand(label: string): string {
+    const db = getDb()
+    const existing = db.prepare("SELECT id FROM brands WHERE label = ?").get(label) as { id: string } | undefined
+    if (existing) return existing.id
     const id = `br-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    getDb().prepare("INSERT INTO brands (id, label) VALUES (?, ?)").run(id, label)
+    db.prepare("INSERT INTO brands (id, label) VALUES (?, ?)").run(id, label)
     return id
   }
 
-  insertMasterModel(label: string, brandId: string | null): string {
+  getOrCreateModel(label: string, brandId: string): string {
+    const db = getDb()
+    const existing = db.prepare(
+      "SELECT id FROM models WHERE label = ? AND brand_id = ?"
+    ).get(label, brandId) as { id: string } | undefined
+    if (existing) return existing.id
     const id = `mdl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    getDb().prepare("INSERT INTO models (id, label, brand_id) VALUES (?, ?, ?)").run(id, label, brandId)
+    db.prepare("INSERT INTO models (id, label, brand_id) VALUES (?, ?, ?)").run(id, label, brandId)
     return id
   }
 
-  insertMasterWarehouse(label: string): string {
+  getOrCreateWarehouse(label: string): string {
+    const db = getDb()
+    const existing = db.prepare("SELECT id FROM warehouses WHERE label = ?").get(label) as { id: string } | undefined
+    if (existing) return existing.id
     const id = `wh-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    getDb().prepare("INSERT INTO warehouses (id, label) VALUES (?, ?)").run(id, label)
+    db.prepare("INSERT INTO warehouses (id, label) VALUES (?, ?)").run(id, label)
     return id
   }
 
-  insertMasterStorageLocation(warehouseId: string, shelf: string, bin: string): string {
+  getOrCreateStorageLocation(warehouseId: string, shelf: string, bin: string): string {
+    const db = getDb()
+    const existing = db.prepare(
+      "SELECT id FROM storage_locations WHERE warehouse_id = ? AND shelf = ? AND bin = ?"
+    ).get(warehouseId, shelf, bin) as { id: string } | undefined
+    if (existing) return existing.id
     const id = `loc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    getDb().prepare("INSERT INTO storage_locations (id, warehouse_id, shelf, bin) VALUES (?, ?, ?, ?)").run(id, warehouseId, shelf, bin)
+    db.prepare("INSERT INTO storage_locations (id, warehouse_id, shelf, bin) VALUES (?, ?, ?, ?)").run(id, warehouseId, shelf, bin)
     return id
   }
 
@@ -450,6 +533,62 @@ export class AppRepository {
     if (!allowed.includes(table)) throw new Error(`Cannot delete from table: ${table}`)
     getDb().prepare(`DELETE FROM ${table} WHERE id = ?`).run(id)
   }
+
+  // insertMasterWeaponType(label: string, sortOrder: number): string {
+  //   const id = `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  //   getDb().prepare("INSERT INTO weapon_types (id, label, sort_order) VALUES (?, ?, ?)").run(id, label, sortOrder)
+  //   return id
+  // }
+
+  // insertMasterWeaponSubtype(weaponTypeId: string, label: string, sortOrder: number): string {
+  //   const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  //   getDb().prepare("INSERT INTO weapon_subtypes (id, weapon_type_id, label, sort_order) VALUES (?, ?, ?, ?)").run(id, weaponTypeId, label, sortOrder)
+  //   return id
+  // }
+
+  // insertMasterCaliber(label: string): string {
+  //   const id = `cal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  //   getDb().prepare("INSERT INTO calibers (id, label) VALUES (?, ?)").run(id, label)
+  //   return id
+  // }
+
+
+  // insertMasterBrand(label: string): string {
+  //   const id = `br-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  //   getDb().prepare("INSERT INTO brands (id, label) VALUES (?, ?)").run(id, label)
+  //   return id
+  // }
+
+  // insertMasterModel(label: string, brandId: string | null): string {
+  //   const id = `mdl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  //   getDb().prepare("INSERT INTO models (id, label, brand_id) VALUES (?, ?, ?)").run(id, label, brandId)
+  //   return id
+  // }
+
+  // insertMasterWarehouse(label: string): string {
+  //   const id = `wh-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  //   getDb().prepare("INSERT INTO warehouses (id, label) VALUES (?, ?)").run(id, label)
+  //   return id
+  // }
+
+  // insertMasterStorageLocation(warehouseId: string, shelf: string, bin: string): string {
+  //   const id = `loc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  //   getDb().prepare("INSERT INTO storage_locations (id, warehouse_id, shelf, bin) VALUES (?, ?, ?, ?)").run(id, warehouseId, shelf, bin)
+  //   return id
+  // }
+
+  deleteCurrency(code: string): void {
+    const db = getDb();
+    db.transaction(() => {
+      // حذف السجلات المرتبطة أولاً
+      db.prepare("DELETE FROM exchange_rate_history WHERE currency_code = ?").run(code);
+      db.prepare("DELETE FROM exchange_rate_overrides WHERE currency_code = ?").run(code);
+      db.prepare("DELETE FROM exchange_rate_audit_log WHERE currency_code = ?").run(code);
+      // ثم حذف العملة نفسها
+      db.prepare("DELETE FROM currencies WHERE iso_code = ?").run(code);
+    })();
+  }
+
 }
 
 export const repo = new AppRepository()

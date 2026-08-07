@@ -61,11 +61,6 @@ function createWindow(): BrowserWindow {
 
   // Dev-only error/log forwarding (cleaned up on window close)
   if (isDev) {
-    // 1. حساب الرابط مع القيمة الافتراضية
-    const DEV_SERVER_URL =
-      process.env.RSBUILD_DEV_SERVER_URL ||
-      process.env.DEV_SERVER_URL ||
-      "http://localhost:3000";
 
     const onFailLoad = (_: Electron.Event, code: number, desc: string) =>
       console.error("did-fail-load:", code, desc)

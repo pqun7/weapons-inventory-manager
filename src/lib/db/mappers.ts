@@ -91,20 +91,18 @@ export interface DatabaseBackupInfo {
 }
 
 // Row shapes as they come back from SQLite (snake_case, integers for booleans)
+
+// Row shapes as they come back from SQLite (snake_case, integers for booleans)
 interface WeaponRow {
   id: string
   serial_number: string
-  brand: string
-  model: string
-  weapon_type: string
-  sub_type: string
-  caliber: string
-  condition: string
-  status: string
-  purchase_price: number
-  retail_price: number
-  wholesale_price: number
-  actual_final_price: number | null
+  // new FK columns (present in the weapons table)
+  weapon_type_id: string
+  weapon_subtype_id: string
+  caliber_id: string
+  brand_id: string
+  model_id: string
+  storage_location_id: string | null
   supplier_id: string
   shipment_id: string | null
   date_added: string
@@ -112,13 +110,25 @@ interface WeaponRow {
   notes: string
   images: string
   movement_history: string
-  warehouse: string
-  shelf: string
-  bin: string
+  condition: string
+  status: string
+  purchase_price: number
+  retail_price: number
+  wholesale_price: number
+  actual_final_price: number | null
   purchase_price_valuation: string | null
   retail_price_valuation: string | null
   sale_price_valuation: string | null
   deleted_at: string | null
+  // aliased labels from the LEFT JOIN (still snake_case as they appear in the query)
+  weapon_type: string
+  sub_type: string
+  caliber: string
+  brand: string
+  model: string
+  warehouse: string
+  shelf: string
+  bin: string
 }
 
 interface ShipmentRow {
@@ -331,11 +341,21 @@ function rowToWeapon(r: WeaponRow): Weapon {
   return {
     id: r.id,
     serialNumber: r.serial_number,
-    brand: r.brand,
-    model: r.model,
+    // labels from join
     weaponType: r.weapon_type,
     subType: r.sub_type,
     caliber: r.caliber,
+    brand: r.brand,
+    model: r.model,
+    // Foreign keys
+    weaponTypeId: r.weapon_type_id,
+    weaponSubtypeId: r.weapon_subtype_id,
+    caliberId: r.caliber_id,
+    brandId: r.brand_id,
+    modelId: r.model_id,
+    storageLocationId: r.storage_location_id,
+    // Keep location for backward compatibility (built from joined columns)
+    location: parseLocation(r.warehouse, r.shelf, r.bin),
     condition: r.condition as Weapon["condition"],
     status: r.status as Weapon["status"],
     purchasePrice: r.purchase_price,
@@ -349,7 +369,6 @@ function rowToWeapon(r: WeaponRow): Weapon {
     notes: r.notes,
     images: parseJSON(r.images, []),
     movementHistory: parseJSON(r.movement_history, []),
-    location: parseLocation(r.warehouse, r.shelf, r.bin),
     purchasePriceValuation: parseValuation(r.purchase_price_valuation),
     retailPriceValuation: parseValuation(r.retail_price_valuation),
     salePriceValuation: parseValuation(r.sale_price_valuation),
@@ -357,31 +376,29 @@ function rowToWeapon(r: WeaponRow): Weapon {
 }
 
 function weaponToRow(w: Weapon): Record<string, unknown> {
-  const loc = locationToCols(w.location)
   return {
     id: w.id,
     serial_number: w.serialNumber,
-    brand: w.brand,
-    model: w.model,
-    weapon_type: w.weaponType,
-    sub_type: w.subType,
-    caliber: w.caliber,
+    // Only the FK columns – no text labels
+    weapon_type_id: w.weaponTypeId,
+    weapon_subtype_id: w.weaponSubtypeId,
+    caliber_id: w.caliberId,
+    brand_id: w.brandId,
+    model_id: w.modelId,
+    storage_location_id: w.storageLocationId,
+    supplier_id: w.supplierId,
+    shipment_id: w.shipmentId,
     condition: w.condition,
     status: w.status,
     purchase_price: w.purchasePrice,
     retail_price: w.retailPrice,
     wholesale_price: w.wholesalePrice,
     actual_final_price: w.actualFinalPrice,
-    supplier_id: w.supplierId,
-    shipment_id: w.shipmentId,
     date_added: w.dateAdded,
     batch_id: w.batchId ?? null,
     notes: w.notes,
     images: JSON.stringify(w.images),
     movement_history: JSON.stringify(w.movementHistory),
-    warehouse: loc.warehouse,
-    shelf: loc.shelf,
-    bin: loc.bin,
     purchase_price_valuation: w.purchasePriceValuation ? JSON.stringify(w.purchasePriceValuation) : null,
     retail_price_valuation: w.retailPriceValuation ? JSON.stringify(w.retailPriceValuation) : null,
     sale_price_valuation: w.salePriceValuation ? JSON.stringify(w.salePriceValuation) : null,

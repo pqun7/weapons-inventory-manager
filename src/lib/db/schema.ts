@@ -1,6 +1,11 @@
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2;
 
 export const CREATE_TABLES_SQL = `
+-- ============ PRAGMA & WAL ============
+PRAGMA foreign_keys = ON;
+PRAGMA journal_mode = WAL;         
+PRAGMA synchronous = NORMAL;
+
 -- ============ Master Data Tables ============
 
 CREATE TABLE IF NOT EXISTS weapon_types (
@@ -8,59 +13,60 @@ CREATE TABLE IF NOT EXISTS weapon_types (
   label      TEXT NOT NULL UNIQUE,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS weapon_subtypes (
   id              TEXT PRIMARY KEY,
-  weapon_type_id  TEXT NOT NULL REFERENCES weapon_types(id) ON DELETE CASCADE,
+  weapon_type_id  TEXT NOT NULL REFERENCES weapon_types(id) ON DELETE RESTRICT,
   label           TEXT NOT NULL,
   sort_order      INTEGER NOT NULL DEFAULT 0,
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (weapon_type_id, label)
-);
+  UNIQUE (weapon_type_id, label),
+  UNIQUE (weapon_type_id, id) 
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS calibers (
   id         TEXT PRIMARY KEY,
   label      TEXT NOT NULL UNIQUE,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS subtype_calibers (
-  subtype_id TEXT NOT NULL REFERENCES weapon_subtypes(id) ON DELETE CASCADE,
-  caliber_id TEXT NOT NULL REFERENCES calibers(id) ON DELETE CASCADE,
+  subtype_id TEXT NOT NULL REFERENCES weapon_subtypes(id) ON DELETE RESTRICT,
+  caliber_id TEXT NOT NULL REFERENCES calibers(id) ON DELETE RESTRICT,
   PRIMARY KEY (subtype_id, caliber_id)
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS brands (
   id         TEXT PRIMARY KEY,
   label      TEXT NOT NULL UNIQUE,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS models (
   id         TEXT PRIMARY KEY,
   label      TEXT NOT NULL,
-  brand_id   TEXT REFERENCES brands(id) ON DELETE SET NULL,
+  brand_id   TEXT NOT NULL REFERENCES brands(id) ON DELETE RESTRICT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (label, brand_id)
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS warehouses (
   id         TEXT PRIMARY KEY,
   label      TEXT NOT NULL UNIQUE,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS storage_locations (
   id           TEXT PRIMARY KEY,
-  warehouse_id TEXT NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
+  warehouse_id TEXT NOT NULL REFERENCES warehouses(id) ON DELETE RESTRICT,
   shelf        TEXT NOT NULL,
   bin          TEXT NOT NULL DEFAULT '',
   created_at   TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (warehouse_id, shelf, bin)
-);
+) STRICT;
 
--- ============ Currency Tables ============
+-- ============ Currency Tables (unchanged) ============
 
 CREATE TABLE IF NOT EXISTS currencies (
   iso_code             TEXT PRIMARY KEY,
@@ -100,7 +106,7 @@ CREATE TABLE IF NOT EXISTS exchange_rate_audit_log (
   reason        TEXT
 );
 
--- ============ Business Tables ============
+-- ============ Business Tables (suppliers, customers, shipments, etc.) ============
 
 CREATE TABLE IF NOT EXISTS suppliers (
   id             TEXT PRIMARY KEY,
@@ -147,42 +153,75 @@ CREATE TABLE IF NOT EXISTS shipments (
   total_cost_valuation    TEXT
 );
 
+-- ============ Weapons Table (FULLY NORMALISED) ============
+
 CREATE TABLE IF NOT EXISTS weapons (
-  id                          TEXT PRIMARY KEY,
-  serial_number               TEXT NOT NULL UNIQUE,
-  brand                       TEXT NOT NULL,
-  model                       TEXT NOT NULL,
-  weapon_type                 TEXT NOT NULL,
-  sub_type                    TEXT NOT NULL,
-  caliber                     TEXT NOT NULL,
-  condition                   TEXT NOT NULL DEFAULT 'Excellent'
+  id                    TEXT PRIMARY KEY,
+  serial_number         TEXT NOT NULL UNIQUE,
+  weapon_type_id        TEXT NOT NULL,
+  weapon_subtype_id     TEXT NOT NULL,
+  brand_id              TEXT NOT NULL,
+  model_id              TEXT NOT NULL,
+  caliber_id            TEXT NOT NULL,
+  storage_location_id   TEXT,
+  supplier_id           TEXT,
+  shipment_id           TEXT,
+  condition             TEXT NOT NULL DEFAULT 'Excellent'
     CHECK (condition IN ('Excellent','Good','Fair','Poor')),
-  status                      TEXT NOT NULL DEFAULT 'Available'
+  status                TEXT NOT NULL DEFAULT 'Available'
     CHECK (status IN ('Available','Reserved','Sold','Returned')),
-  purchase_price              REAL NOT NULL DEFAULT 0,
-  retail_price                REAL NOT NULL DEFAULT 0,
-  wholesale_price             REAL NOT NULL DEFAULT 0,
-  actual_final_price          REAL,
-  supplier_id                 TEXT NOT NULL DEFAULT '',
-  shipment_id                 TEXT,
-  date_added                  TEXT NOT NULL,
-  batch_id                    TEXT,
-  notes                       TEXT NOT NULL DEFAULT '',
-  images                      TEXT NOT NULL DEFAULT '[]',
-  movement_history            TEXT NOT NULL DEFAULT '[]',
-  warehouse                   TEXT NOT NULL DEFAULT '',
-  shelf                       TEXT NOT NULL DEFAULT '',
-  bin                         TEXT NOT NULL DEFAULT '',
-  purchase_price_valuation    TEXT,
-  retail_price_valuation      TEXT,
-  sale_price_valuation        TEXT,
-  deleted_at                  TEXT
-);
+  purchase_price        REAL NOT NULL DEFAULT 0,
+  retail_price          REAL NOT NULL DEFAULT 0,
+  wholesale_price       REAL NOT NULL DEFAULT 0,
+  actual_final_price    REAL,
+  date_added            TEXT NOT NULL,
+  batch_id              TEXT,
+  notes                 TEXT NOT NULL DEFAULT '',
+  images                TEXT NOT NULL DEFAULT '[]',
+  movement_history      TEXT NOT NULL DEFAULT '[]',
+  purchase_price_valuation TEXT,
+  retail_price_valuation  TEXT,
+  sale_price_valuation    TEXT,
+  deleted_at            TEXT,
+  created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
+
+  -- Composite foreign keys enforce business rules across tables
+  FOREIGN KEY (weapon_type_id, weapon_subtype_id)
+    REFERENCES weapon_subtypes(weapon_type_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (weapon_subtype_id, caliber_id)
+    REFERENCES subtype_calibers(subtype_id, caliber_id) ON DELETE RESTRICT,
+  FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE RESTRICT,
+  FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE RESTRICT,
+  FOREIGN KEY (storage_location_id) REFERENCES storage_locations(id) ON DELETE SET NULL,
+  FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE SET NULL,
+  FOREIGN KEY (shipment_id) REFERENCES shipments(id) ON DELETE SET NULL
+) STRICT;
+
+-- ============ Indexes (optimised for inventory searches) ============
 
 CREATE INDEX IF NOT EXISTS idx_weapons_serial ON weapons(serial_number);
 CREATE INDEX IF NOT EXISTS idx_weapons_status ON weapons(status);
-CREATE INDEX IF NOT EXISTS idx_weapons_shipment ON weapons(shipment_id);
+CREATE INDEX IF NOT EXISTS idx_weapons_condition ON weapons(condition);
+CREATE INDEX IF NOT EXISTS idx_weapons_date_added ON weapons(date_added);
+CREATE INDEX IF NOT EXISTS idx_weapons_created_at ON weapons(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_weapons_type ON weapons(weapon_type_id);
+CREATE INDEX IF NOT EXISTS idx_weapons_subtype ON weapons(weapon_subtype_id);
+CREATE INDEX IF NOT EXISTS idx_weapons_brand ON weapons(brand_id);
+CREATE INDEX IF NOT EXISTS idx_weapons_model ON weapons(model_id);
+CREATE INDEX IF NOT EXISTS idx_weapons_caliber ON weapons(caliber_id);
+CREATE INDEX IF NOT EXISTS idx_weapons_location ON weapons(storage_location_id);
 CREATE INDEX IF NOT EXISTS idx_weapons_supplier ON weapons(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_weapons_shipment ON weapons(shipment_id);
+
+CREATE INDEX IF NOT EXISTS idx_weapons_type_status ON weapons(weapon_type_id, status);
+CREATE INDEX IF NOT EXISTS idx_weapons_subtype_status ON weapons(weapon_subtype_id, status);
+CREATE INDEX IF NOT EXISTS idx_weapons_brand_status ON weapons(brand_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_storage_warehouse ON storage_locations(warehouse_id);
+
+-- ============ Invoices, Payments, Accessories, Ammo, Audit, etc. (unchanged) ============
 
 CREATE TABLE IF NOT EXISTS invoices (
   id                  TEXT PRIMARY KEY,
@@ -238,7 +277,7 @@ CREATE TABLE IF NOT EXISTS accessories (
   safety_threshold INTEGER NOT NULL DEFAULT 10,
   price            REAL NOT NULL DEFAULT 0,
   date_added       TEXT NOT NULL,
-  warehouse        TEXT NOT NULL DEFAULT '',
+  warehouse        TEXT NOT NULL DEFAULT '', 
   shelf            TEXT NOT NULL DEFAULT '',
   bin              TEXT NOT NULL DEFAULT ''
 );
@@ -254,7 +293,7 @@ CREATE TABLE IF NOT EXISTS ammunition (
   safety_threshold INTEGER NOT NULL DEFAULT 100,
   price            REAL NOT NULL DEFAULT 0,
   date_added       TEXT NOT NULL,
-  warehouse        TEXT NOT NULL DEFAULT '',
+  warehouse        TEXT NOT NULL DEFAULT '',  
   shelf            TEXT NOT NULL DEFAULT '',
   bin              TEXT NOT NULL DEFAULT ''
 );
@@ -334,8 +373,10 @@ CREATE TABLE IF NOT EXISTS user_preferences (
   created_at       TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
-`
+`;
 
+
+// ============ SEED DATA (unchanged, already using new FK references) ============
 export const SEED_MASTER_DATA_SQL = `
 INSERT OR IGNORE INTO weapon_types (id, label, sort_order) VALUES
   ('wt-1', 'Shotgun', 1),
@@ -457,10 +498,9 @@ INSERT OR IGNORE INTO users (id, username, name, role, permissions, password_set
   ('U001', 'admin', 'Admin User', 'Admin',
    '{"canImportExcel":true,"canExportData":true,"canViewReports":true,"canManageUsers":true,"canRegisterPayments":true,"canVoidInvoices":true,"canExtendDueDates":true,"canDeleteRecords":true}',
    1, 'admin123');
-`
+`;
 
 export const SEED_DEMO_DATA_SQL = `
--- Demo data is inserted by the bootstrap layer in TypeScript
--- to reuse the existing generateMockData() function and ensure
--- consistency between the mock and seeded data.
-`
+-- Demo data is still bootstrapped in TypeScript using generateMockData().
+-- The function must be updated to use the new FK columns instead of text fields.
+`;

@@ -67,6 +67,15 @@ export interface DynamicMasterData {
   getCalibersFor: (weaponTypeLabel: string, subtypeLabel: string) => string[]
   getShelvesFor: (warehouseLabel: string) => string[]
   getBinsFor: (warehouseLabel: string, shelf: string) => string[]
+  // New label → ID lookups
+  getWeaponTypeIdByLabel: (label: string) => string | undefined
+  getWeaponSubtypeIdByLabel: (label: string, typeId?: string) => string | undefined
+  getCaliberIdByLabel: (label: string) => string | undefined
+  getBrandIdByLabel: (label: string) => string | undefined
+  getModelIdByLabel: (label: string, brandId?: string) => string | undefined
+  getWarehouseIdByLabel: (label: string) => string | undefined
+  getStorageLocationId: (warehouseLabel: string, shelf: string, bin: string) => string | undefined
+  // CRUD
   createWeaponType: (label: string) => Promise<void>
   createWeaponSubtype: (weaponTypeLabel: string, label: string) => Promise<void>
   createCaliber: (label: string) => Promise<void>
@@ -158,6 +167,42 @@ export function useDynamicMasterData(): DynamicMasterData {
     )).sort()
   }, [warehouses, storageLocations])
 
+  // ---------- Label → ID lookups ----------
+  const getWeaponTypeIdByLabel = useCallback((label: string) => {
+    return weaponTypes.find(t => t.label === label)?.id
+  }, [weaponTypes])
+
+  const getWeaponSubtypeIdByLabel = useCallback((label: string, typeId?: string) => {
+    const candidates = weaponSubtypes.filter(s => s.label === label)
+    if (typeId) return candidates.find(s => s.weapon_type_id === typeId)?.id
+    return candidates[0]?.id
+  }, [weaponSubtypes])
+
+  const getCaliberIdByLabel = useCallback((label: string) => {
+    return calibers.find(c => c.label === label)?.id
+  }, [calibers])
+
+  const getBrandIdByLabel = useCallback((label: string) => {
+    return brands.find(b => b.label === label)?.id
+  }, [brands])
+
+  const getModelIdByLabel = useCallback((label: string, brandId?: string) => {
+    const candidates = models.filter(m => m.label === label)
+    if (brandId) return candidates.find(m => m.brand_id === brandId)?.id
+    return candidates[0]?.id
+  }, [models])
+
+  const getWarehouseIdByLabel = useCallback((label: string) => {
+    return warehouses.find(w => w.label === label)?.id
+  }, [warehouses])
+
+  const getStorageLocationId = useCallback((warehouseLabel: string, shelf: string, bin: string) => {
+    const wh = warehouses.find(w => w.label === warehouseLabel)
+    if (!wh) return undefined
+    return storageLocations.find(sl => sl.warehouse_id === wh.id && sl.shelf === shelf && sl.bin === bin)?.id
+  }, [warehouses, storageLocations])
+
+  // ---------- CRUD ----------
   const wrap = useCallback((fn: () => Promise<void>) => async () => {
     try { await fn() } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed") }
     await refresh()
@@ -224,6 +269,15 @@ export function useDynamicMasterData(): DynamicMasterData {
     brands, models, warehouses, storageLocations,
     weaponTypeLabels, brandLabels, modelLabels, warehouseLabels, caliberLabels,
     getSubtypesFor, getCalibersFor, getShelvesFor, getBinsFor,
+    // Lookups
+    getWeaponTypeIdByLabel,
+    getWeaponSubtypeIdByLabel,
+    getCaliberIdByLabel,
+    getBrandIdByLabel,
+    getModelIdByLabel,
+    getWarehouseIdByLabel,
+    getStorageLocationId,
+    // CRUD
     createWeaponType, createWeaponSubtype, createCaliber, linkSubtypeCaliber,
     createBrand, createModel, createWarehouse, createStorageLocation,
     deleteWeaponType: makeDeleter("weapon_types"),

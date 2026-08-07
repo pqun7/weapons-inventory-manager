@@ -54,30 +54,26 @@ export const SaleService = {
 
 export const InventoryService = {
   validateBulkIntake(input: BulkIntakeInput): ServiceResult {
-    if (!input.brand.trim()) return { success: false, error: "Brand is required" }
-    if (!input.model.trim()) return { success: false, error: "Model is required" }
-    if (!input.weaponType) return { success: false, error: "Weapon type is required" }
-    if (!input.subType) return { success: false, error: "Sub-type is required" }
-    if (!input.caliber.trim()) return { success: false, error: "Caliber is required" }
+    if (!input.brandId) return { success: false, error: "Brand is required" }
+    if (!input.modelId) return { success: false, error: "Model is required" }
+    if (!input.weaponTypeId) return { success: false, error: "Weapon type is required" }
+    if (!input.weaponSubtypeId) return { success: false, error: "Sub-type is required" }
+    if (!input.caliberId) return { success: false, error: "Caliber is required" }
     if (!input.supplierId) return { success: false, error: "Supplier is required" }
-    if (input.purchasePrice <= 0) return { success: false, error: "Purchase price must be greater than 0" }
-    if (input.retailPrice <= 0) return { success: false, error: "Retail price must be greater than 0" }
-    if (input.wholesalePrice <= 0) return { success: false, error: "Wholesale price must be greater than 0" }
+    if (input.purchasePrice <= 0) return { success: false, error: "Purchase price must be > 0" }
+    if (input.retailPrice <= 0) return { success: false, error: "Retail price must be > 0" }
+    if (input.wholesalePrice <= 0) return { success: false, error: "Wholesale price must be > 0" }
 
-    const filledSerials = input.serialNumbers.filter((s) => s.trim().length > 0)
-
+    const filledSerials = input.serialNumbers.filter(s => s.trim().length > 0)
     if (filledSerials.length !== input.serialNumbers.length) {
-      return { success: false, error: `Serial count mismatch: ${filledSerials.length} entered, ${input.serialNumbers.length} expected` }
+      return { success: false, error: "Serial count mismatch" }
     }
-
-    if (filledSerials.length === 0) return { success: false, error: "At least one serial number is required" }
+    if (filledSerials.length === 0) return { success: false, error: "At least one serial required" }
 
     const store = useStore.getState()
-    const existingSerials = new Set(store.weapons.map((w) => w.serialNumber.toLowerCase()))
-    const duplicates = filledSerials.filter((s) => existingSerials.has(s.trim().toLowerCase()))
-    if (duplicates.length === filledSerials.length) {
-      return { success: false, error: "All serial numbers are duplicates" }
-    }
+    const existingSerials = new Set(store.weapons.map(w => w.serialNumber.toLowerCase()))
+    const duplicates = filledSerials.filter(s => existingSerials.has(s.trim().toLowerCase()))
+    if (duplicates.length === filledSerials.length) return { success: false, error: "All serials are duplicates" }
 
     return { success: true }
   },
@@ -133,10 +129,13 @@ export const ShipmentService = {
     if (!s.expectedArrivalDate) return { success: false, error: "Expected arrival date is required" }
     if (input.lineItems.length === 0) return { success: false, error: "At least one line item is required" }
     for (const item of input.lineItems) {
-      if (item.quantity <= 0) return { success: false, error: `Line item quantity must be greater than 0 (${item.brand} ${item.model})` }
-      if (!item.brand.trim()) return { success: false, error: "Brand is required for all line items" }
+      // Use label for display if available, otherwise fall back to ID
+      const brandDisplay = item.brandLabel?.trim() || item.brandId
+      const modelDisplay = item.modelLabel?.trim() || item.modelId
+      if (item.quantity <= 0) return { success: false, error: `Line item quantity must be greater than 0 (${brandDisplay} ${modelDisplay})` }
+      if (!item.brandId.trim()) return { success: false, error: "Brand is required for all line items" }
       if (item.productType === "weapon" && item.serialNumbers.length !== item.quantity)
-        return { success: false, error: `Serial count (${item.serialNumbers.length}) does not match quantity (${item.quantity}) for ${item.brand} ${item.model}` }
+        return { success: false, error: `Serial count (${item.serialNumbers.length}) does not match quantity (${item.quantity}) for ${brandDisplay} ${modelDisplay}` }
     }
     return { success: true }
   },

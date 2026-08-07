@@ -63,7 +63,7 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
         if (cals.length > 0) setCaliber(cals[0])
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [md.loading])
 
   const subTypeOptions = useMemo(() => md.getSubtypesFor(weaponType), [md, weaponType])
@@ -144,14 +144,42 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
   }
 
   const handleSubmit = async () => {
+    // Map labels to IDs
+    const weaponTypeId = md.getWeaponTypeIdByLabel(weaponType)
+    const weaponSubtypeId = md.getWeaponSubtypeIdByLabel(subType, weaponTypeId)
+    const caliberId = md.getCaliberIdByLabel(caliber)
+    const brandId = md.getBrandIdByLabel(brand.trim())
+    const modelId = md.getModelIdByLabel(model.trim(), brandId)
+    const storageLocationId = md.getStorageLocationId(warehouse.trim(), shelf.trim(), bin.trim())
+
+    // Validate required IDs
+    if (!weaponTypeId || !weaponSubtypeId || !caliberId || !brandId || !modelId || !storageLocationId) {
+      toast.error(t("bulk.missingMasterData"))
+      return
+    }
+
     const result = await InventoryService.executeBulkIntake({
-      brand: brand.trim(), model: model.trim(), weaponType, subType, caliber,
-      condition, purchasePrice: Number(purchasePrice), retailPrice: Number(retailPrice),
-      wholesalePrice: Number(wholesalePrice), supplierId,
+      weaponTypeId,
+      weaponSubtypeId,
+      caliberId,
+      brandId,
+      modelId,
+      storageLocationId,
+      weaponTypeLabel: weaponType,
+      subTypeLabel: subType,
+      caliberLabel: caliber,
+      brandLabel: brand.trim(),
+      modelLabel: model.trim(),
+      condition,
+      purchasePrice: Number(purchasePrice),
+      retailPrice: Number(retailPrice),
+      wholesalePrice: Number(wholesalePrice),
+      supplierId,
       shipmentId: shipmentId === "none" ? null : shipmentId,
-      serialNumbers: serials, notes,
-      location: { warehouse: warehouse.trim(), shelf: shelf.trim(), bin: bin.trim() },
+      serialNumbers: serials,
+      notes,
     })
+
 
     if (result.added > 0) {
       toast.success(t("toast.importSuccess"))

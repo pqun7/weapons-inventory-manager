@@ -29,6 +29,11 @@
     "vitest.config.ts",
     "*.config.ts",
     "electron/**/*.ts",
-    "src/**/*.ts",
-  ]
+  ],
+  "baseUrl": ".",
+  "paths": {
+    "@/*": [
+      "src/*"
+    ]
+  }
 }

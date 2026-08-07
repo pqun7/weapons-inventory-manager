@@ -158,20 +158,29 @@ export async function parseManifestFile(file: File): Promise<ManifestImportResul
 
     lineItems.push({
       productType,
-      weaponType: getVal(colMap.weaponType) || "Pistol",
-      subType: getVal(colMap.subType),
-      brand,
-      model,
-      caliber: getVal(colMap.caliber),
+      // FK IDs will be resolved later; placeholder empty strings
+      weaponTypeId: "",
+      weaponSubtypeId: "",
+      caliberId: "",
+      brandId: "",
+      modelId: "",
+      storageLocationId: "",
+      // Optional labels (used for display and later resolution)
+      weaponTypeLabel: getVal(colMap.weaponType) || "Pistol",
+      subTypeLabel: getVal(colMap.subType),
+      caliberLabel: getVal(colMap.caliber),
+      brandLabel: brand,
+      modelLabel: model,
       quantity: finalQty,
       purchasePrice: parseNumber(colMap.purchasePrice ? row[colMap.purchasePrice] : 0, 0),
       retailPrice: parseNumber(colMap.retailPrice ? row[colMap.retailPrice] : 0, 0),
       wholesalePrice: parseNumber(colMap.wholesalePrice ? row[colMap.wholesalePrice] : 0, 0),
       location,
       serialNumbers: productType === "weapon" ? serials : [],
+      currency: undefined, // optional
     })
     validRows++
-  }
+}
 
   void headerKeys
   return { lineItems, errors, warnings, totalRows: rows.length, validRows }

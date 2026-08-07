@@ -1,3 +1,4 @@
+import { table } from "console";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 
 type IpcResult<T = unknown> = { success: boolean; data?: T; error?: string }
@@ -140,8 +141,8 @@ describe("IPC Payload Validation", () => {
   })
 
   it("validates currency:updateRate requires numeric rate", async () => {
-    mockIpc.handle("currency:updateRate", (_e, code: string, rate: unknown, updatedAt: string) => {
-      if (typeof rate !== "number" || !isFinite(rate) || rate <= 0) {
+   mockIpc.handle("currency:updateRate", (_e, _code: string, _rate: unknown, _updatedAt: string)  => {
+      if (typeof _rate !== "number" || !isFinite(_rate) || _rate <= 0) {
         return { success: false, error: "Rate must be a positive number" }
       }
       return { success: true }
@@ -155,10 +156,10 @@ describe("IPC Payload Validation", () => {
   })
 
   it("validates masterData:deleteRow rejects disallowed tables", async () => {
-    mockIpc.handle("masterData:deleteRow", (_e, table: string, id: string) => {
+    mockIpc.handle("masterData:deleteRow", (_e, _table: string, _id: string) => {
       const allowed = ["weapon_types", "weapon_subtypes", "calibers", "brands", "models", "warehouses", "storage_locations"]
-      if (!allowed.includes(table)) {
-        return { success: false, error: `Cannot delete from table: ${table}` }
+      if (!allowed.includes(_table)) {
+        return { success: false, error: `Cannot delete from table: ${_table}` }
       }
       return { success: true }
     })

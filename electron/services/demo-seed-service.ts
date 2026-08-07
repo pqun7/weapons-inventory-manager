@@ -42,14 +42,15 @@ export function seedDemoDataIfNeeded(): { seeded: boolean; skipped: boolean; cou
     const db = getDb()
 
     const insertAll = db.transaction(() => {
-        for (const w of mock.weapons) repo.insertWeapon(w)
+        // Correct insertion order respecting foreign keys
+        for (const s of mock.suppliers) repo.insertSupplier(s)
         for (const s of mock.shipments) repo.insertShipment(s)
+        for (const w of mock.weapons) repo.insertWeapon(w)
+        for (const c of mock.customers) repo.insertCustomer(c)
         for (const inv of mock.invoices) repo.insertInvoice(inv)
         for (const p of mock.payments) repo.insertPayment(p)
         for (const a of mock.accessories) repo.insertAccessory(a)
         for (const a of mock.ammunition) repo.insertAmmunition(a)
-        for (const c of mock.customers) repo.insertCustomer(c)
-        for (const s of mock.suppliers) repo.insertSupplier(s)
         for (const l of mock.auditLogs) repo.insertAuditLog(l)
         for (const n of mock.notifications) repo.insertNotification(n)
     })

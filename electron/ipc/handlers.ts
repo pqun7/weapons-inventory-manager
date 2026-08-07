@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow } from "electron"
+import { ipcMain } from "electron"
 import { repo } from "../repositories/index.js"
 import { getDb, createDatabaseBackup, deleteDatabaseBackup, listDatabaseBackups, restoreDatabaseBackup } from "../database.js"
 import { seedDemoDataIfNeeded } from "../services/demo-seed-service.js"
@@ -7,7 +7,7 @@ import type { AllData, MasterDataAll } from "../../src/lib/db/mappers.js"
 import type {
   Weapon, Shipment, Invoice, PaymentRecord, Accessory, Ammunition,
   Customer, Supplier, AuditLog, AppNotification, User, SystemSettings,
-  SavedFilter, UserPreferences,
+  SavedFilter, UserPreferences, StorageLocation,
 } from "../../src/lib/types.js"
 import type { CurrencyRow, ExchangeRateOverrideRow, AuditLogEntry } from "../../src/lib/db/mappers.js"
 
@@ -21,6 +21,7 @@ import type {
 
 import { CurrencyService } from "../../src/lib/currency-service.js"
 import { ammoTotalRounds } from "../../src/lib/types.js"
+
 
 function pad(num: number, size: number): string {
   return num.toString().padStart(size, "0")
@@ -130,6 +131,20 @@ export function registerIpcHandlers(): void {
         let serialCounter = all.weapons.length + 1
         const today = new Date().toISOString().split("T")[0]
 
+        // ── Look up the storage location details once for the whole batch ──
+        let location: StorageLocation = { warehouse: "", shelf: "", bin: "" }
+        if (input.storageLocationId) {
+          const locRow = db.prepare(`
+          SELECT w.label AS warehouse, sl.shelf, sl.bin
+          FROM storage_locations sl
+          JOIN warehouses w ON w.id = sl.warehouse_id
+          WHERE sl.id = ?
+        `).get(input.storageLocationId) as { warehouse: string; shelf: string; bin: string } | undefined
+          if (locRow) {
+            location = { warehouse: locRow.warehouse, shelf: locRow.shelf, bin: locRow.bin }
+          }
+        }
+
         for (const sn of input.serialNumbers) {
           const trimmed = sn.trim()
           if (!trimmed) continue
@@ -139,32 +154,53 @@ export function registerIpcHandlers(): void {
           newWeapons.push({
             id: `W${pad(serialCounter, 5)}`,
             serialNumber: trimmed,
-            brand: input.brand, model: input.model,
-            weaponType: input.weaponType, subType: input.subType, caliber: input.caliber,
-            condition: input.condition, status: "Available",
-            purchasePrice: input.purchasePrice, retailPrice: input.retailPrice,
-            wholesalePrice: input.wholesalePrice, actualFinalPrice: null,
-            supplierId: input.supplierId, shipmentId: input.shipmentId,
-            dateAdded: today, batchId, notes: input.notes, images: [],
+            // FK fields
+            weaponTypeId: input.weaponTypeId,
+            weaponSubtypeId: input.weaponSubtypeId,
+            caliberId: input.caliberId,
+            brandId: input.brandId,
+            modelId: input.modelId,
+            storageLocationId: input.storageLocationId,
+            // Display labels (fallback to IDs for audit purposes)
+            weaponType: input.weaponTypeLabel ?? input.weaponTypeId,
+            subType: input.subTypeLabel ?? input.weaponSubtypeId,
+            caliber: input.caliberLabel ?? input.caliberId,
+            brand: input.brandLabel ?? input.brandId,
+            model: input.modelLabel ?? input.modelId,
+            // ── Populated location from DB lookup ──
+            location,
+            condition: input.condition,
+            status: "Available",
+            purchasePrice: input.purchasePrice,
+            retailPrice: input.retailPrice,
+            wholesalePrice: input.wholesalePrice,
+            actualFinalPrice: null,
+            supplierId: input.supplierId,
+            shipmentId: input.shipmentId,
+            dateAdded: today,
+            batchId,
+            notes: input.notes,
+            images: [],
             movementHistory: [{
               id: `MV${pad(serialCounter, 5)}`, timestamp: new Date().toISOString(),
               fromStatus: "Available", toStatus: "Available",
               userId: currentUser.id, userName: currentUser.name,
               reason: "Initial intake via bulk intake wizard",
             }],
-            location: input.location,
             purchasePriceValuation: CurrencyService.createValuation(input.purchasePrice, currency),
             retailPriceValuation: CurrencyService.createValuation(input.retailPrice, currency),
           })
           serialCounter++
         }
 
+
         if (newWeapons.length > 0) {
           repo.bulkInsertWeapons(newWeapons)
+          const desc = `Bulk intake: ${newWeapons.length} ${input.brandLabel ?? input.brandId} ${input.modelLabel ?? input.modelId} (${input.weaponTypeLabel ?? input.weaponTypeId}/${input.subTypeLabel ?? input.weaponSubtypeId}) — Batch: ${batchId}`
           repo.insertAuditLog({
             id: generateId("LOG", "audit_logs"), timestamp: new Date().toISOString(), date: today,
             userId: currentUser.id, actionType: "Intake",
-            description: `Bulk intake: ${newWeapons.length} ${input.brand} ${input.model} (${input.weaponType}/${input.subType}) — Batch: ${batchId}`,
+            description: desc,
             metadata: JSON.stringify({ batchId, count: newWeapons.length, shipmentId: input.shipmentId }),
           })
         }
@@ -206,6 +242,7 @@ export function registerIpcHandlers(): void {
       return ok()
     } catch (e) { return fail(String(e)) }
   })
+
 
   // ===== Sales =====
   ipcMain.handle("sale:complete", (_, input: SaleInput, currentUser: { id: string; name: string }): IpcResult<{ invoiceId: string; invoiceNumber: string }> => {
@@ -280,6 +317,9 @@ export function registerIpcHandlers(): void {
 
         for (const item of input.lineItems) {
           const lineItemId = `SLI${pad(++lineItemCounter, 4)}`
+          // Determine location for non‑weapon items
+          const loc: StorageLocation = item.location ?? { warehouse: "Main", shelf: "", bin: "" }
+
           if (item.productType === "weapon") {
             for (const sn of item.serialNumbers) {
               const trimmed = sn.trim()
@@ -288,21 +328,52 @@ export function registerIpcHandlers(): void {
               existingSerials.add(trimmed.toLowerCase())
               const shipCurrency = input.shipment.currency || "USD"
               newWeapons.push({
-                id: `W${pad(serialCounter, 5)}`, serialNumber: trimmed,
-                brand: item.brand, model: item.model,
-                weaponType: item.weaponType, subType: item.subType, caliber: item.caliber,
-                condition: "Excellent", status: "Available",
-                purchasePrice: item.purchasePrice, retailPrice: item.retailPrice,
-                wholesalePrice: item.wholesalePrice, actualFinalPrice: null,
-                supplierId: input.shipment.supplierId, shipmentId,
-                dateAdded: today, batchId, notes: "", images: [],
+                id: `W${pad(serialCounter, 5)}`,
+                serialNumber: trimmed,
+                weaponTypeId: item.weaponTypeId,
+                weaponSubtypeId: item.weaponSubtypeId,
+                caliberId: item.caliberId,
+                brandId: item.brandId,
+                modelId: item.modelId,
+                storageLocationId: item.storageLocationId,
+                weaponType: item.weaponTypeLabel ?? "",
+                subType: item.subTypeLabel ?? "",
+                caliber: item.caliberLabel ?? "",
+                brand: item.brandLabel ?? "",
+                model: item.modelLabel ?? "",
+                // Use the location object computed earlier (or a lookup fallback)
+                location: item.location ??
+                  (() => {
+                    // Optional: if no explicit location given, attempt to fetch from storageLocationId
+                    if (item.storageLocationId) {
+                      const locRow = db.prepare(`
+              SELECT w.label AS warehouse, sl.shelf, sl.bin
+              FROM storage_locations sl
+              JOIN warehouses w ON w.id = sl.warehouse_id
+              WHERE sl.id = ?
+            `).get(item.storageLocationId) as { warehouse: string; shelf: string; bin: string } | undefined
+                      if (locRow) return { warehouse: locRow.warehouse, shelf: locRow.shelf, bin: locRow.bin }
+                    }
+                    return { warehouse: "Main", shelf: "", bin: "" }
+                  })(),
+                condition: "Excellent",
+                status: "Available",
+                purchasePrice: item.purchasePrice,
+                retailPrice: item.retailPrice,
+                wholesalePrice: item.wholesalePrice,
+                actualFinalPrice: null,
+                supplierId: input.shipment.supplierId,
+                shipmentId,
+                dateAdded: today,
+                batchId,
+                notes: "",
+                images: [],
                 movementHistory: [{
                   id: `MV${pad(serialCounter, 5)}`, timestamp: new Date().toISOString(),
                   fromStatus: "Available", toStatus: "Available",
                   userId: currentUser.id, userName: currentUser.name,
                   reason: "Initial intake via shipment wizard",
                 }],
-                location: item.location,
                 purchasePriceValuation: CurrencyService.createValuation(item.purchasePrice, shipCurrency),
                 retailPriceValuation: CurrencyService.createValuation(item.retailPrice, shipCurrency),
               })
@@ -311,27 +382,45 @@ export function registerIpcHandlers(): void {
           } else if (item.productType === "accessory") {
             newAccessories.push({
               id: generateId("ACC", "accessories"),
-              name: `${item.brand} ${item.model}`, type: item.subType,
-              quantity: item.quantity, safetyThreshold: 5, price: item.retailPrice,
-              location: item.location, dateAdded: today,
+              name: `${item.brandLabel ?? ''} ${item.modelLabel ?? ''}`.trim() || "Accessory",
+              type: item.subTypeLabel ?? "",
+              quantity: item.quantity,
+              safetyThreshold: 5,
+              price: item.retailPrice,
+              location: loc,
+              dateAdded: today,
             })
           } else if (item.productType === "ammunition") {
             newAmmunition.push({
               id: generateId("AMM", "ammunition"),
-              caliber: item.caliber, packageType: "Box", unitsPerPackage: 50,
-              fullPackages: Math.floor(item.quantity / 50), looseRounds: item.quantity % 50,
-              safetyThreshold: 100, price: item.retailPrice,
-              location: item.location, dateAdded: today,
+              caliber: item.caliberLabel ?? "",
+              packageType: "Box",
+              unitsPerPackage: 50,
+              fullPackages: Math.floor(item.quantity / 50),
+              looseRounds: item.quantity % 50,
+              safetyThreshold: 100,
+              price: item.retailPrice,
+              location: loc,
+              dateAdded: today,
             })
           }
+
+          // Build line item for shipment record (uses legacy format)
           const liCurrency = input.shipment.currency || "USD"
           lineItems.push({
-            id: lineItemId, productType: item.productType,
-            weaponType: item.weaponType, subType: item.subType,
-            brand: item.brand, model: item.model, caliber: item.caliber,
-            quantity: item.quantity, purchasePrice: item.purchasePrice,
-            retailPrice: item.retailPrice, wholesalePrice: item.wholesalePrice,
-            location: item.location, serialNumbers: item.serialNumbers,
+            id: lineItemId,
+            productType: item.productType,
+            weaponType: item.weaponTypeLabel ?? "",
+            subType: item.subTypeLabel ?? "",
+            brand: item.brandLabel ?? "",
+            model: item.modelLabel ?? "",
+            caliber: item.caliberLabel ?? "",
+            quantity: item.quantity,
+            purchasePrice: item.purchasePrice,
+            retailPrice: item.retailPrice,
+            wholesalePrice: item.wholesalePrice,
+            location: loc,
+            serialNumbers: item.serialNumbers,
             received: item.productType === "weapon" ? item.serialNumbers.length : item.quantity,
             purchasePriceValuation: CurrencyService.createValuation(item.purchasePrice * item.quantity, liCurrency),
             retailPriceValuation: CurrencyService.createValuation(item.retailPrice * item.quantity, liCurrency),
@@ -377,9 +466,6 @@ export function registerIpcHandlers(): void {
     } catch (e) { return fail(String(e)) }
   })
 
-  ipcMain.handle("shipment:update", (_, shipment: Shipment): IpcResult => {
-    try { repo.updateShipment(shipment); return ok() } catch (e) { return fail(String(e)) }
-  })
 
   // ===== Invoices & Payments =====
   ipcMain.handle("invoice:update", (_, invoice: Invoice): IpcResult => {
@@ -710,31 +796,75 @@ export function registerIpcHandlers(): void {
     try { repo.recordRateAuditLog(code, oldRate, newRate, changedBy, reason, changedAt); return ok() } catch (e) { return fail(String(e)) }
   })
 
+  ipcMain.handle("currency:delete", (_, code: string): IpcResult => {
+    try {
+      repo.deleteCurrency(code);
+      return ok();
+    } catch (e) {
+      return fail(String(e));
+    }
+  });
+
   // ===== Master Data CRUD =====
   ipcMain.handle("masterData:insertWeaponType", (_e, label: string, sortOrder: number): IpcResult<string> => {
-    try { return ok(repo.insertMasterWeaponType(label, sortOrder)) } catch (e) { return fail(String(e)) }
+    try {
+      const id = repo.getOrCreateWeaponType(label.trim(), sortOrder)
+      return ok(id)
+    } catch (e) { return fail(String(e)) }
   })
+
   ipcMain.handle("masterData:insertWeaponSubtype", (_e, weaponTypeId: string, label: string, sortOrder: number): IpcResult<string> => {
-    try { return ok(repo.insertMasterWeaponSubtype(weaponTypeId, label, sortOrder)) } catch (e) { return fail(String(e)) }
+    try {
+      const id = repo.getOrCreateWeaponSubtype(weaponTypeId, label.trim(), sortOrder)
+      return ok(id)
+    } catch (e) { return fail(String(e)) }
   })
+
   ipcMain.handle("masterData:insertCaliber", (_e, label: string): IpcResult<string> => {
-    try { return ok(repo.insertMasterCaliber(label)) } catch (e) { return fail(String(e)) }
+    try {
+      const id = repo.getOrCreateCaliber(label.trim())
+      return ok(id)
+    } catch (e) { return fail(String(e)) }
   })
+
   ipcMain.handle("masterData:linkSubtypeCaliber", (_e, subtypeId: string, caliberId: string): IpcResult => {
     try { repo.linkSubtypeCaliber(subtypeId, caliberId); return ok() } catch (e) { return fail(String(e)) }
   })
+
   ipcMain.handle("masterData:insertBrand", (_e, label: string): IpcResult<string> => {
-    try { return ok(repo.insertMasterBrand(label)) } catch (e) { return fail(String(e)) }
+    try {
+      const id = repo.getOrCreateBrand(label.trim())
+      return ok(id)
+    } catch (e) {
+      return fail(String(e))
+    }
   })
+
   ipcMain.handle("masterData:insertModel", (_e, label: string, brandId: string | null): IpcResult<string> => {
-    try { return ok(repo.insertMasterModel(label, brandId)) } catch (e) { return fail(String(e)) }
+    try {
+      if (!brandId) {
+        // brandId is required in the normalized schema – throw a clear error
+        throw new Error("Brand ID is required to create or find a model.")
+      }
+      const id = repo.getOrCreateModel(label.trim(), brandId)
+      return ok(id)
+    } catch (e) { return fail(String(e)) }
   })
+
   ipcMain.handle("masterData:insertWarehouse", (_e, label: string): IpcResult<string> => {
-    try { return ok(repo.insertMasterWarehouse(label)) } catch (e) { return fail(String(e)) }
+    try {
+      const id = repo.getOrCreateWarehouse(label.trim())
+      return ok(id)
+    } catch (e) { return fail(String(e)) }
   })
+
   ipcMain.handle("masterData:insertStorageLocation", (_e, warehouseId: string, shelf: string, bin: string): IpcResult<string> => {
-    try { return ok(repo.insertMasterStorageLocation(warehouseId, shelf, bin)) } catch (e) { return fail(String(e)) }
+    try {
+      const id = repo.getOrCreateStorageLocation(warehouseId, shelf.trim(), bin.trim())
+      return ok(id)
+    } catch (e) { return fail(String(e)) }
   })
+
   ipcMain.handle("masterData:deleteRow", (_e, table: string, id: string): IpcResult => {
     try { repo.deleteMasterRow(table, id); return ok() } catch (e) { return fail(String(e)) }
   })

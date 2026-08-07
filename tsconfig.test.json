@@ -1,0 +1,14 @@
+{
+    "extends": "./tsconfig.app.json",
+    "compilerOptions": {
+        "noUnusedLocals": false,
+        "noUnusedParameters": false,
+        "types": [
+            "vitest/globals"
+        ] // if you use global Vitest APIs (optional)
+    },
+    "include": [
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx"
+    ]
+}

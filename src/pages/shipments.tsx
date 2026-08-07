@@ -87,7 +87,17 @@ export function ShipmentsPage() {
     if (!file) return
     const result = await parseManifestFile(file)
     setImportResult(result)
-    setImportedItems(result.lineItems)
+    // Ensure all label fields exist for smooth preview
+    const items = result.lineItems.map(item => ({
+      ...item,
+      brandLabel: item.brandLabel ?? "",
+      modelLabel: item.modelLabel ?? "",
+      weaponTypeLabel: item.weaponTypeLabel ?? "",
+      subTypeLabel: item.subTypeLabel ?? "",
+      caliberLabel: item.caliberLabel ?? "",
+      location: item.location ?? { warehouse: "Main", shelf: "", bin: "" },
+    }))
+    setImportedItems(items)
     if (result.errors.length > 0) {
       toast.error(result.errors[0])
     } else if (result.validRows > 0) {
@@ -254,8 +264,8 @@ export function ShipmentsPage() {
                   {importedItems.map((item, i) => (
                     <div key={i} className="grid grid-cols-6 gap-2 border-b py-1 text-[10px] last:border-0">
                       <span>{t(`ship.prodType.${item.productType}`)}</span>
-                      <span className="truncate">{item.brand}</span>
-                      <span className="truncate">{item.model}</span>
+                      <span className="truncate">{item.brandLabel ?? ""}</span>
+                      <span className="truncate">{item.modelLabel ?? ""}</span>
                       <span className="tabular-nums">{item.quantity}</span>
                       <span className="tabular-nums">{item.serialNumbers.length}</span>
                       <span className="tabular-nums">{item.purchasePrice}</span>

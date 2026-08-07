@@ -78,14 +78,66 @@ function dateTimeOffset(daysAgo: number): string {
   return d.toISOString()
 }
 
+// ── Seeded storage locations (must match SEED_MASTER_DATA_SQL) ──
+interface StorageLocationOption {
+  id: string
+  location: StorageLocation
+}
+
+const STORAGE_LOCATION_OPTIONS: StorageLocationOption[] = [
+  { id: "loc-1", location: { warehouse: "Main", shelf: "A", bin: "A-1" } },
+  { id: "loc-2", location: { warehouse: "Main", shelf: "A", bin: "A-2" } },
+  { id: "loc-3", location: { warehouse: "Main", shelf: "B", bin: "B-1" } },
+  { id: "loc-4", location: { warehouse: "Secondary", shelf: "A", bin: "A-1" } },
+  { id: "loc-5", location: { warehouse: "Archive", shelf: "A", bin: "A-1" } },
+]
+
+function randomStorageLocation(): StorageLocationOption {
+  return pick(STORAGE_LOCATION_OPTIONS)
+}
+
 function randomLocation(): StorageLocation {
-  const warehouses = ["Main", "Secondary", "Vault"]
-  const shelves = ["A", "B", "C", "D"]
-  return {
-    warehouse: pick(warehouses),
-    shelf: pick(shelves),
-    bin: `${pick(shelves)}-${randInt(1, 20)}`,
-  }
+  return pick(STORAGE_LOCATION_OPTIONS).location
+}
+
+// ── Seed master-data IDs (must match SEED_MASTER_DATA_SQL) ──
+const TYPE_IDS: Record<string, string> = {
+  "Shotgun": "wt-1",
+  "Air rifle": "wt-2",
+  "Blank pistol": "wt-3",
+  "Pistol": "wt-4",
+  "Rifle": "wt-5",
+}
+
+const SUBTYPE_IDS: Record<string, Record<string, string>> = {
+  "Shotgun": {
+    "Semi-auto": "ws-1",
+    "Magazine shotgun": "ws-2",
+    "Folding shotgun": "ws-3",
+    "Over&under": "ws-4",
+    "Side by side": "ws-5",
+    "Single barrel": "ws-6",
+  },
+  "Air rifle": { "PCP": "ws-7", "Break barrel": "ws-8" },
+  "Blank pistol": { "9mm": "ws-9" },
+  "Pistol": { "9x19mm": "ws-10", "7.62mm": "ws-11", "7.65mm": "ws-12", "380mm": "ws-13", ".22 LR": "ws-14" },
+  "Rifle": { "223": "ws-15", "30-06": "ws-16" },
+}
+
+const CALIBER_IDS: Record<string, string> = {
+  "12 GA": "cal-1", "20 GA": "cal-2", ".177": "cal-3", ".22": "cal-4", ".25": "cal-5",
+  "9mm blank": "cal-6", "9x19mm": "cal-7", "7.62mm": "cal-8", "7.65mm": "cal-9",
+  ".380 ACP": "cal-10", ".22 LR": "cal-11", ".223 Rem": "cal-12", "30-06": "cal-13",
+}
+
+const BRAND_IDS: Record<string, string> = {
+  "Glock": "br-1", "SIG Sauer": "br-2", "Remington": "br-3", "Benelli": "br-4",
+  "Colt": "br-5", "Ruger": "br-6", "Benjamin": "br-7", "Ekol": "br-8", "Hatsan": "br-9",
+}
+
+const MODEL_IDS: Record<string, string> = {
+  "870": "mdl-1", "Supersport": "mdl-2", "G17": "mdl-3", "P320": "mdl-4",
+  "AR-15": "mdl-5", "Hawkeye": "mdl-6", "Trail": "mdl-7", "Volga": "mdl-8", "Escort": "mdl-9",
 }
 
 const SUPPLIER_NAMES = [
@@ -107,12 +159,13 @@ const WHOLESALE_NAMES = [
   { name: "Summit Outdoor Supply", discount: 14 },
 ]
 
+// ── All weapon templates use ONLY seeded brands/models ──
 const WEAPON_TYPES = [
   { type: "Shotgun", subType: "Semi-auto", caliber: "12 GA", brand: "Remington", model: "870", basePrice: 550 },
   { type: "Shotgun", subType: "Over&under", caliber: "12 GA", brand: "Benelli", model: "Supersport", basePrice: 1200 },
   { type: "Pistol", subType: "9x19mm", caliber: "9x19mm", brand: "Glock", model: "G17", basePrice: 500 },
   { type: "Pistol", subType: "9x19mm", caliber: "9x19mm", brand: "SIG Sauer", model: "P320", basePrice: 550 },
-  { type: "Pistol", subType: ".22 LR", caliber: ".22 LR", brand: "Smith & Wesson", model: "M&P22", basePrice: 400 },
+  { type: "Pistol", subType: ".22 LR", caliber: ".22 LR", brand: "Ruger", model: "Hawkeye", basePrice: 400 },
   { type: "Rifle", subType: "223", caliber: ".223 Rem", brand: "Colt", model: "AR-15", basePrice: 1100 },
   { type: "Rifle", subType: "30-06", caliber: "30-06", brand: "Ruger", model: "Hawkeye", basePrice: 850 },
   { type: "Air rifle", subType: "PCP", caliber: ".22", brand: "Benjamin", model: "Trail", basePrice: 300 },
@@ -231,16 +284,33 @@ function generateWeapons(suppliers: Supplier[], shipments: Shipment[]): Weapon[]
       reason: status === "Available" ? "Initial intake" : `Status set to ${status}`,
     }]
 
+    // ── Pick a consistent storage location (ID + display object) ──
+    const sl = randomStorageLocation()
+
     weapons.push({
       id: `W${pad(serialIndex, 5)}`,
       serialNumber: `${wt.brand.substring(0, 3).toUpperCase()}${new Date().getFullYear()}${pad(serialIndex, 5)}`,
-      brand: wt.brand, model: wt.model, weaponType: wt.type, subType: wt.subType, caliber: wt.caliber,
+      // FK IDs from seed master data
+      weaponTypeId: TYPE_IDS[wt.type],
+      weaponSubtypeId: SUBTYPE_IDS[wt.type]?.[wt.subType] ?? "",
+      caliberId: CALIBER_IDS[wt.caliber] ?? "",
+      brandId: BRAND_IDS[wt.brand] ?? "",
+      modelId: MODEL_IDS[wt.model] ?? "",
+      storageLocationId: sl.id,
+      // Display labels
+      weaponType: wt.type,
+      subType: wt.subType,
+      caliber: wt.caliber,
+      brand: wt.brand,
+      model: wt.model,
+      location: sl.location,
       condition: pick(conditions), status,
       purchasePrice, retailPrice, wholesalePrice,
       actualFinalPrice: status === "Sold" ? Math.round((retailPrice * (1 - random() * 0.1)) / 5) * 5 : null,
       supplierId: supplier.id, shipmentId, dateAdded: dateOffset(randInt(1, 400)),
       notes: random() > 0.8 ? "Minor surface wear on grip" : "",
-      images: [], movementHistory, location: randomLocation(),
+      images: [`/images/weapons/${wt.brand.toLowerCase()}_${wt.model.toLowerCase()}.jpg`],
+      movementHistory,
     })
     serialIndex++
   }

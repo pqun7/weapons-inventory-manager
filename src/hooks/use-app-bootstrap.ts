@@ -2,8 +2,8 @@ import { useEffect, useState } from "react"
 import { useStore } from "@/lib/store"
 
 export function useAppBootstrap() {
-  const ready = useStore((s) => s.ready)
-  const bootstrap = useStore((s) => s.bootstrap)
+  const ready = useStore((s: { ready: boolean }) => s.ready)
+  const bootstrap = useStore((s: { bootstrap: () => Promise<void> }) => s.bootstrap)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {

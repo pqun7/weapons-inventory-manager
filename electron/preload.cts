@@ -99,6 +99,7 @@ export const electronAPI = {
     add: (isoCode: string, name: string, symbol: string, decimalPrecision: number, initialRate: number) => ipcRenderer.invoke("currency:add", isoCode, name, symbol, decimalPrecision, initialRate),
     toggleActive: (code: string, isActive: boolean) => ipcRenderer.invoke("currency:toggleActive", code, isActive),
     recordRateAuditLog: (code: string, oldRate: number | null, newRate: number | null, changedBy: string, reason: string, changedAt: string) => ipcRenderer.invoke("currency:recordRateAuditLog", code, oldRate, newRate, changedBy, reason, changedAt),
+    delete: (code: string) => ipcRenderer.invoke("currency:delete", code),
   },
 }
 

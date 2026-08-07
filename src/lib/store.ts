@@ -14,21 +14,29 @@ declare const window: any
 // ============ Input Types ============
 
 export interface BulkIntakeInput {
-  brand: string
-  model: string
-  weaponType: string
-  subType: string
-  caliber: string
+  serialNumbers: string[]
+  // New foreign keys
+  weaponTypeId: string
+  weaponSubtypeId: string
+  caliberId: string
+  brandId: string
+  modelId: string
+  storageLocationId: string
+  // Labels (optional, for display in audit logs, etc.)
+  weaponTypeLabel?: string
+  subTypeLabel?: string
+  caliberLabel?: string
+  brandLabel?: string
+  modelLabel?: string
+  // Prices and status
   condition: WeaponCondition
   purchasePrice: number
   retailPrice: number
   wholesalePrice: number
   supplierId: string
-  shipmentId: string | null
-  serialNumbers: string[]
-  notes: string
-  location: StorageLocation
+  shipmentId: string | null          // ← corrected to allow null
   currency?: string
+  notes: string
 }
 
 export interface SaleInput {
@@ -69,20 +77,29 @@ export interface ShipmentInput {
   lineItems?: ShipmentLineItemInput[]
 }
 
+// Updated: now contains the FK IDs required by the backend
 export interface ShipmentLineItemInput {
   productType: "weapon" | "ammunition" | "accessory"
-  weaponType: string
-  subType: string
-  brand: string
-  model: string
-  caliber: string
+  weaponTypeId: string
+  weaponSubtypeId: string
+  caliberId: string
+  brandId: string
+  modelId: string
+  storageLocationId: string
   quantity: number
   purchasePrice: number
   retailPrice: number
   wholesalePrice: number
-  location: StorageLocation
   serialNumbers: string[]
   currency?: string
+  // Optional display labels – used by backend for audit/logs and shipment line item display
+  weaponTypeLabel?: string
+  subTypeLabel?: string
+  caliberLabel?: string
+  brandLabel?: string
+  modelLabel?: string
+  // Optional location object (if known) – overrides DB lookup in backend
+  location?: StorageLocation
 }
 
 export interface BulkShipmentCreateInput {
@@ -177,11 +194,7 @@ export interface StoreState {
   settings: SystemSettings
   userPreferences: UserPreferences | null
   currentUserId: string
-  customCalibers: string[]
-  customWeaponTypes: string[]
-  customAccessoryTypes: string[]
-  customBrands: string[]
-  customModels: string[]
+  // Removed redundant custom master-data arrays (now managed via useDynamicMasterData)
   searchHistory: string[]
   pinnedSearchItems: string[]
   savedFilters: SavedFilter[]
@@ -201,7 +214,7 @@ export interface StoreState {
   addBulkWeapons: (input: BulkIntakeInput) => Promise<{ success: boolean; added: number; duplicates: string[]; error?: string }>
   updateWeaponStatus: (weaponId: string, status: WeaponStatus, reason?: string) => Promise<{ success: boolean; error?: string }>
   updateWeaponNotes: (weaponId: string, notes: string) => Promise<{ success: boolean; error?: string }>
-  updateWeaponLocation: (weaponId: string, location: StorageLocation) => Promise<{ success: boolean; error?: string }>
+  updateWeaponLocation: (weaponId: string, storageLocationId: string) => Promise<{ success: boolean; error?: string }>
   addWeaponImage: (weaponId: string, imageBase64: string) => void
   completeSale: (input: SaleInput) => Promise<{ success: boolean; invoiceId?: string; invoiceNumber?: string; error?: string }>
   returnWeapon: (weaponId: string) => Promise<{ success: boolean; error?: string }>
@@ -243,12 +256,6 @@ export interface StoreState {
   updateUser: (id: string, updates: Partial<User>) => Promise<{ success: boolean; error?: string }>
   deleteUser: (id: string) => Promise<{ success: boolean; error?: string }>
   setCurrentUser: (userId: string) => void
-
-  addCustomCaliber: (caliber: string) => void
-  addCustomWeaponType: (type: string) => void
-  addCustomAccessoryType: (type: string) => void
-  addCustomBrand: (brand: string) => void
-  addCustomModel: (model: string) => void
 
   markNotificationRead: (id: string) => Promise<{ success: boolean; error?: string }>
   markAllNotificationsRead: () => void
@@ -327,11 +334,7 @@ export const useStore = create<StoreState>()(
     settings: DEFAULT_SETTINGS,
     userPreferences: null,
     currentUserId: "U001",
-    customCalibers: [],
-    customWeaponTypes: [],
-    customAccessoryTypes: [],
-    customBrands: [],
-    customModels: [],
+    // custom arrays removed
     searchHistory: [],
     pinnedSearchItems: [],
     savedFilters: [],
@@ -467,7 +470,7 @@ export const useStore = create<StoreState>()(
       return entries[0][0]
     },
 
-    addBulkWeapons: async (input) => {
+    addBulkWeapons: async (input: BulkIntakeInput) => {
       const state = get()
       const api = getElectronAPI()
       if (api) {
@@ -478,7 +481,7 @@ export const useStore = create<StoreState>()(
         return { success: true, added: result.data.added, duplicates: result.data.duplicates }
       }
       // Browser fallback
-      const existingSerials = new Set(state.weapons.map((w) => w.serialNumber.toLowerCase()))
+      const existingSerials = new Set(state.weapons.map(w => w.serialNumber.toLowerCase()))
       const duplicates: string[] = []
       const batchId = `BATCH-${Date.now()}`
       const newWeapons: Weapon[] = []
@@ -487,22 +490,50 @@ export const useStore = create<StoreState>()(
       const currentUser = state.getCurrentUser()
       const currencyService = await getCurrencyService()
 
-      input.serialNumbers.forEach((sn) => {
+      input.serialNumbers.forEach(sn => {
         const trimmed = sn.trim()
         if (!trimmed) return
         if (existingSerials.has(trimmed.toLowerCase())) { duplicates.push(trimmed); return }
         existingSerials.add(trimmed.toLowerCase())
         const currency = input.currency || "USD"
         newWeapons.push({
-          id: `W${pad(serialCounter, 5)}`, serialNumber: trimmed,
-          brand: input.brand, model: input.model, weaponType: input.weaponType, subType: input.subType, caliber: input.caliber,
-          condition: input.condition, status: "Available",
-          purchasePrice: input.purchasePrice, retailPrice: input.retailPrice,
-          wholesalePrice: input.wholesalePrice, actualFinalPrice: null,
-          supplierId: input.supplierId, shipmentId: input.shipmentId,
-          dateAdded: today, batchId, notes: input.notes, images: [],
-          movementHistory: [{ id: `MV${pad(serialCounter, 5)}`, timestamp: new Date().toISOString(), fromStatus: "Available", toStatus: "Available", userId: currentUser.id, userName: currentUser.name, reason: "Initial intake" }],
-          location: input.location,
+          id: `W${pad(serialCounter, 5)}`,
+          serialNumber: trimmed,
+          // New FK fields
+          weaponTypeId: input.weaponTypeId,
+          weaponSubtypeId: input.weaponSubtypeId,
+          caliberId: input.caliberId,
+          brandId: input.brandId,
+          modelId: input.modelId,
+          storageLocationId: input.storageLocationId,
+          // Labels (optional but harmless)
+          weaponType: input.weaponTypeLabel ?? "",
+          subType: input.subTypeLabel ?? "",
+          caliber: input.caliberLabel ?? "",
+          brand: input.brandLabel ?? "",
+          model: input.modelLabel ?? "",
+          location: { warehouse: "", shelf: "", bin: "" }, // will be overwritten by joined data later
+          condition: input.condition,
+          status: "Available",
+          purchasePrice: input.purchasePrice,
+          retailPrice: input.retailPrice,
+          wholesalePrice: input.wholesalePrice,
+          actualFinalPrice: null,
+          supplierId: input.supplierId,
+          shipmentId: input.shipmentId || null,
+          dateAdded: today,
+          batchId,
+          notes: input.notes,
+          images: [],
+          movementHistory: [{
+            id: `MV${pad(serialCounter, 5)}`,
+            timestamp: new Date().toISOString(),
+            fromStatus: "Available",
+            toStatus: "Available",
+            userId: currentUser.id,
+            userName: currentUser.name,
+            reason: "Initial intake",
+          }],
           purchasePriceValuation: currencyService.createValuation(input.purchasePrice, currency),
           retailPriceValuation: currencyService.createValuation(input.retailPrice, currency),
         })
@@ -553,15 +584,28 @@ export const useStore = create<StoreState>()(
       return { success: true }
     },
 
-    updateWeaponLocation: async (weaponId, location) => {
-      set((state) => ({
-        weapons: state.weapons.map((w) => w.id === weaponId ? { ...w, location } : w),
+    updateWeaponLocation: async (weaponId: string, storageLocationId: string) => {
+      const state = get()
+      const weapon = state.weapons.find(w => w.id === weaponId)
+      if (!weapon) return { success: false, error: "Weapon not found" }
+
+      // Optimistically update local state
+      set(state => ({
+        weapons: state.weapons.map(w => w.id === weaponId ? { ...w, storageLocationId } : w),
       }))
-      const w = get().weapons.find((w) => w.id === weaponId)
-      if (w) {
-        const api = getElectronAPI()
-        if (api) { await api.weapon.update(w) }
-        else { try { await db.dbUpdateWeapon(w) } catch (e) { console.error("DB persist failed:", e) } }
+
+      const api = getElectronAPI()
+      try {
+        if (api) {
+          await api.weapon.update(weapon) // persists the change
+          await get().refreshFromDb()     // re-fetches all data, correcting location
+        } else {
+          await db.dbUpdateWeapon(weapon)
+          await get().refreshFromDb()     // even in browser, a full reload fixes derived fields
+        }
+      } catch (e) {
+        console.error("Failed to update weapon location:", e)
+        return { success: false, error: String(e) }
       }
       return { success: true }
     },
@@ -1017,12 +1061,6 @@ export const useStore = create<StoreState>()(
     },
 
     setCurrentUser: (userId) => { set({ currentUserId: userId }) },
-
-    addCustomCaliber: (caliber) => { set((state) => state.customCalibers.includes(caliber) ? state : { customCalibers: [...state.customCalibers, caliber] }) },
-    addCustomWeaponType: (type) => { set((state) => state.customWeaponTypes.includes(type) ? state : { customWeaponTypes: [...state.customWeaponTypes, type] }) },
-    addCustomAccessoryType: (type) => { set((state) => state.customAccessoryTypes.includes(type) ? state : { customAccessoryTypes: [...state.customAccessoryTypes, type] }) },
-    addCustomBrand: (brand) => { set((state) => state.customBrands.includes(brand) ? state : { customBrands: [...state.customBrands, brand] }) },
-    addCustomModel: (model) => { set((state) => state.customModels.includes(model) ? state : { customModels: [...state.customModels, model] }) },
 
     markNotificationRead: async (id) => {
       set((state) => ({ notifications: state.notifications.map((n) => n.id === id ? { ...n, read: true } : n) }))

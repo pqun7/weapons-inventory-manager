@@ -229,26 +229,40 @@ export interface SavedFilter {
 export interface Weapon {
   id: string
   serialNumber: string
-  brand: string
-  model: string
+
+  // Foreign keys (new)
+  weaponTypeId: string
+  weaponSubtypeId: string
+  caliberId: string
+  brandId: string
+  modelId: string
+  storageLocationId: string | null
+
+  // Display labels (preserved for backward compatibility)
   weaponType: string
   subType: string
   caliber: string
-  condition: WeaponCondition
-  status: WeaponStatus
+  brand: string
+  model: string
+  location: StorageLocation   // still computed from storageLocationId join
+
+  condition: "Excellent" | "Good" | "Fair" | "Poor"
+  status: "Available" | "Reserved" | "Sold" | "Returned"
+
   purchasePrice: number
   retailPrice: number
   wholesalePrice: number
   actualFinalPrice: number | null
+
   supplierId: string
   shipmentId: string | null
+
   dateAdded: string
   batchId?: string
   notes: string
   images: string[]
   movementHistory: WeaponMovement[]
-  location: StorageLocation
-  // Dual-valuation: original currency, exchange rate, USD accounting amounts
+
   purchasePriceValuation?: MoneyValuation
   retailPriceValuation?: MoneyValuation
   salePriceValuation?: MoneyValuation
