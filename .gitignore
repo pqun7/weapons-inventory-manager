@@ -1,28 +1,321 @@
-# Logs
-logs
-*.log
+# ============================================================
+
+# Node.js / Package Managers
+
+# ============================================================
+
+node_modules/
+.npm/
+.pnpm-store/
+
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# npm cache / temporary files
+
+.npmrc.local
+
+# ============================================================
+
+# Build / Distribution
+
+# ============================================================
+
+dist/
+dist-ssr/
+dist-electron/
+
+build/
+out/
+
+release/
+releases/
+
 *.local
 
-# Editor directories and files
+
+# Electron Builder
+
+electron-builder.yml.local
+electron-builder.yaml.local
+
+# ============================================================
+
+# Environment Variables / Secrets
+
+# ============================================================
+
+.env
+.env.*
+!.env.example
+!.env.template
+
+# Local secrets
+
+*.pem
+*.key
+*.crt
+
+# ============================================================
+
+# Databases / Local Application Data
+
+# ============================================================
+
+# SQLite databases
+
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+
+# Local database directories
+
+data/
+database/
+databases/
+
+# Electron local runtime data
+
+electron-data/
+app-data/
+
+# ============================================================
+
+# Logs / Runtime Files
+
+# ============================================================
+
+logs/
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Electron logs
+
+electron.log
+electron-debug.log
+crash.log
+
+# Runtime / temporary files
+
+*.pid
+*.pid.lock
+*.seed
+*.tmp
+*.temp
+
+# ============================================================
+
+# Testing / Coverage
+
+# ============================================================
+
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+blob-report/
+.vitest/
+
+# ============================================================
+
+# Vite
+
+# ============================================================
+
+.vite/
+vite.config.*.timestamp-*
+
+# ============================================================
+
+# TypeScript
+
+# ============================================================
+
+*.tsbuildinfo
+
+# ============================================================
+
+# Electron / Native Modules
+
+# ============================================================
+
+# Native build output
+
+**/build/Release/
+**/build/Debug/
+**/prebuilds/
+
+# better-sqlite3 / native binaries
+
+*.node
+
+# electron-rebuild temporary files
+
+.electron-rebuild/
+
+# ============================================================
+
+# IDE / Editors
+
+# ============================================================
+
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
+!.vscode/settings.json
+
+.idea/
+*.iml
+
+# Visual Studio
+
+.vs/
 *.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Visual Studio / Node projects
+
 *.ntvs*
 *.njsproj
 *.sln
+
+# Swap files
+
 *.sw?
-.env
+*.swp
+*.swo
 
+# ============================================================
 
-release
+# OS Files
+
+# ============================================================
+
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+
+# ============================================================
+
+# Temporary / Backup Files
+
+# ============================================================
+
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
+
+# Editor temporary files
+
+*~
+.#*
+*.tmp
+
+# ============================================================
+
+# Generated Documentation / Reports
+
+# ============================================================
+
+*.html
+!index.html
+
+# ============================================================
+
+# Local Development / Debug Artifacts
+
+# ============================================================
+
+debug/
+tmp/
+temp/
+
+*.dump
+*.trace
+
+# Debug output files
+
+debug-*.txt
+*-debug.txt
+*-debug.log
+
+# ============================================================
+
+# OS / Installer Artifacts
+
+# ============================================================
+
+*.exe
+*.msi
+*.dmg
+*.pkg
+*.AppImage
+*.deb
+*.rpm
+
+# Electron unpacked application
+
+win-unpacked/
+mac/
+linux-unpacked/
+
+# ============================================================
+
+# Project-specific generated files
+
+# ============================================================
+
+# Generated Electron files
+
+electron/generated/
+electron/.cache/
+
+# Generated database schemas / temporary exports
+
+*.generated.json
+*.generated.js
+*.generated.ts
+
+# Excel exports generated locally
+
+exports/
+exports/*.xlsx
+exports/*.xls
+exports/*.csv
+
+# Local backups
+
+backups/
+backup/
+*.backup.db
+
+# ============================================================
+
+# Keep Example / Documentation Files
+
+# ============================================================
+
+!.env.example
+!.env.template
+!.vscode/extensions.json
+!.vscode/settings.json
