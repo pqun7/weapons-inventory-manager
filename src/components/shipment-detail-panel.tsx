@@ -17,7 +17,9 @@ import { Input } from "@/components/ui/input"
 import { useStore } from "@/lib/store"
 import { useI18n } from "@/lib/i18n"
 import { useNav } from "@/lib/nav"
-import { formatDate, formatDateTime, formatCurrency, shipmentStatusClass, shipmentDelayDays } from "@/lib/format"
+import { useCurrency } from "@/lib/currency-context"
+import { multiplyMoney, sumMoney, valuationAccountingAmount } from "@/lib/money-ui"
+import { formatDate, formatDateTime, shipmentStatusClass, shipmentDelayDays } from "@/lib/format"
 import type { ShipmentStatus, Shipment, ShipmentLineItem } from "@/lib/types"
 import { toast } from "sonner"
 
@@ -31,7 +33,7 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
   const { t } = useI18n()
   const suppliers = useStore((s) => s.suppliers)
   const weapons = useStore((s) => s.weapons)
-  const settings = useStore((s) => s.settings)
+  const { formatValuation, formatAccountingAggregate } = useCurrency()
   const setShipmentStatus = useStore((s) => s.setShipmentStatus)
   const updateShipment = useStore((s) => s.updateShipment)
   const addShipmentDocument = useStore((s) => s.addShipmentDocument)
@@ -104,8 +106,15 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
     else toast.success(t("toast.shipmentUpdated"))
   }
 
-  const totalCost = lineItems.reduce((s, li) => s + li.purchasePrice * li.quantity, 0)
-  const totalRetail = lineItems.reduce((s, li) => s + li.retailPrice * li.quantity, 0)
+  const totalCostAccounting = shipment.totalCostValuation?.accountingAmount
+    ?? sumMoney(lineItems.map((item) => multiplyMoney(
+      valuationAccountingAmount(item.purchasePriceValuation, item.purchasePrice),
+      item.quantity,
+    )))
+  const totalRetailAccounting = sumMoney(lineItems.map((item) => multiplyMoney(
+    valuationAccountingAmount(item.retailPriceValuation, item.retailPrice),
+    item.quantity,
+  )))
 
   return (
     <Card className="flex flex-col">
@@ -172,7 +181,7 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
                   <MetaRow icon={Hash} label={t("ship.invoiceNumber")} value={shipment.invoiceNumber || "—"} />
                   <MetaRow icon={Truck} label={t("ship.shippingCarrier")} value={shipment.shippingCarrier || "—"} />
                   <MetaRow icon={Hash} label={t("ship.containerNumber")} value={shipment.containerNumber || "—"} />
-                  <MetaRow icon={DollarSign} label={t("ship.currency")} value={shipment.currency || "USD"} />
+                  <MetaRow icon={DollarSign} label={t("ship.currency")} value={shipment.currency || "—"} />
                   <MetaRow icon={Calendar} label={t("ship.purchaseDate")} value={shipment.purchaseDate ? formatDate(shipment.purchaseDate) : "—"} />
                   <MetaRow icon={Calendar} label={t("ship.expectedArrival")} value={formatDate(shipment.expectedArrivalDate)} />
                   <MetaRow icon={Calendar} label={t("ship.actualArrival")} value={shipment.actualArrivalDate ? formatDate(shipment.actualArrivalDate) : "—"} />
@@ -194,15 +203,17 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
                     <div className="grid grid-cols-3 gap-2 text-[11px]">
                       <div>
                         <span className="text-muted-foreground">{t("ship.totalCost")}</span>
-                        <div className="font-bold tabular-nums">{formatCurrency(totalCost, settings.currencySymbol)}</div>
+                        <div className="font-bold tabular-nums">{shipment.totalCostValuation
+                          ? formatValuation(shipment.totalCostValuation, "display")
+                          : formatAccountingAggregate(totalCostAccounting)}</div>
                       </div>
                       <div>
                         <span className="text-muted-foreground">{t("ship.totalRetail")}</span>
-                        <div className="font-bold tabular-nums">{formatCurrency(totalRetail, settings.currencySymbol)}</div>
+                        <div className="font-bold tabular-nums">{formatAccountingAggregate(totalRetailAccounting)}</div>
                       </div>
                       <div>
                         <span className="text-muted-foreground">{t("ship.projectedProfit")}</span>
-                        <div className="font-bold tabular-nums text-status-returned-fg">{formatCurrency(totalRetail - totalCost, settings.currencySymbol)}</div>
+                        <div className="font-bold tabular-nums text-status-returned-fg">{formatAccountingAggregate(sumMoney([totalRetailAccounting, -totalCostAccounting]))}</div>
                       </div>
                     </div>
                   </div>
@@ -327,11 +338,11 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
                   <Select value={docCategory} onValueChange={setDocCategory}>
                     <SelectTrigger className="h-7 w-32 text-[11px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Invoice">Invoice</SelectItem>
-                      <SelectItem value="Packing List">Packing List</SelectItem>
-                      <SelectItem value="Bill of Lading">Bill of Lading</SelectItem>
-                      <SelectItem value="Certificate">Certificate</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
+                      <SelectItem value="Invoice">{t("shipmentDoc.invoice")}</SelectItem>
+                      <SelectItem value="Packing List">{t("shipmentDoc.packingList")}</SelectItem>
+                      <SelectItem value="Bill of Lading">{t("shipmentDoc.billOfLading")}</SelectItem>
+                      <SelectItem value="Certificate">{t("shipmentDoc.certificate")}</SelectItem>
+                      <SelectItem value="Other">{t("shipmentDoc.other")}</SelectItem>
                     </SelectContent>
                   </Select>
                   <Label className="cursor-pointer flex-1">
@@ -427,6 +438,7 @@ function MetaRow({ icon: Icon, label, value }: { icon: typeof Info; label: strin
 }
 
 function LineItemRow({ item, idx, t }: { item: ShipmentLineItem; idx: number; t: (k: string) => string }) {
+  const { formatValuation } = useCurrency()
   return (
     <TableRow>
       <TableCell className="py-1 text-[10px] tabular-nums">{idx}</TableCell>
@@ -441,7 +453,7 @@ function LineItemRow({ item, idx, t }: { item: ShipmentLineItem; idx: number; t:
           <span className="text-[9px] text-muted-foreground">—</span>
         )}
       </TableCell>
-      <TableCell className="py-1 text-[10px] tabular-nums">{item.purchasePrice}</TableCell>
+      <TableCell className="py-1 text-[10px] tabular-nums">{formatValuation(item.purchasePriceValuation, "display", item.purchasePrice)}</TableCell>
     </TableRow>
   )
 }

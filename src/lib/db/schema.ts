@@ -1,10 +1,34 @@
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 5;
+
+export const CONFIGURE_INITIAL_CURRENCIES_V5_SQL = `
+UPDATE currencies
+SET is_active = CASE
+  WHEN iso_code IN ('USD','SAR','SDG','EGP') THEN 1
+  WHEN iso_code = (SELECT accounting_currency_code FROM system_settings WHERE id = 1) THEN 1
+  ELSE 0
+END;
+
+UPDATE system_settings
+SET supported_currencies = '["USD","SAR","SDG","EGP"]',
+    currency_code = CASE
+      WHEN currency_code IN ('USD','SAR','SDG','EGP') THEN currency_code
+      ELSE 'USD'
+    END,
+    preferred_display_currency = CASE
+      WHEN preferred_display_currency IN ('USD','SAR','SDG','EGP') THEN preferred_display_currency
+      ELSE 'USD'
+    END
+WHERE id = 1;
+
+UPDATE user_preferences
+SET display_currency = 'USD'
+WHERE display_currency IS NOT NULL
+  AND display_currency NOT IN ('USD','SAR','SDG','EGP');
+`;
 
 export const CREATE_TABLES_SQL = `
--- ============ PRAGMA & WAL ============
-PRAGMA foreign_keys = ON;
-PRAGMA journal_mode = WAL;         
-PRAGMA synchronous = NORMAL;
+-- Connection-level PRAGMAs are configured by electron/database.ts.
+-- This file is intentionally limited to schema objects, indexes, and seed data.
 
 -- ============ Master Data Tables ============
 
@@ -103,7 +127,9 @@ CREATE TABLE IF NOT EXISTS exchange_rate_audit_log (
   new_rate      TEXT,
   changed_by    TEXT,
   changed_at    TEXT NOT NULL DEFAULT (datetime('now')),
-  reason        TEXT
+  reason        TEXT,
+  source        TEXT NOT NULL DEFAULT 'manual'
+    CHECK (source IN ('manual','api','cache','default'))
 );
 
 -- ============ Business Tables (suppliers, customers, shipments, etc.) ============
@@ -181,6 +207,8 @@ CREATE TABLE IF NOT EXISTS weapons (
   movement_history      TEXT NOT NULL DEFAULT '[]',
   purchase_price_valuation TEXT,
   retail_price_valuation  TEXT,
+  wholesale_price_valuation TEXT,
+  actual_final_price_valuation TEXT,
   sale_price_valuation    TEXT,
   deleted_at            TEXT,
   created_at            TEXT NOT NULL DEFAULT (datetime('now')),
@@ -249,7 +277,17 @@ CREATE TABLE IF NOT EXISTS invoices (
   notes               TEXT NOT NULL DEFAULT '',
   voided              INTEGER NOT NULL DEFAULT 0,
   tax_amount          REAL NOT NULL DEFAULT 0,
-  total_valuation     TEXT
+  total_valuation     TEXT,
+  currency            TEXT,
+  accounting_currency TEXT,
+  exchange_rate       TEXT,
+  exchange_rate_date  TEXT,
+  rate_source         TEXT,
+  total_original_accounting   TEXT,
+  total_negotiated_accounting TEXT,
+  total_paid_accounting       TEXT,
+  balance_accounting          TEXT,
+  tax_amount_accounting       TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id);
@@ -261,8 +299,15 @@ CREATE TABLE IF NOT EXISTS payment_records (
   invoice_number TEXT NOT NULL,
   date           TEXT NOT NULL,
   amount         REAL NOT NULL,
-  method         TEXT NOT NULL DEFAULT 'Cash'
-    CHECK (method IN ('Cash','Card','Bank Transfer','Check','Other')),
+  currency       TEXT,
+  accounting_amount TEXT,
+  accounting_currency TEXT,
+  exchange_rate  TEXT,
+  exchange_rate_date TEXT,
+  rate_source    TEXT,
+  rate_id        TEXT,
+  method         TEXT NOT NULL DEFAULT 'cash'
+    CHECK (method IN ('cash','card','bank_transfer','check','other')),
   employee       TEXT NOT NULL DEFAULT '',
   notes          TEXT NOT NULL DEFAULT ''
 );
@@ -276,6 +321,8 @@ CREATE TABLE IF NOT EXISTS accessories (
   quantity         INTEGER NOT NULL DEFAULT 0,
   safety_threshold INTEGER NOT NULL DEFAULT 10,
   price            REAL NOT NULL DEFAULT 0,
+  price_currency   TEXT,
+  price_valuation  TEXT,
   date_added       TEXT NOT NULL,
   warehouse        TEXT NOT NULL DEFAULT '', 
   shelf            TEXT NOT NULL DEFAULT '',
@@ -283,20 +330,39 @@ CREATE TABLE IF NOT EXISTS accessories (
 );
 
 CREATE TABLE IF NOT EXISTS ammunition (
-  id               TEXT PRIMARY KEY,
-  caliber          TEXT NOT NULL,
-  package_type     TEXT NOT NULL DEFAULT 'Box'
+  id                TEXT PRIMARY KEY,
+  name              TEXT NOT NULL DEFAULT '',   -- new column
+  caliber           TEXT NOT NULL,
+  package_type      TEXT NOT NULL DEFAULT 'Box'
     CHECK (package_type IN ('Carton','Box','Case','Custom')),
   units_per_package INTEGER NOT NULL DEFAULT 1,
-  full_packages    INTEGER NOT NULL DEFAULT 0,
-  loose_rounds     INTEGER NOT NULL DEFAULT 0,
-  safety_threshold INTEGER NOT NULL DEFAULT 100,
-  price            REAL NOT NULL DEFAULT 0,
-  date_added       TEXT NOT NULL,
-  warehouse        TEXT NOT NULL DEFAULT '',  
-  shelf            TEXT NOT NULL DEFAULT '',
-  bin              TEXT NOT NULL DEFAULT ''
-);
+  full_packages     INTEGER NOT NULL DEFAULT 0,
+  loose_rounds      INTEGER NOT NULL DEFAULT 0,
+  safety_threshold  INTEGER NOT NULL DEFAULT 100,
+  price             REAL NOT NULL DEFAULT 0,
+  price_currency    TEXT,
+  price_valuation   TEXT,
+  date_added        TEXT NOT NULL,
+  warehouse         TEXT NOT NULL DEFAULT '',
+  shelf             TEXT NOT NULL DEFAULT '',
+  bin               TEXT NOT NULL DEFAULT ''
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS ammunition_weapon_compatibility (
+  ammunition_id TEXT NOT NULL REFERENCES ammunition(id) ON DELETE CASCADE,
+  weapon_id     TEXT NOT NULL REFERENCES weapons(id) ON DELETE RESTRICT,
+  PRIMARY KEY (ammunition_id, weapon_id)
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_awc_ammo ON ammunition_weapon_compatibility(ammunition_id);
+CREATE INDEX IF NOT EXISTS idx_awc_weapon ON ammunition_weapon_compatibility(weapon_id);
+
+CREATE TABLE IF NOT EXISTS accessory_weapon_compatibility (
+  accessory_id TEXT NOT NULL REFERENCES accessories(id) ON DELETE CASCADE,
+  weapon_id    TEXT NOT NULL REFERENCES weapons(id) ON DELETE RESTRICT,
+  PRIMARY KEY (accessory_id, weapon_id)
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_accwc_acc ON accessory_weapon_compatibility(accessory_id);
+CREATE INDEX IF NOT EXISTS idx_accwc_weapon ON accessory_weapon_compatibility(weapon_id);
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id           TEXT PRIMARY KEY,
@@ -333,7 +399,9 @@ CREATE TABLE IF NOT EXISTS system_settings (
   id                      INTEGER PRIMARY KEY CHECK (id = 1),
   currency_symbol         TEXT NOT NULL DEFAULT '$',
   currency_code           TEXT NOT NULL DEFAULT 'USD',
-  supported_currencies    TEXT NOT NULL DEFAULT '["USD","SAR","EUR"]',
+  accounting_currency_code TEXT NOT NULL DEFAULT 'USD',
+  rate_base_currency_code  TEXT NOT NULL DEFAULT 'USD',
+  supported_currencies    TEXT NOT NULL DEFAULT '["USD","SAR","SDG","EGP"]',
   currency_frequency      TEXT NOT NULL DEFAULT '{}',
   tax_percent             REAL NOT NULL DEFAULT 0,
   invoice_header          TEXT NOT NULL DEFAULT 'WEAPON STORE MANAGEMENT SYSTEM',
@@ -373,6 +441,138 @@ CREATE TABLE IF NOT EXISTS user_preferences (
   created_at       TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS financial_data_issues (
+  id          TEXT PRIMARY KEY,
+  entity_type TEXT NOT NULL,
+  entity_id   TEXT NOT NULL,
+  field_name  TEXT NOT NULL,
+  issue_code  TEXT NOT NULL,
+  details     TEXT NOT NULL DEFAULT '',
+  detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+  resolved_at TEXT,
+  UNIQUE (entity_type, entity_id, field_name, issue_code)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS inventory_transactions (
+  id               TEXT PRIMARY KEY,
+  item_type        TEXT NOT NULL CHECK (item_type IN ('weapon','accessory','ammunition')),
+  item_id          TEXT NOT NULL,
+  transaction_type TEXT NOT NULL CHECK (transaction_type IN ('receipt','adjustment','sale','return')),
+  quantity_delta   INTEGER NOT NULL,
+  unit_amount      TEXT,
+  currency         TEXT,
+  valuation        TEXT,
+  shipment_id      TEXT,
+  notes            TEXT NOT NULL DEFAULT '',
+  created_by       TEXT NOT NULL,
+  created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_inventory_transactions_item
+  ON inventory_transactions(item_type, item_id, created_at);
+
+-- Database guardrails for backend contracts. Historical rows remain readable
+-- after a currency is deactivated; only new/changed currency identities require
+-- an active registered currency.
+CREATE TRIGGER IF NOT EXISTS trg_currencies_positive_rate_insert
+BEFORE INSERT ON currencies
+WHEN CAST(NEW.last_known_rate AS REAL) <= 0
+BEGIN
+  SELECT RAISE(ABORT, 'currency rate must be greater than zero');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_currencies_positive_rate_update
+BEFORE UPDATE OF last_known_rate ON currencies
+WHEN CAST(NEW.last_known_rate AS REAL) <= 0
+BEGIN
+  SELECT RAISE(ABORT, 'currency rate must be greater than zero');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_manual_override_positive_rate
+BEFORE INSERT ON exchange_rate_overrides
+WHEN NEW.mode = 'manual' AND (NEW.manual_rate IS NULL OR CAST(NEW.manual_rate AS REAL) <= 0)
+BEGIN
+  SELECT RAISE(ABORT, 'manual currency rate must be greater than zero');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_manual_override_positive_rate_update
+BEFORE UPDATE OF mode, manual_rate ON exchange_rate_overrides
+WHEN NEW.mode = 'manual' AND (NEW.manual_rate IS NULL OR CAST(NEW.manual_rate AS REAL) <= 0)
+BEGIN
+  SELECT RAISE(ABORT, 'manual currency rate must be greater than zero');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_invoice_currency_insert
+BEFORE INSERT ON invoices
+WHEN NEW.currency IS NULL
+  OR NOT EXISTS (SELECT 1 FROM currencies WHERE iso_code = NEW.currency AND is_active = 1)
+  OR NEW.accounting_currency IS NULL
+  OR NOT EXISTS (SELECT 1 FROM currencies WHERE iso_code = NEW.accounting_currency AND is_active = 1)
+  OR NEW.exchange_rate IS NULL OR CAST(NEW.exchange_rate AS REAL) <= 0
+  OR NEW.exchange_rate_date IS NULL
+  OR NEW.rate_source NOT IN ('manual','api','cache','default')
+  OR NEW.total_original_accounting IS NULL
+  OR NEW.total_negotiated_accounting IS NULL
+  OR NEW.total_paid_accounting IS NULL
+  OR NEW.balance_accounting IS NULL
+  OR NEW.tax_amount_accounting IS NULL
+BEGIN
+  SELECT RAISE(ABORT, 'invoice requires active transaction and accounting currencies');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_weapon_valuation_insert
+BEFORE INSERT ON weapons
+WHEN NEW.purchase_price_valuation IS NULL
+  OR NEW.retail_price_valuation IS NULL
+  OR NEW.wholesale_price_valuation IS NULL
+  OR json_valid(NEW.purchase_price_valuation) = 0
+  OR json_valid(NEW.retail_price_valuation) = 0
+  OR json_valid(NEW.wholesale_price_valuation) = 0
+BEGIN
+  SELECT RAISE(ABORT, 'weapon prices require valuation snapshots');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_shipment_currency_insert
+BEFORE INSERT ON shipments
+WHEN NEW.currency IS NULL
+  OR NOT EXISTS (SELECT 1 FROM currencies WHERE iso_code = NEW.currency AND is_active = 1)
+BEGIN
+  SELECT RAISE(ABORT, 'shipment requires an active transaction currency');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_payment_currency_insert
+BEFORE INSERT ON payment_records
+WHEN NEW.currency IS NULL
+  OR NOT EXISTS (SELECT 1 FROM currencies WHERE iso_code = NEW.currency AND is_active = 1)
+  OR NEW.accounting_currency IS NULL
+  OR NOT EXISTS (SELECT 1 FROM currencies WHERE iso_code = NEW.accounting_currency AND is_active = 1)
+  OR NEW.accounting_amount IS NULL
+  OR NEW.exchange_rate IS NULL OR CAST(NEW.exchange_rate AS REAL) <= 0
+  OR NEW.exchange_rate_date IS NULL
+  OR NEW.rate_source NOT IN ('manual','api','cache','default')
+BEGIN
+  SELECT RAISE(ABORT, 'payment requires active transaction and accounting currencies');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_accessory_currency_insert
+BEFORE INSERT ON accessories
+WHEN NEW.price_currency IS NULL
+  OR NOT EXISTS (SELECT 1 FROM currencies WHERE iso_code = NEW.price_currency AND is_active = 1)
+  OR NEW.price_valuation IS NULL OR json_valid(NEW.price_valuation) = 0
+BEGIN
+  SELECT RAISE(ABORT, 'accessory price requires an active currency');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ammunition_currency_insert
+BEFORE INSERT ON ammunition
+WHEN NEW.price_currency IS NULL
+  OR NOT EXISTS (SELECT 1 FROM currencies WHERE iso_code = NEW.price_currency AND is_active = 1)
+  OR NEW.price_valuation IS NULL OR json_valid(NEW.price_valuation) = 0
+BEGIN
+  SELECT RAISE(ABORT, 'ammunition price requires an active currency');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_inventory_transaction_currency_insert
+BEFORE INSERT ON inventory_transactions
+WHEN NEW.unit_amount IS NOT NULL AND (
+  NEW.currency IS NULL
+  OR NOT EXISTS (SELECT 1 FROM currencies WHERE iso_code = NEW.currency AND is_active = 1)
+  OR NEW.valuation IS NULL OR json_valid(NEW.valuation) = 0
+)
+BEGIN
+  SELECT RAISE(ABORT, 'priced inventory transaction requires an active currency');
+END;
 `;
 
 
@@ -462,8 +662,8 @@ INSERT OR IGNORE INTO currencies (iso_code, name, symbol, decimal_precision, is_
   ('USD', 'US Dollar', '$', 2, 1, 1.0, datetime('now')),
   ('SDG', 'Sudanese Pound', 'SDG', 2, 1, 600.0, datetime('now')),
   ('SAR', 'Saudi Riyal', 'SAR', 2, 1, 3.75, datetime('now')),
-  ('AED', 'UAE Dirham', 'AED', 2, 1, 3.67, datetime('now')),
-  ('EUR', 'Euro', 'EUR', 2, 1, 0.92, datetime('now')),
+  ('AED', 'UAE Dirham', 'AED', 2, 0, 3.67, datetime('now')),
+  ('EUR', 'Euro', 'EUR', 2, 0, 0.92, datetime('now')),
   ('EGP', 'Egyptian Pound', 'E£', 2, 1, 48.5, datetime('now'));
 
 INSERT OR IGNORE INTO exchange_rate_overrides (currency_code, mode) VALUES

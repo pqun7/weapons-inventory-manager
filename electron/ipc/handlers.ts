@@ -3,9 +3,10 @@ import { repo } from "../repositories/index.js"
 import { getDb, createDatabaseBackup, deleteDatabaseBackup, listDatabaseBackups, restoreDatabaseBackup } from "../database.js"
 import { seedDemoDataIfNeeded } from "../services/demo-seed-service.js"
 import { completeSale } from "../services/sale-service.js"
+import { registerPayment } from "../services/payment-service.js"
 import type { AllData, MasterDataAll } from "../../src/lib/db/mappers.js"
 import type {
-  Weapon, Shipment, Invoice, PaymentRecord, Accessory, Ammunition,
+  Weapon, Shipment, Invoice, Accessory, Ammunition,
   Customer, Supplier, AuditLog, AppNotification, User, SystemSettings,
   SavedFilter, UserPreferences, StorageLocation,
 } from "../../src/lib/types.js"
@@ -14,12 +15,12 @@ import type { CurrencyRow, ExchangeRateOverrideRow, AuditLogEntry } from "../../
 import type {
   BulkIntakeInput, ShipmentInput, BulkShipmentCreateInput,
   PaymentInput, DueDateExtensionInput, AddStockInput,
-  ReceiveAmmoByPackagesInput, ReceiveAmmoByRoundsInput, SellAmmoInput,
-  SaleInput,
-  UpdateAmmoPackageInput,
+  SaleInput, ReceiveAmmoByPackagesInput, ReceiveAmmoByRoundsInput,
+  SellAmmoInput, UpdateAmmoPackageInput,
 } from "../../src/lib/store.js"
 
-import { CurrencyService } from "../../src/lib/currency-service.js"
+import { backendCurrencyService } from "../services/currency-service.js"
+import { nonNegativeMoney, positiveMoney, sumMoney } from "../services/money.js"
 import { ammoTotalRounds } from "../../src/lib/types.js"
 
 
@@ -29,10 +30,39 @@ function pad(num: number, size: number): string {
 
 function generateId(prefix: string, table: string): string {
   const db = getDb()
-  const row = db.prepare(`SELECT id FROM ${table} ORDER BY id DESC LIMIT 1`).get() as { id: string } | undefined
-  if (!row) return `${prefix}${pad(1, 5)}`
-  const num = parseInt(row.id.replace(/\D/g, ""), 10)
-  return `${prefix}${pad(num + 1, 5)}`
+
+  const rows = db
+    .prepare(`
+      SELECT id
+      FROM ${table}
+      WHERE id LIKE ?
+    `)
+    .all(`${prefix}%`) as { id: string }[]
+
+  let maxNumber = 0
+
+  for (const row of rows) {
+    const value = row.id.slice(prefix.length)
+    const number = Number.parseInt(value, 10)
+
+    if (Number.isFinite(number) && number > maxNumber) {
+      maxNumber = number
+    }
+  }
+
+  let next = maxNumber + 1
+  let candidate = `${prefix}${pad(next, 5)}`
+
+  while (
+    db
+      .prepare(`SELECT 1 FROM ${table} WHERE id = ? LIMIT 1`)
+      .get(candidate)
+  ) {
+    next += 1
+    candidate = `${prefix}${pad(next, 5)}`
+  }
+
+  return candidate
 }
 
 interface IpcResult<T = unknown> {
@@ -46,6 +76,101 @@ function ok<T>(data?: T): IpcResult<T> {
 }
 function fail(error: string): IpcResult<never> {
   return { success: false, error }
+}
+
+function normalizeCurrencyCode(value: unknown, fieldName = "Currency"): string {
+  if (typeof value !== "string" || !/^[A-Za-z]{3}$/.test(value.trim())) {
+    throw new Error(`${fieldName} must be a valid three-letter currency code`)
+  }
+  return value.trim().toUpperCase()
+}
+
+function requireActiveCurrency(code: unknown, fieldName = "Currency"): CurrencyRow {
+  const normalized = normalizeCurrencyCode(code, fieldName)
+  const currency = repo.getCurrencies().find((row) => row.iso_code === normalized)
+  if (!currency) throw new Error(`${fieldName} is not registered: ${normalized}`)
+  if (currency.is_active !== 1) throw new Error(`${fieldName} is inactive: ${normalized}`)
+  return currency
+}
+
+function requirePositiveRate(value: unknown): number {
+  const rate = Number(value)
+  if (!Number.isFinite(rate) || rate <= 0) throw new Error("Exchange rate must be a finite number greater than zero")
+  return rate
+}
+
+function requireRateAdministrator(changedBy: unknown): string {
+  if (typeof changedBy !== "string" || !changedBy.trim()) throw new Error("The administrator identity is required")
+  const row = getDb().prepare("SELECT name, role FROM users WHERE name = ? COLLATE NOCASE LIMIT 1").get(changedBy.trim()) as { name: string; role: string } | undefined
+  if (!row || row.role.toLowerCase() !== "admin") throw new Error("Administrator role is required to change exchange rates")
+  return row.name
+}
+
+interface WeaponDisplayFields {
+  weaponType: string
+  subType: string
+  caliber: string
+  brand: string
+  model: string
+}
+
+function resolveWeaponDisplayFields(input: {
+  weaponTypeId: string
+  weaponSubtypeId: string
+  caliberId: string
+  brandId: string
+  modelId: string
+}): WeaponDisplayFields {
+  const db = getDb()
+  const row = db.prepare(`
+    SELECT
+      wt.label AS weapon_type,
+      ws.label AS sub_type,
+      c.label AS caliber,
+      b.label AS brand,
+      m.label AS model
+    FROM weapon_types wt
+    JOIN weapon_subtypes ws
+      ON ws.id = ? AND ws.weapon_type_id = wt.id
+    JOIN calibers c
+      ON c.id = ?
+    JOIN brands b
+      ON b.id = ?
+    JOIN models m
+      ON m.id = ? AND m.brand_id = b.id
+    WHERE wt.id = ?
+      AND EXISTS (
+        SELECT 1
+        FROM subtype_calibers sc
+        WHERE sc.subtype_id = ws.id AND sc.caliber_id = c.id
+      )
+  `).get(
+    input.weaponSubtypeId,
+    input.caliberId,
+    input.brandId,
+    input.modelId,
+    input.weaponTypeId,
+  ) as {
+    weapon_type: string
+    sub_type: string
+    caliber: string
+    brand: string
+    model: string
+  } | undefined
+
+  if (!row) {
+    throw new Error(
+      "Invalid weapon master-data selection: type, sub-type, caliber, brand, and model must reference valid related records.",
+    )
+  }
+
+  return {
+    weaponType: row.weapon_type,
+    subType: row.sub_type,
+    caliber: row.caliber,
+    brand: row.brand,
+    model: row.model,
+  }
 }
 
 export function registerIpcHandlers(): void {
@@ -107,15 +232,64 @@ export function registerIpcHandlers(): void {
   // ===== Settings & Preferences =====
   ipcMain.handle("settings:update", (_, updates: Partial<SystemSettings>): IpcResult<SystemSettings> => {
     try {
-      const current = repo.getSettings()
-      const merged = { ...current, ...updates }
-      repo.updateSettings(merged)
-      return ok(merged)
+      return getDb().transaction(() => {
+        const current = repo.getSettings()
+        const merged = { ...current, ...updates }
+        const transactionCurrency = requireActiveCurrency(merged.currencyCode, "Default transaction currency")
+        const accountingCurrency = requireActiveCurrency(merged.accountingCurrencyCode, "Accounting currency")
+        const rateBaseCurrency = requireActiveCurrency(merged.rateBaseCurrencyCode, "Rate base currency")
+        requireActiveCurrency(merged.preferredDisplayCurrency ?? transactionCurrency.iso_code, "Display currency")
+        if (!Number.isFinite(merged.taxPercent) || merged.taxPercent < 0 || merged.taxPercent > 100) {
+          throw new Error("Tax percent must be between 0 and 100")
+        }
+        if (!Number.isFinite(merged.minProfitMarginPercent) || merged.minProfitMarginPercent < 0 || merged.minProfitMarginPercent > 100) {
+          throw new Error("Minimum profit margin must be between 0 and 100")
+        }
+        if (rateBaseCurrency.iso_code !== current.rateBaseCurrencyCode) {
+          throw new Error("Rate base currency cannot be changed without an explicit atomic rebase of every stored exchange rate")
+        }
+        if (accountingCurrency.iso_code !== current.accountingCurrencyCode) {
+          const financialRows = getDb().prepare(`
+            SELECT
+              (SELECT COUNT(*) FROM invoices) +
+              (SELECT COUNT(*) FROM payment_records) +
+              (SELECT COUNT(*) FROM weapons WHERE purchase_price_valuation IS NOT NULL OR retail_price_valuation IS NOT NULL OR wholesale_price_valuation IS NOT NULL) +
+              (SELECT COUNT(*) FROM accessories WHERE price_valuation IS NOT NULL) +
+              (SELECT COUNT(*) FROM ammunition WHERE price_valuation IS NOT NULL) +
+              (SELECT COUNT(*) FROM shipments WHERE total_cost_valuation IS NOT NULL) +
+              (SELECT COUNT(*) FROM inventory_transactions) AS count
+          `).get() as { count: number }
+          if (financialRows.count > 0) {
+            throw new Error("Accounting currency cannot be changed after financial transactions exist; migrate historical ledgers explicitly")
+          }
+        }
+        const activeCodes = repo.getCurrencies().filter((row) => row.is_active === 1).map((row) => row.iso_code)
+        const validated: SystemSettings = {
+          ...merged,
+          currencyCode: transactionCurrency.iso_code,
+          currencySymbol: transactionCurrency.symbol,
+          accountingCurrencyCode: accountingCurrency.iso_code,
+          rateBaseCurrencyCode: rateBaseCurrency.iso_code,
+          supportedCurrencies: activeCodes,
+          preferredDisplayCurrency: normalizeCurrencyCode(merged.preferredDisplayCurrency ?? transactionCurrency.iso_code, "Display currency"),
+        }
+        repo.updateSettings(validated)
+        return ok(validated)
+      })()
     } catch (e) { return fail(String(e)) }
   })
 
   ipcMain.handle("userPreferences:upsert", (_, prefs: UserPreferences): IpcResult<UserPreferences> => {
-    try { repo.upsertUserPreferences(prefs); return ok(prefs) } catch (e) { return fail(String(e)) }
+    try {
+      if (!prefs.userId || !getDb().prepare("SELECT 1 FROM users WHERE id = ?").get(prefs.userId)) throw new Error("User not found")
+      if (prefs.displayCurrency) requireActiveCurrency(prefs.displayCurrency, "Display currency")
+      if (!new Set(["original", "accounting", "display"]).has(prefs.reportViewMode)) throw new Error("Invalid report view mode")
+      repo.upsertUserPreferences({
+        ...prefs,
+        displayCurrency: prefs.displayCurrency ? normalizeCurrencyCode(prefs.displayCurrency, "Display currency") : undefined,
+      })
+      return ok(prefs)
+    } catch (e) { return fail(String(e)) }
   })
 
   // ===== Weapons =====
@@ -124,10 +298,13 @@ export function registerIpcHandlers(): void {
       const db = getDb()
       return db.transaction(() => {
         const all = repo.getAll()
+        if (!currentUser?.id || !currentUser.name?.trim()) throw new Error("A valid current user is required")
+        if (!all.suppliers.some((supplier) => supplier.id === input.supplierId)) throw new Error("Supplier not found")
         const existingSerials = new Set(all.weapons.map((w) => w.serialNumber.toLowerCase()))
         const duplicates: string[] = []
         const newWeapons: Weapon[] = []
         const batchId = `BATCH-${Date.now()}`
+        const display = resolveWeaponDisplayFields(input)
         let serialCounter = all.weapons.length + 1
         const today = new Date().toISOString().split("T")[0]
 
@@ -150,7 +327,13 @@ export function registerIpcHandlers(): void {
           if (!trimmed) continue
           if (existingSerials.has(trimmed.toLowerCase())) { duplicates.push(trimmed); continue }
           existingSerials.add(trimmed.toLowerCase())
-          const currency = input.currency || "USD"
+          positiveMoney(input.purchasePrice, "Purchase price")
+          positiveMoney(input.retailPrice, "Retail price")
+          positiveMoney(input.wholesalePrice, "Wholesale price")
+          const currency = input.currency?.trim().toUpperCase() || backendCurrencyService.getDefaultTransactionCurrency()
+          const purchaseValuation = backendCurrencyService.createValuation(input.purchasePrice, currency)
+          const retailValuation = backendCurrencyService.createValuation(input.retailPrice, currency)
+          const wholesaleValuation = backendCurrencyService.createValuation(input.wholesalePrice, currency)
           newWeapons.push({
             id: `W${pad(serialCounter, 5)}`,
             serialNumber: trimmed,
@@ -161,19 +344,19 @@ export function registerIpcHandlers(): void {
             brandId: input.brandId,
             modelId: input.modelId,
             storageLocationId: input.storageLocationId,
-            // Display labels (fallback to IDs for audit purposes)
-            weaponType: input.weaponTypeLabel ?? input.weaponTypeId,
-            subType: input.subTypeLabel ?? input.weaponSubtypeId,
-            caliber: input.caliberLabel ?? input.caliberId,
-            brand: input.brandLabel ?? input.brandId,
-            model: input.modelLabel ?? input.modelId,
+            // Display labels are resolved from normalized master-data IDs.
+            weaponType: display.weaponType,
+            subType: display.subType,
+            caliber: display.caliber,
+            brand: display.brand,
+            model: display.model,
             // ── Populated location from DB lookup ──
             location,
             condition: input.condition,
             status: "Available",
-            purchasePrice: input.purchasePrice,
-            retailPrice: input.retailPrice,
-            wholesalePrice: input.wholesalePrice,
+            purchasePrice: purchaseValuation.originalAmount,
+            retailPrice: retailValuation.originalAmount,
+            wholesalePrice: wholesaleValuation.originalAmount,
             actualFinalPrice: null,
             supplierId: input.supplierId,
             shipmentId: input.shipmentId,
@@ -187,8 +370,9 @@ export function registerIpcHandlers(): void {
               userId: currentUser.id, userName: currentUser.name,
               reason: "Initial intake via bulk intake wizard",
             }],
-            purchasePriceValuation: CurrencyService.createValuation(input.purchasePrice, currency),
-            retailPriceValuation: CurrencyService.createValuation(input.retailPrice, currency),
+            purchasePriceValuation: purchaseValuation,
+            retailPriceValuation: retailValuation,
+            wholesalePriceValuation: wholesaleValuation,
           })
           serialCounter++
         }
@@ -201,7 +385,24 @@ export function registerIpcHandlers(): void {
             id: generateId("LOG", "audit_logs"), timestamp: new Date().toISOString(), date: today,
             userId: currentUser.id, actionType: "Intake",
             description: desc,
-            metadata: JSON.stringify({ batchId, count: newWeapons.length, shipmentId: input.shipmentId }),
+            metadata: JSON.stringify({
+              schemaVersion: 2,
+              actorName: currentUser.name,
+              entityType: "intakeBatch",
+              entityId: batchId,
+              batchId,
+              brand: input.brandLabel ?? input.brandId,
+              model: input.modelLabel ?? input.modelId,
+              weaponType: input.weaponTypeLabel ?? input.weaponTypeId,
+              weaponSubtype: input.subTypeLabel ?? input.weaponSubtypeId,
+              count: newWeapons.length,
+              shipmentId: input.shipmentId,
+              currency: newWeapons[0].purchasePriceValuation?.originalCurrency,
+              purchasePrice: newWeapons[0].purchasePrice,
+              retailPrice: newWeapons[0].retailPrice,
+              wholesalePrice: newWeapons[0].wholesalePrice,
+              accountingCurrency: newWeapons[0].purchasePriceValuation?.accountingCurrency,
+            }),
           })
         }
 
@@ -211,16 +412,37 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle("weapon:update", (_, weapon: Weapon): IpcResult => {
-    try { repo.updateWeapon(weapon); return ok() } catch (e) { return fail(String(e)) }
+    try {
+      const existing = repo.getWeaponById(weapon.id)
+      if (!existing) return fail("Weapon not found")
+      repo.updateWeapon({
+        ...weapon,
+        purchasePrice: existing.purchasePrice,
+        retailPrice: existing.retailPrice,
+        wholesalePrice: existing.wholesalePrice,
+        actualFinalPrice: existing.actualFinalPrice,
+        purchasePriceValuation: existing.purchasePriceValuation,
+        retailPriceValuation: existing.retailPriceValuation,
+        wholesalePriceValuation: existing.wholesalePriceValuation,
+        actualFinalPriceValuation: existing.actualFinalPriceValuation,
+        salePriceValuation: existing.salePriceValuation,
+      })
+      return ok()
+    } catch (e) { return fail(String(e)) }
   })
 
   ipcMain.handle("weapon:updateStatus", (_, weaponId: string, status: string, reason: string, currentUser: { id: string; name: string }): IpcResult => {
     try {
       const db = getDb()
       db.transaction(() => {
+        if (!currentUser?.id || !currentUser.name?.trim()) throw new Error("A valid current user is required")
+        if (!new Set(["Available", "Reserved"]).has(status)) {
+          throw new Error("Sold and returned statuses may only be changed by their dedicated financial workflows")
+        }
         const all = repo.getAll()
         const weapon = all.weapons.find((w) => w.id === weaponId)
         if (!weapon) throw new Error("Weapon not found")
+        if (weapon.status === "Sold") throw new Error("A sold weapon cannot be changed outside the return/refund workflow")
         const updated = {
           ...weapon, status: status as Weapon["status"],
           movementHistory: [...weapon.movementHistory, {
@@ -236,7 +458,18 @@ export function registerIpcHandlers(): void {
           date: new Date().toISOString().split("T")[0], userId: currentUser.id,
           actionType: "Update",
           description: `${weapon.brand} ${weapon.model} (SN: ${weapon.serialNumber}) status → ${status}`,
-          metadata: JSON.stringify({ weaponId, from: weapon.status, to: status }),
+          metadata: JSON.stringify({
+            schemaVersion: 2,
+            actorName: currentUser.name,
+            entityType: "weapon",
+            entityId: weaponId,
+            weaponId,
+            serialNumber: weapon.serialNumber,
+            itemName: `${weapon.brand} ${weapon.model}`,
+            from: weapon.status,
+            to: status,
+            reason: reason || `Status changed to ${status}`,
+          }),
         })
       })
       return ok()
@@ -259,9 +492,15 @@ export function registerIpcHandlers(): void {
       const db = getDb()
       return db.transaction(() => {
         const all = repo.getAll()
+        if (!currentUser?.id || !currentUser.name?.trim()) throw new Error("A valid current user is required")
+        if (!input.shipmentNumber?.trim()) throw new Error("Shipment number is required")
+        if (!Number.isInteger(input.totalExpectedItems) || input.totalExpectedItems < 0) throw new Error("Expected item count must be a non-negative integer")
+        if (!all.suppliers.some((supplier) => supplier.id === input.supplierId)) throw new Error("Supplier not found")
         if (all.shipments.find((s) => s.shipmentNumber === input.shipmentNumber))
           return fail("Shipment number already exists")
         const shipmentId = generateId("SHP", "shipments")
+        const shipmentCurrency = input.currency?.trim().toUpperCase() || backendCurrencyService.getDefaultTransactionCurrency()
+        backendCurrencyService.requireCurrency(shipmentCurrency, true)
         const newShipment: Shipment = {
           id: shipmentId, shipmentNumber: input.shipmentNumber, supplierId: input.supplierId,
           shipmentDate: input.shipmentDate, expectedArrivalDate: input.expectedArrivalDate,
@@ -276,7 +515,7 @@ export function registerIpcHandlers(): void {
           invoiceNumber: input.invoiceNumber,
           shippingCarrier: input.shippingCarrier,
           containerNumber: input.containerNumber,
-          currency: input.currency,
+          currency: shipmentCurrency,
           purchaseDate: input.purchaseDate,
           actualArrivalDate: input.actualArrivalDate,
           lineItems: [], documents: [],
@@ -287,7 +526,19 @@ export function registerIpcHandlers(): void {
           date: new Date().toISOString().split("T")[0], userId: currentUser.id,
           actionType: "Shipment",
           description: `Shipment ${input.shipmentNumber} created — ${input.totalExpectedItems} items expected`,
-          metadata: JSON.stringify({ shipmentId, supplierId: input.supplierId }),
+          metadata: JSON.stringify({
+            schemaVersion: 2,
+            actorName: currentUser.name,
+            entityType: "shipment",
+            entityId: shipmentId,
+            shipmentId,
+            shipmentNumber: input.shipmentNumber,
+            supplierId: input.supplierId,
+            totalExpectedItems: input.totalExpectedItems,
+            purchaseDate: input.purchaseDate,
+            expectedArrivalDate: input.expectedArrivalDate,
+            currency: shipmentCurrency,
+          }),
         })
         return ok({ shipmentId })
       })()
@@ -299,10 +550,16 @@ export function registerIpcHandlers(): void {
       const db = getDb()
       return db.transaction(() => {
         const all = repo.getAll()
+        if (!currentUser?.id || !currentUser.name?.trim()) throw new Error("A valid current user is required")
+        if (!input.shipment.shipmentNumber?.trim()) throw new Error("Shipment number is required")
+        if (!all.suppliers.some((supplier) => supplier.id === input.shipment.supplierId)) throw new Error("Supplier not found")
         if (all.shipments.find((s) => s.shipmentNumber === input.shipment.shipmentNumber))
           return fail("Shipment number already exists")
         if (input.lineItems.length === 0)
           return fail("At least one line item is required")
+
+        const shipmentCurrency = input.shipment.currency?.trim().toUpperCase() || backendCurrencyService.getDefaultTransactionCurrency()
+        backendCurrencyService.requireCurrency(shipmentCurrency, true)
 
         const shipmentId = generateId("SHP", "shipments")
         const today = new Date().toISOString().split("T")[0]
@@ -311,24 +568,42 @@ export function registerIpcHandlers(): void {
         const newWeapons: Weapon[] = []
         const newAccessories: Accessory[] = []
         const newAmmunition: Ammunition[] = []
+        const inventoryReceipts: Array<{ itemType: "weapon" | "accessory" | "ammunition"; itemId: string; quantity: number; unitAmount: number }> = []
         let serialCounter = all.weapons.length + 1
+        let accessoryCounter = Number.parseInt(generateId("ACC", "accessories").slice(3), 10)
+        let ammunitionCounter = Number.parseInt(generateId("AMM", "ammunition").slice(3), 10)
         let lineItemCounter = 0
         const lineItems: Shipment["lineItems"] = []
 
         for (const item of input.lineItems) {
+          if (!new Set(["weapon", "accessory", "ammunition"]).has(item.productType)) throw new Error("Invalid shipment product type")
+          if (!Number.isInteger(item.quantity) || item.quantity <= 0) throw new Error("Shipment item quantity must be a positive integer")
+          if (item.productType === "weapon" && item.serialNumbers.filter((serial) => serial.trim()).length !== item.quantity) {
+            throw new Error("Serialized weapon quantity must match the number of serial numbers")
+          }
+          positiveMoney(item.purchasePrice, "Shipment purchase price")
+          nonNegativeMoney(item.retailPrice, "Shipment retail price")
+          nonNegativeMoney(item.wholesalePrice, "Shipment wholesale price")
+          const itemPurchaseValuation = backendCurrencyService.createValuation(item.purchasePrice, shipmentCurrency)
+          const itemRetailValuation = backendCurrencyService.createValuation(item.retailPrice, shipmentCurrency)
+          const itemWholesaleValuation = backendCurrencyService.createValuation(item.wholesalePrice, shipmentCurrency)
           const lineItemId = `SLI${pad(++lineItemCounter, 4)}`
           // Determine location for non‑weapon items
           const loc: StorageLocation = item.location ?? { warehouse: "Main", shelf: "", bin: "" }
 
           if (item.productType === "weapon") {
+            const display = resolveWeaponDisplayFields(item)
             for (const sn of item.serialNumbers) {
               const trimmed = sn.trim()
               if (!trimmed) continue
-              if (existingSerials.has(trimmed.toLowerCase())) continue
+              if (existingSerials.has(trimmed.toLowerCase())) throw new Error(`Duplicate weapon serial number: ${trimmed}`)
               existingSerials.add(trimmed.toLowerCase())
-              const shipCurrency = input.shipment.currency || "USD"
+              positiveMoney(item.purchasePrice, "Shipment purchase price")
+              nonNegativeMoney(item.retailPrice, "Shipment retail price")
+              nonNegativeMoney(item.wholesalePrice, "Shipment wholesale price")
+              const weaponId = `W${pad(serialCounter, 5)}`
               newWeapons.push({
-                id: `W${pad(serialCounter, 5)}`,
+                id: weaponId,
                 serialNumber: trimmed,
                 weaponTypeId: item.weaponTypeId,
                 weaponSubtypeId: item.weaponSubtypeId,
@@ -336,11 +611,11 @@ export function registerIpcHandlers(): void {
                 brandId: item.brandId,
                 modelId: item.modelId,
                 storageLocationId: item.storageLocationId,
-                weaponType: item.weaponTypeLabel ?? "",
-                subType: item.subTypeLabel ?? "",
-                caliber: item.caliberLabel ?? "",
-                brand: item.brandLabel ?? "",
-                model: item.modelLabel ?? "",
+                weaponType: display.weaponType,
+                subType: display.subType,
+                caliber: display.caliber,
+                brand: display.brand,
+                model: display.model,
                 // Use the location object computed earlier (or a lookup fallback)
                 location: item.location ??
                   (() => {
@@ -358,9 +633,9 @@ export function registerIpcHandlers(): void {
                   })(),
                 condition: "Excellent",
                 status: "Available",
-                purchasePrice: item.purchasePrice,
-                retailPrice: item.retailPrice,
-                wholesalePrice: item.wholesalePrice,
+                purchasePrice: itemPurchaseValuation.originalAmount,
+                retailPrice: itemRetailValuation.originalAmount,
+                wholesalePrice: itemWholesaleValuation.originalAmount,
                 actualFinalPrice: null,
                 supplierId: input.shipment.supplierId,
                 shipmentId,
@@ -374,39 +649,53 @@ export function registerIpcHandlers(): void {
                   userId: currentUser.id, userName: currentUser.name,
                   reason: "Initial intake via shipment wizard",
                 }],
-                purchasePriceValuation: CurrencyService.createValuation(item.purchasePrice, shipCurrency),
-                retailPriceValuation: CurrencyService.createValuation(item.retailPrice, shipCurrency),
+                purchasePriceValuation: itemPurchaseValuation,
+                retailPriceValuation: itemRetailValuation,
+                wholesalePriceValuation: itemWholesaleValuation,
               })
+              inventoryReceipts.push({ itemType: "weapon", itemId: weaponId, quantity: 1, unitAmount: itemPurchaseValuation.originalAmount })
               serialCounter++
             }
           } else if (item.productType === "accessory") {
+            const itemCurrency = shipmentCurrency
+            const accessoryId = `ACC${pad(accessoryCounter++, 5)}`
             newAccessories.push({
-              id: generateId("ACC", "accessories"),
+              id: accessoryId,
               name: `${item.brandLabel ?? ''} ${item.modelLabel ?? ''}`.trim() || "Accessory",
               type: item.subTypeLabel ?? "",
               quantity: item.quantity,
               safetyThreshold: 5,
-              price: item.retailPrice,
+              price: itemRetailValuation.originalAmount,
+              priceCurrency: itemCurrency,
+              priceValuation: itemRetailValuation,
               location: loc,
               dateAdded: today,
             })
+            inventoryReceipts.push({ itemType: "accessory", itemId: accessoryId, quantity: item.quantity, unitAmount: itemPurchaseValuation.originalAmount })
           } else if (item.productType === "ammunition") {
+            const itemCurrency = shipmentCurrency
+            const ammunitionId = `AMM${pad(ammunitionCounter++, 5)}`
             newAmmunition.push({
-              id: generateId("AMM", "ammunition"),
+              id: ammunitionId,
               caliber: item.caliberLabel ?? "",
               packageType: "Box",
               unitsPerPackage: 50,
               fullPackages: Math.floor(item.quantity / 50),
               looseRounds: item.quantity % 50,
               safetyThreshold: 100,
-              price: item.retailPrice,
+              price: itemRetailValuation.originalAmount,
+              priceCurrency: itemCurrency,
+              priceValuation: itemRetailValuation,
               location: loc,
               dateAdded: today,
             })
+            inventoryReceipts.push({ itemType: "ammunition", itemId: ammunitionId, quantity: item.quantity, unitAmount: itemPurchaseValuation.originalAmount })
           }
 
-          // Build line item for shipment record (uses legacy format)
-          const liCurrency = input.shipment.currency || "USD"
+          // Build the shipment line-item snapshot. Labels are intentionally stored as historical display data.
+          const purchasePriceValuation = itemPurchaseValuation
+          const retailPriceValuation = itemRetailValuation
+          const wholesalePriceValuation = itemWholesaleValuation
           lineItems.push({
             id: lineItemId,
             productType: item.productType,
@@ -416,14 +705,15 @@ export function registerIpcHandlers(): void {
             model: item.modelLabel ?? "",
             caliber: item.caliberLabel ?? "",
             quantity: item.quantity,
-            purchasePrice: item.purchasePrice,
-            retailPrice: item.retailPrice,
-            wholesalePrice: item.wholesalePrice,
+            purchasePrice: purchasePriceValuation.originalAmount,
+            retailPrice: retailPriceValuation.originalAmount,
+            wholesalePrice: wholesalePriceValuation.originalAmount,
             location: loc,
             serialNumbers: item.serialNumbers,
             received: item.productType === "weapon" ? item.serialNumbers.length : item.quantity,
-            purchasePriceValuation: CurrencyService.createValuation(item.purchasePrice * item.quantity, liCurrency),
-            retailPriceValuation: CurrencyService.createValuation(item.retailPrice * item.quantity, liCurrency),
+            purchasePriceValuation,
+            retailPriceValuation,
+            wholesalePriceValuation,
           })
         }
 
@@ -439,22 +729,52 @@ export function registerIpcHandlers(): void {
           ],
           purchaseOrderNumber: input.shipment.purchaseOrderNumber, invoiceNumber: input.shipment.invoiceNumber,
           shippingCarrier: input.shipment.shippingCarrier, containerNumber: input.shipment.containerNumber,
-          currency: input.shipment.currency, purchaseDate: input.shipment.purchaseDate,
+          currency: shipmentCurrency, purchaseDate: input.shipment.purchaseDate,
           actualArrivalDate: input.shipment.actualArrivalDate, lineItems, documents: [],
-          totalCostValuation: CurrencyService.createValuation(
-            lineItems.reduce((sum, li) => sum + li.purchasePrice * li.quantity, 0),
-            input.shipment.currency || "USD"
+          totalCostValuation: backendCurrencyService.createValuation(
+            sumMoney(lineItems.map((li) => nonNegativeMoney(li.purchasePrice).times(li.quantity))).toString(),
+            shipmentCurrency
           ),
         }
         repo.insertShipment(newShipment)
         if (newWeapons.length > 0) repo.bulkInsertWeapons(newWeapons)
         for (const a of newAccessories) repo.insertAccessory(a)
         for (const a of newAmmunition) repo.insertAmmunition(a)
+        for (const receipt of inventoryReceipts) {
+          recordInventoryTransaction({
+            itemType: receipt.itemType,
+            itemId: receipt.itemId,
+            transactionType: "receipt",
+            quantityDelta: receipt.quantity,
+            unitAmount: receipt.unitAmount,
+            currency: shipmentCurrency,
+            shipmentId,
+            userId: currentUser.id,
+            notes: `Received through shipment ${newShipment.shipmentNumber}`,
+          })
+        }
         repo.insertAuditLog({
           id: generateId("LOG", "audit_logs"), timestamp: new Date().toISOString(), date: today,
           userId: currentUser.id, actionType: "Shipment",
           description: `Shipment ${input.shipment.shipmentNumber} created with ${lineItems.length} line items — ${totalItems} total items`,
-          metadata: JSON.stringify({ shipmentId, lineItems: lineItems.length, weapons: newWeapons.length, batchId }),
+          metadata: JSON.stringify({
+            schemaVersion: 2,
+            actorName: currentUser.name,
+            entityType: "shipment",
+            entityId: shipmentId,
+            shipmentId,
+            shipmentNumber: input.shipment.shipmentNumber,
+            lineItems: lineItems.length,
+            weapons: newWeapons.length,
+            batchId,
+            currency: shipmentCurrency,
+            totalCost: newShipment.totalCostValuation?.originalAmount,
+            accountingAmount: newShipment.totalCostValuation?.accountingAmount,
+            accountingCurrency: newShipment.totalCostValuation?.accountingCurrency,
+            exchangeRate: newShipment.totalCostValuation?.exchangeRate,
+            exchangeRateDate: newShipment.totalCostValuation?.exchangeRateDate,
+            rateSource: newShipment.totalCostValuation?.rateSource,
+          }),
         })
         repo.insertNotification({
           id: generateId("NTF", "app_notifications"), type: "System",
@@ -466,10 +786,33 @@ export function registerIpcHandlers(): void {
     } catch (e) { return fail(String(e)) }
   })
 
+  ipcMain.handle("shipment:update", (_, shipment: Shipment): IpcResult => {
+    try {
+      const existing = repo.getAll().shipments.find((candidate) => candidate.id === shipment.id)
+      if (!existing) return fail("Shipment not found")
+      repo.updateShipment({
+        ...shipment,
+        currency: existing.currency,
+        lineItems: existing.lineItems,
+        totalCostValuation: existing.totalCostValuation,
+      })
+      return ok()
+    } catch (e) { return fail(String(e)) }
+  })
+
 
   // ===== Invoices & Payments =====
   ipcMain.handle("invoice:update", (_, invoice: Invoice): IpcResult => {
-    try { repo.updateInvoice(invoice); return ok() } catch (e) { return fail(String(e)) }
+    try {
+      const existing = repo.getAll().invoices.find((candidate) => candidate.id === invoice.id)
+      if (!existing) return fail("Invoice not found")
+      repo.updateInvoice({
+        ...existing,
+        notes: invoice.notes,
+        attachments: invoice.attachments,
+      })
+      return ok()
+    } catch (e) { return fail(String(e)) }
   })
 
   ipcMain.handle("invoice:void", (_, invoiceId: string, currentUser: { id: string; name: string }): IpcResult => {
@@ -479,13 +822,65 @@ export function registerIpcHandlers(): void {
         const all = repo.getAll()
         const invoice = all.invoices.find((i) => i.id === invoiceId)
         if (!invoice) throw new Error("Invoice not found")
-        if (!currentUser) throw new Error("User not found")
+        if (!currentUser?.id || !currentUser.name?.trim()) throw new Error("A valid current user is required")
+        if (invoice.voided) throw new Error("Invoice is already voided")
+        const payments = all.payments.filter((payment) => payment.invoiceId === invoice.id)
+        if (payments.length > 0 || invoice.totalPaid > 0) {
+          throw new Error("A paid invoice cannot be voided without an explicit refund/reversal workflow")
+        }
+        if (invoice.type === "Sale") {
+          for (const item of invoice.lineItems) {
+            if (item.itemType === "weapon") {
+              const weapon = all.weapons.find((candidate) => candidate.id === item.itemId)
+              if (!weapon || weapon.status !== "Sold") throw new Error(`Cannot safely restore weapon ${item.itemId}`)
+              repo.updateWeapon({
+                ...weapon,
+                status: "Available",
+                actualFinalPrice: null,
+                actualFinalPriceValuation: undefined,
+                salePriceValuation: undefined,
+                movementHistory: [...weapon.movementHistory, {
+                  id: `MV-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                  timestamp: new Date().toISOString(),
+                  fromStatus: "Sold",
+                  toStatus: "Available",
+                  userId: currentUser.id,
+                  userName: currentUser.name,
+                  reason: `Unpaid invoice ${invoice.invoiceNumber} voided`,
+                }],
+              })
+            } else if (item.itemType === "accessory") {
+              const accessory = repo.getAccessoryById(item.itemId)
+              if (!accessory) throw new Error(`Cannot safely restore accessory ${item.itemId}`)
+              repo.updateAccessory({ ...accessory, quantity: accessory.quantity + item.quantity })
+              recordInventoryTransaction({ itemType: "accessory", itemId: item.itemId, transactionType: "return", quantityDelta: item.quantity, userId: currentUser.id })
+            } else if (item.itemType === "ammunition") {
+              const ammo = repo.getAmmunitionById(item.itemId)
+              if (!ammo) throw new Error(`Cannot safely restore ammunition ${item.itemId}`)
+              const total = ammoTotalRounds(ammo) + item.quantity
+              repo.updateAmmunition({ ...ammo, fullPackages: Math.floor(total / ammo.unitsPerPackage), looseRounds: total % ammo.unitsPerPackage })
+              recordInventoryTransaction({ itemType: "ammunition", itemId: item.itemId, transactionType: "return", quantityDelta: item.quantity, userId: currentUser.id })
+            } else {
+              throw new Error("Invoice contains an invalid line item type")
+            }
+          }
+        }
         repo.updateInvoice({ ...invoice, voided: true, status: "Void" })
         repo.insertAuditLog({
           id: generateId("LOG", "audit_logs"), timestamp: new Date().toISOString(),
           date: new Date().toISOString().split("T")[0], userId: currentUser.id, actionType: "Void",
           description: `Invoice ${invoice.invoiceNumber} voided. All history preserved.`,
-          metadata: JSON.stringify({ invoiceId, originalBalance: invoice.balance }),
+          metadata: JSON.stringify({
+            schemaVersion: 2,
+            actorName: currentUser.name,
+            entityType: "invoice",
+            entityId: invoiceId,
+            invoiceId,
+            invoiceNumber: invoice.invoiceNumber,
+            originalBalance: invoice.balance,
+            currency: invoice.currency,
+            accountingCurrency: invoice.accountingCurrency,
+          }),
         })
       })
       return ok()
@@ -510,7 +905,17 @@ export function registerIpcHandlers(): void {
           id: generateId("LOG", "audit_logs"), timestamp: new Date().toISOString(),
           date: new Date().toISOString().split("T")[0], userId: currentUser.id, actionType: "DueDateExtension",
           description: `Due date extended for ${invoice.invoiceNumber}: ${oldDate} → ${input.newDueDate}. Reason: ${input.reason}`,
-          metadata: JSON.stringify({ invoiceId: input.invoiceId, oldDate, newDate: input.newDueDate, reason: input.reason }),
+          metadata: JSON.stringify({
+            schemaVersion: 2,
+            actorName: currentUser.name,
+            entityType: "invoice",
+            entityId: input.invoiceId,
+            invoiceId: input.invoiceId,
+            invoiceNumber: invoice.invoiceNumber,
+            oldDate,
+            newDate: input.newDueDate,
+            reason: input.reason,
+          }),
         })
       })
       return ok()
@@ -518,41 +923,8 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle("payment:register", (_, input: PaymentInput, currentUser: { id: string; name: string }): IpcResult<{ newBalance: number }> => {
-    try {
-      const db = getDb()
-      return db.transaction(() => {
-        const all = repo.getAll()
-        const invoice = all.invoices.find((i) => i.id === input.invoiceId)
-        if (!invoice) return fail("Invoice not found")
-        if (invoice.voided) return fail("Cannot pay a voided invoice")
-        if (input.amount > invoice.balance) return fail("Amount paid cannot exceed the remaining balance")
-        const newBalance = invoice.balance - input.amount
-        let newStatus: Invoice["status"] = "Pending"
-        if (newBalance <= 0) newStatus = "Paid"
-        else if (new Date(invoice.dueDate) < new Date()) newStatus = "Overdue"
-        const newPayment: PaymentRecord = {
-          id: generateId("PAY", "payment_records"), invoiceId: input.invoiceId, invoiceNumber: invoice.invoiceNumber,
-          date: new Date().toISOString().split("T")[0], amount: input.amount, method: input.method,
-          employee: currentUser.name, notes: input.notes,
-        }
-        repo.insertPayment(newPayment)
-        repo.updateInvoice({ ...invoice, totalPaid: invoice.totalPaid + input.amount, balance: newBalance, status: newStatus })
-        repo.insertAuditLog({
-          id: generateId("LOG", "audit_logs"), timestamp: new Date().toISOString(),
-          date: new Date().toISOString().split("T")[0], userId: currentUser.id, actionType: "Payment",
-          description: `Payment of ${input.amount} registered for ${invoice.invoiceNumber} via ${input.method}. Balance: ${newBalance}`,
-          metadata: JSON.stringify({ invoiceId: input.invoiceId, amount: input.amount, newBalance }),
-        })
-        if (newBalance <= 0) {
-          repo.insertNotification({
-            id: generateId("NTF", "app_notifications"), type: "System",
-            title: "Debt Fully Settled", message: `Invoice ${invoice.invoiceNumber} has been fully paid`,
-            date: new Date().toISOString().split("T")[0], read: false, entityId: invoice.id,
-          })
-        }
-        return ok({ newBalance })
-      })()
-    } catch (e) { return fail(String(e)) }
+    const result = registerPayment(input, currentUser)
+    return result.success ? ok({ newBalance: result.newBalance! }) : fail(result.error ?? "Payment failed")
   })
 
   // ===== Customers & Suppliers =====
@@ -576,148 +948,255 @@ export function registerIpcHandlers(): void {
 
   // ===== Accessories & Ammunition =====
   ipcMain.handle("accessory:insert", (_, accessory: Accessory): IpcResult => {
-    try { repo.insertAccessory(accessory); return ok() } catch (e) { return fail(String(e)) }
-  })
-
-  ipcMain.handle("accessory:update", (_, accessory: Accessory): IpcResult => {
-    try { repo.updateAccessory(accessory); return ok() } catch (e) { return fail(String(e)) }
-  })
-
-  ipcMain.handle("ammunition:insert", (_, ammo: Ammunition): IpcResult => {
-    try { repo.insertAmmunition(ammo); return ok() } catch (e) { return fail(String(e)) }
-  })
-
-  ipcMain.handle("ammunition:update", (_, ammo: Ammunition): IpcResult => {
-    try { repo.updateAmmunition(ammo); return ok() } catch (e) { return fail(String(e)) }
-  })
-
-  ipcMain.handle("inventory:addStock", (_, input: AddStockInput, currentUser: { id: string; name: string }): IpcResult => {
     try {
-      const db = getDb()
-      db.transaction(() => {
-        const all = repo.getAll()
-        if (input.itemType === "accessory") {
-          const item = all.accessories.find((a) => a.id === input.itemId)
-          if (!item) throw new Error("Accessory not found")
-          repo.updateAccessory({
-            ...item, quantity: item.quantity + input.quantity,
-            location: input.location ?? item.location,
-          })
-        } else {
-          const item = all.ammunition.find((a) => a.id === input.itemId)
-          if (!item) throw new Error("Ammunition not found")
-          const newPackages = Math.floor(input.quantity / item.unitsPerPackage)
-          const newLoose = input.quantity % item.unitsPerPackage
-          repo.updateAmmunition({
-            ...item, fullPackages: item.fullPackages + newPackages, looseRounds: item.looseRounds + newLoose,
-            location: input.location ?? item.location,
-          })
-        }
-        repo.insertAuditLog({
-          id: generateId("LOG", "audit_logs"), timestamp: new Date().toISOString(),
-          date: new Date().toISOString().split("T")[0], userId: currentUser.id, actionType: "StockAdjustment",
-          description: `Stock added: ${input.quantity} units to ${input.itemId} (${input.itemType})`,
-          metadata: JSON.stringify(input),
-        })
-      })
+      nonNegativeMoney(accessory.price, "Accessory price")
+      const currency = accessory.priceCurrency?.trim().toUpperCase() || backendCurrencyService.getDefaultTransactionCurrency()
+      repo.insertAccessory({ ...accessory, priceCurrency: currency, priceValuation: backendCurrencyService.createValuation(accessory.price, currency) })
       return ok()
     } catch (e) { return fail(String(e)) }
   })
 
+  ipcMain.handle("accessory:update", (_, accessory: Accessory): IpcResult => {
+    try {
+      const existing = repo.getAccessoryById(accessory.id)
+      if (!existing) return fail("Accessory not found")
+      nonNegativeMoney(accessory.price, "Accessory price")
+      const currency = accessory.priceCurrency?.trim().toUpperCase()
+        || existing.priceCurrency
+        || backendCurrencyService.getDefaultTransactionCurrency()
+      backendCurrencyService.requireCurrency(currency, true)
+      const priceValuation = accessory.price === existing.price && currency === existing.priceCurrency && existing.priceValuation
+        ? existing.priceValuation
+        : backendCurrencyService.createValuation(accessory.price, currency)
+      repo.updateAccessory({ ...accessory, priceCurrency: currency, priceValuation })
+      return ok()
+    } catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle("ammunition:insert", (_, ammo: Ammunition): IpcResult => {
+    try {
+      nonNegativeMoney(ammo.price, "Ammunition price")
+      const currency = ammo.priceCurrency?.trim().toUpperCase() || backendCurrencyService.getDefaultTransactionCurrency()
+      repo.insertAmmunition({ ...ammo, priceCurrency: currency, priceValuation: backendCurrencyService.createValuation(ammo.price, currency) })
+      return ok()
+    } catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle("ammunition:update", (_, ammo: Ammunition): IpcResult => {
+    try {
+      const existing = repo.getAmmunitionById(ammo.id)
+      if (!existing) return fail("Ammunition not found")
+      nonNegativeMoney(ammo.price, "Ammunition price")
+      const currency = ammo.priceCurrency?.trim().toUpperCase()
+        || existing.priceCurrency
+        || backendCurrencyService.getDefaultTransactionCurrency()
+      backendCurrencyService.requireCurrency(currency, true)
+      const priceValuation = ammo.price === existing.price && currency === existing.priceCurrency && existing.priceValuation
+        ? existing.priceValuation
+        : backendCurrencyService.createValuation(ammo.price, currency)
+      repo.updateAmmunition({ ...ammo, priceCurrency: currency, priceValuation })
+      return ok()
+    } catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle("inventory:addStock", (_, input: AddStockInput, currentUser: { id: string; name: string }): IpcResult => {
+    try {
+      const db = getDb();
+      db.transaction(() => {
+        if (!currentUser?.id || !currentUser.name?.trim()) throw new Error("A valid current user is required")
+        if (input.price !== undefined) nonNegativeMoney(input.price, "Price")
+        if (input.purchasePrice !== undefined) nonNegativeMoney(input.purchasePrice, "Purchase price")
+        const transactionCurrency = input.currency?.trim().toUpperCase() || backendCurrencyService.getDefaultTransactionCurrency()
+        if (input.itemType !== "accessory" && input.itemType !== "ammunition") throw new Error("Invalid inventory item type")
+        if (input.itemType === "accessory") {
+          const qty = input.quantity ?? 0;
+          if (!Number.isInteger(qty) || qty <= 0) throw new Error("Quantity must be a positive integer.");
+          const item = repo.getAccessoryById(input.itemId);
+          if (!item) throw new Error("Accessory not found.");
+          const oldPrice = item.price;
+          const newQty = item.quantity + qty;
+          const updated = { ...item, quantity: newQty };
+          if (input.price !== undefined) {
+            updated.price = input.price;
+            updated.priceCurrency = transactionCurrency
+            updated.priceValuation = backendCurrencyService.createValuation(input.price, transactionCurrency)
+          }
+          if (input.location) updated.location = input.location;
+          repo.updateAccessory(updated);
+          recordInventoryTransaction({
+            itemType: "accessory", itemId: item.id, transactionType: "receipt", quantityDelta: qty,
+            unitAmount: input.purchasePrice ?? input.price, currency: transactionCurrency,
+            shipmentId: input.shipmentId, notes: input.notes, userId: currentUser.id,
+          })
+          // Audit
+          repo.insertAuditLog({
+            id: generateId("LOG", "audit_logs"),
+            timestamp: new Date().toISOString(),
+            date: new Date().toISOString().split("T")[0],
+            userId: currentUser.id,
+            actionType: "StockAdjustment",
+            description: `Accessory stock added: +${qty} units to "${item.name}". New stock: ${newQty}. ${input.price !== undefined ? `Price changed: ${oldPrice} → ${input.price}` : ""
+              }`,
+            metadata: JSON.stringify({
+              schemaVersion: 2,
+              actorName: currentUser.name,
+              entityType: "accessory",
+              entityId: input.itemId,
+              itemId: input.itemId,
+              itemName: item.name,
+              addedQuantity: qty,
+              newQuantity: newQty,
+              oldPrice,
+              oldPriceCurrency: item.priceCurrency,
+              newPrice: input.price,
+              newPriceCurrency: input.price === undefined ? undefined : transactionCurrency,
+              currency: transactionCurrency,
+              accountingAmount: updated.priceValuation?.accountingAmount,
+              accountingCurrency: updated.priceValuation?.accountingCurrency,
+              location: input.location,
+            }),
+          });
+        } else {
+          // ammunition
+          const item = repo.getAmmunitionById(input.itemId);
+          if (!item) throw new Error("Ammunition not found.");
+          const pkgs = input.packages ?? 0;
+          const loose = input.looseRounds ?? 0;
+          if (!Number.isInteger(pkgs) || !Number.isInteger(loose) || pkgs < 0 || loose < 0) throw new Error("Packages and loose rounds must be non-negative integers.");
+          const addedRounds = pkgs * item.unitsPerPackage + loose;
+          if (addedRounds <= 0) throw new Error("At least one round must be added.");
+          const currentTotal = ammoTotalRounds(item);
+          const newTotal = currentTotal + addedRounds;
+          // Normalise
+          const newFull = Math.floor(newTotal / item.unitsPerPackage);
+          const newLoose = newTotal % item.unitsPerPackage;
+          const oldPrice = item.price;
+          const updated = { ...item, fullPackages: newFull, looseRounds: newLoose };
+          if (input.price !== undefined) {
+            updated.price = input.price;
+            updated.priceCurrency = transactionCurrency
+            updated.priceValuation = backendCurrencyService.createValuation(input.price, transactionCurrency)
+          }
+          if (input.location) updated.location = input.location;
+          repo.updateAmmunition(updated);
+          recordInventoryTransaction({
+            itemType: "ammunition", itemId: item.id, transactionType: "receipt", quantityDelta: addedRounds,
+            unitAmount: input.purchasePrice ?? input.price, currency: transactionCurrency,
+            shipmentId: input.shipmentId, notes: input.notes, userId: currentUser.id,
+          })
+          // Audit
+          repo.insertAuditLog({
+            id: generateId("LOG", "audit_logs"),
+            timestamp: new Date().toISOString(),
+            date: new Date().toISOString().split("T")[0],
+            userId: currentUser.id,
+            actionType: "StockAdjustment",
+            description: `Ammo stock added: ${pkgs} packs + ${loose} loose rounds to "${item.caliber} (${item.packageType})"
+              ". Added rounds: ${addedRounds}. New total: ${newTotal} rounds.${input.price !== undefined ? ` Price changed: ${oldPrice} → ${input.price}` : ""
+              }`,
+            metadata: JSON.stringify({
+              schemaVersion: 2,
+              actorName: currentUser.name,
+              entityType: "ammunition",
+              entityId: input.itemId,
+              itemId: input.itemId,
+              caliber: item.caliber,
+              packageType: item.packageType,
+              unitsPerPackage: item.unitsPerPackage,
+              packages: pkgs,
+              looseRounds: loose,
+              addedRounds,
+              oldTotalRounds: currentTotal,
+              newTotalRounds: newTotal,
+              oldPrice,
+              oldPriceCurrency: item.priceCurrency,
+              newPrice: input.price,
+              newPriceCurrency: input.price === undefined ? undefined : transactionCurrency,
+              currency: transactionCurrency,
+              accountingAmount: updated.priceValuation?.accountingAmount,
+              accountingCurrency: updated.priceValuation?.accountingCurrency,
+              location: input.location,
+            }),
+          });
+        }
+      })();
+      return ok();
+    } catch (e) { return fail(String(e)); }
+  });
+
   ipcMain.handle("inventory:receiveAmmoByPackages", (_, input: ReceiveAmmoByPackagesInput, currentUser: { id: string; name: string }): IpcResult => {
     try {
-      const db = getDb()
-      db.transaction(() => {
-        const all = repo.getAll()
-        const item = all.ammunition.find((a) => a.id === input.itemId)
+      getDb().transaction(() => {
+        if (!currentUser?.id) throw new Error("A valid current user is required")
+        if (!Number.isInteger(input.numberOfPackages) || input.numberOfPackages <= 0) throw new Error("Number of packages must be a positive integer")
+        if (!Number.isInteger(input.unitsPerPackage) || input.unitsPerPackage <= 0) throw new Error("Units per package must be a positive integer")
+        nonNegativeMoney(input.purchasePrice, "Purchase price")
+        const item = repo.getAmmunitionById(input.itemId)
         if (!item) throw new Error("Ammunition not found")
-        if (input.numberOfPackages <= 0) throw new Error("Number of packages must be greater than 0")
-        if (input.unitsPerPackage <= 0) throw new Error("Units per package must be greater than 0")
-        const totalRounds = input.numberOfPackages * input.unitsPerPackage
-        if (input.unitsPerPackage === item.unitsPerPackage) {
-          repo.updateAmmunition({ ...item, fullPackages: item.fullPackages + input.numberOfPackages, location: input.location ?? item.location })
-        } else {
-          const allRounds = ammoTotalRounds(item) + totalRounds
-          repo.updateAmmunition({
-            ...item, unitsPerPackage: input.unitsPerPackage,
-            fullPackages: Math.floor(allRounds / input.unitsPerPackage), looseRounds: allRounds % input.unitsPerPackage,
-            location: input.location ?? item.location,
-          })
-        }
-        repo.insertAuditLog({
-          id: generateId("LOG", "audit_logs"), timestamp: new Date().toISOString(),
-          date: new Date().toISOString().split("T")[0], userId: currentUser.id, actionType: "StockAdjustment",
-          description: `Ammo received: ${input.numberOfPackages} packages x ${input.unitsPerPackage} = ${totalRounds} rounds (${item.caliber})`,
-          metadata: JSON.stringify({ ...input, totalRounds }),
+        const addedRounds = input.numberOfPackages * input.unitsPerPackage
+        const totalRounds = ammoTotalRounds(item) + addedRounds
+        repo.updateAmmunition({
+          ...item,
+          unitsPerPackage: input.unitsPerPackage,
+          fullPackages: Math.floor(totalRounds / input.unitsPerPackage),
+          looseRounds: totalRounds % input.unitsPerPackage,
+          location: input.location ?? item.location,
         })
-      })
+        recordInventoryTransaction({
+          itemType: "ammunition", itemId: item.id, transactionType: "receipt", quantityDelta: addedRounds,
+          unitAmount: input.purchasePrice, currency: input.currency, shipmentId: input.shipmentId,
+          notes: input.notes, userId: currentUser.id,
+        })
+      })()
       return ok()
     } catch (e) { return fail(String(e)) }
   })
 
   ipcMain.handle("inventory:receiveAmmoByRounds", (_, input: ReceiveAmmoByRoundsInput, currentUser: { id: string; name: string }): IpcResult => {
     try {
-      const db = getDb()
-      db.transaction(() => {
-        const all = repo.getAll()
-        const item = all.ammunition.find((a) => a.id === input.itemId)
+      getDb().transaction(() => {
+        if (!currentUser?.id) throw new Error("A valid current user is required")
+        if (!Number.isInteger(input.totalRounds) || input.totalRounds <= 0) throw new Error("Total rounds must be a positive integer")
+        nonNegativeMoney(input.purchasePrice, "Purchase price")
+        const item = repo.getAmmunitionById(input.itemId)
         if (!item) throw new Error("Ammunition not found")
-        if (input.totalRounds <= 0) throw new Error("Total rounds must be greater than 0")
-        const allRounds = ammoTotalRounds(item) + input.totalRounds
+        const totalRounds = ammoTotalRounds(item) + input.totalRounds
         repo.updateAmmunition({
-          ...item, fullPackages: Math.floor(allRounds / item.unitsPerPackage), looseRounds: allRounds % item.unitsPerPackage,
+          ...item,
+          fullPackages: Math.floor(totalRounds / item.unitsPerPackage),
+          looseRounds: totalRounds % item.unitsPerPackage,
           location: input.location ?? item.location,
         })
-        repo.insertAuditLog({
-          id: generateId("LOG", "audit_logs"), timestamp: new Date().toISOString(),
-          date: new Date().toISOString().split("T")[0], userId: currentUser.id, actionType: "StockAdjustment",
-          description: `Ammo received: ${input.totalRounds} loose rounds (${item.caliber})`,
-          metadata: JSON.stringify(input),
+        recordInventoryTransaction({
+          itemType: "ammunition", itemId: item.id, transactionType: "receipt", quantityDelta: input.totalRounds,
+          unitAmount: input.purchasePrice, currency: input.currency, shipmentId: input.shipmentId,
+          notes: input.notes, userId: currentUser.id,
         })
-      })
+      })()
       return ok()
     } catch (e) { return fail(String(e)) }
   })
 
-  ipcMain.handle("inventory:sellAmmo", (_, input: SellAmmoInput): IpcResult => {
-    try {
-      const db = getDb()
-      db.transaction(() => {
-        const all = repo.getAll()
-        const item = all.ammunition.find((a) => a.id === input.itemId)
-        if (!item) throw new Error("Ammunition not found")
-        if (input.rounds <= 0) throw new Error("Rounds to sell must be greater than 0")
-        const currentTotal = ammoTotalRounds(item)
-        if (input.rounds > currentTotal) throw new Error(`Insufficient stock: only ${currentTotal} rounds available`)
-        const remaining = currentTotal - input.rounds
-        repo.updateAmmunition({
-          ...item, fullPackages: Math.floor(remaining / item.unitsPerPackage), looseRounds: remaining % item.unitsPerPackage,
-        })
-      })
-      return ok()
-    } catch (e) { return fail(String(e)) }
+  ipcMain.handle("inventory:sellAmmo", (_, _input: SellAmmoInput, _currentUser: { id: string; name: string }): IpcResult => {
+    return fail("Ammunition sales must be completed through the atomic sale and invoice workflow")
   })
 
   ipcMain.handle("inventory:updateAmmoPackage", (_, input: UpdateAmmoPackageInput, currentUser: { id: string; name: string }): IpcResult => {
     try {
-      const db = getDb()
-      db.transaction(() => {
-        const all = repo.getAll()
-        const item = all.ammunition.find((a) => a.id === input.itemId)
+      getDb().transaction(() => {
+        if (!currentUser?.id) throw new Error("A valid current user is required")
+        if (!Number.isInteger(input.unitsPerPackage) || input.unitsPerPackage <= 0) throw new Error("Units per package must be a positive integer")
+        const item = repo.getAmmunitionById(input.itemId)
         if (!item) throw new Error("Ammunition not found")
-        if (input.unitsPerPackage <= 0) throw new Error("Units per package must be greater than 0")
-        const currentTotal = ammoTotalRounds(item)
+        const rounds = ammoTotalRounds(item)
         repo.updateAmmunition({
-          ...item, packageType: input.packageType, unitsPerPackage: input.unitsPerPackage,
-          fullPackages: Math.floor(currentTotal / input.unitsPerPackage), looseRounds: currentTotal % input.unitsPerPackage,
+          ...item,
+          packageType: input.packageType,
+          unitsPerPackage: input.unitsPerPackage,
+          fullPackages: Math.floor(rounds / input.unitsPerPackage),
+          looseRounds: rounds % input.unitsPerPackage,
         })
-        repo.insertAuditLog({
-          id: generateId("LOG", "audit_logs"), timestamp: new Date().toISOString(),
-          date: new Date().toISOString().split("T")[0], userId: currentUser.id, actionType: "Update",
-          description: `Package settings updated for ${item.caliber}: ${input.packageType} x ${input.unitsPerPackage} rounds`,
-          metadata: JSON.stringify(input),
-        })
-      })
+      })()
       return ok()
     } catch (e) { return fail(String(e)) }
   })
@@ -759,46 +1238,115 @@ export function registerIpcHandlers(): void {
   })
 
   // ===== Currency =====
-  ipcMain.handle("currency:updateRate", (_, code: string, rate: number, updatedAt: string): IpcResult => {
-    try { repo.updateCurrencyRate(code, rate, updatedAt); return ok() } catch (e) { return fail(String(e)) }
-  })
-
-  ipcMain.handle("currency:recordRateHistory", (_, code: string, rate: number, source: string): IpcResult => {
-    try { repo.recordRateHistory(code, rate, source); return ok() } catch (e) { return fail(String(e)) }
-  })
-
-  ipcMain.handle("currency:setManualOverride", (_, code: string, rate: number, changedBy: string, reason: string, updatedAt: string): IpcResult => {
+  ipcMain.handle("currency:updateRate", (_, code: string, rate: number): IpcResult => {
     try {
-      const db = getDb()
-      db.transaction(() => {
-        const all = repo.getAll()
-        const currentRate = all.settings.preferredDisplayCurrency ? null : null
-        repo.setManualOverride(code, rate, changedBy, reason, updatedAt)
-        repo.recordRateAuditLog(code, currentRate, rate, changedBy, reason, updatedAt)
-      })
+      getDb().transaction(() => {
+        const currency = requireActiveCurrency(code)
+        const normalizedRate = requirePositiveRate(rate)
+        const oldRate = currency.last_known_rate == null ? null : Number(currency.last_known_rate)
+        const now = new Date().toISOString()
+        repo.updateCurrencyRate(currency.iso_code, normalizedRate, now)
+        repo.recordRateHistory(currency.iso_code, normalizedRate, "api")
+        repo.recordRateAuditLog(currency.iso_code, oldRate, normalizedRate, "system", "Automatic rate update", now, "api")
+      })()
       return ok()
     } catch (e) { return fail(String(e)) }
   })
 
-  ipcMain.handle("currency:setAutomatic", (_, code: string, changedBy: string, updatedAt: string): IpcResult => {
-    try { repo.setAutomaticMode(code, changedBy, updatedAt); return ok() } catch (e) { return fail(String(e)) }
+  ipcMain.handle("currency:recordRateHistory", (_, code: string, rate: number, source: string): IpcResult => {
+    try {
+      const currency = requireActiveCurrency(code)
+      const normalizedRate = requirePositiveRate(rate)
+      if (!new Set(["manual", "api", "cache", "default"]).has(source)) throw new Error("Invalid exchange-rate source")
+      repo.recordRateHistory(currency.iso_code, normalizedRate, source)
+      return ok()
+    } catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle("currency:setManualOverride", (_, code: string, rate: number, changedBy: string, reason: string): IpcResult => {
+    try {
+      const db = getDb()
+      db.transaction(() => {
+        const currency = requireActiveCurrency(code)
+        const normalizedRate = requirePositiveRate(rate)
+        const administrator = requireRateAdministrator(changedBy)
+        if (typeof reason !== "string" || !reason.trim()) throw new Error("A reason is required for a manual exchange-rate change")
+        const currentRate = currency.last_known_rate != null ? Number(currency.last_known_rate) : null
+        const now = new Date().toISOString()
+        repo.setManualOverride(currency.iso_code, normalizedRate, administrator, reason.trim(), now)
+        repo.updateCurrencyRate(currency.iso_code, normalizedRate, now)
+        repo.recordRateHistory(currency.iso_code, normalizedRate, "manual")
+        repo.recordRateAuditLog(currency.iso_code, currentRate, normalizedRate, administrator, reason.trim(), now, "manual")
+      })()
+      return ok()
+    } catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle("currency:setAutomatic", (_, code: string, changedBy: string): IpcResult => {
+    try {
+      getDb().transaction(() => {
+        const currency = requireActiveCurrency(code)
+        const administrator = requireRateAdministrator(changedBy)
+        const now = new Date().toISOString()
+        repo.setAutomaticMode(currency.iso_code, administrator, now)
+        repo.recordRateAuditLog(currency.iso_code, currency.last_known_rate == null ? null : Number(currency.last_known_rate), null, administrator, "Switched to automatic mode", now, "api")
+      })()
+      return ok()
+    } catch (e) { return fail(String(e)) }
   })
 
   ipcMain.handle("currency:add", (_, isoCode: string, name: string, symbol: string, decimalPrecision: number, initialRate: number): IpcResult => {
-    try { repo.addCurrency(isoCode, name, symbol, decimalPrecision, initialRate); return ok() } catch (e) { return fail(String(e)) }
+    try {
+      const code = normalizeCurrencyCode(isoCode)
+      if (typeof name !== "string" || !name.trim()) throw new Error("Currency name is required")
+      if (typeof symbol !== "string" || !symbol.trim()) throw new Error("Currency symbol is required")
+      if (!Number.isInteger(decimalPrecision) || decimalPrecision < 0 || decimalPrecision > 4) throw new Error("Decimal precision must be an integer between 0 and 4")
+      const rate = requirePositiveRate(initialRate)
+      getDb().transaction(() => {
+        repo.addCurrency(code, name.trim(), symbol.trim(), decimalPrecision, rate)
+        repo.recordRateHistory(code, rate, "manual")
+        repo.recordRateAuditLog(code, null, rate, "system", `Currency ${code} added`, new Date().toISOString(), "manual")
+      })()
+      return ok()
+    } catch (e) { return fail(String(e)) }
   })
 
   ipcMain.handle("currency:toggleActive", (_, code: string, isActive: boolean): IpcResult => {
-    try { repo.toggleCurrencyActive(code, isActive); return ok() } catch (e) { return fail(String(e)) }
+    try {
+      const currency = repo.getCurrencies().find((row) => row.iso_code === normalizeCurrencyCode(code))
+      if (!currency) throw new Error(`Currency is not registered: ${code}`)
+      if (!isActive) {
+        const settings = repo.getSettings()
+        const protectedCodes = new Set([settings.currencyCode, settings.accountingCurrencyCode, settings.rateBaseCurrencyCode])
+        if (protectedCodes.has(currency.iso_code)) throw new Error(`Currency ${currency.iso_code} is currently configured as a system currency and cannot be deactivated`)
+      }
+      repo.toggleCurrencyActive(currency.iso_code, Boolean(isActive))
+      return ok()
+    } catch (e) { return fail(String(e)) }
   })
 
-  ipcMain.handle("currency:recordRateAuditLog", (_, code: string, oldRate: number | null, newRate: number | null, changedBy: string, reason: string, changedAt: string): IpcResult => {
-    try { repo.recordRateAuditLog(code, oldRate, newRate, changedBy, reason, changedAt); return ok() } catch (e) { return fail(String(e)) }
+  ipcMain.handle("currency:recordRateAuditLog", (_, code: string, oldRate: number | null, newRate: number | null, changedBy: string, reason: string, _changedAt: string): IpcResult => {
+    try {
+      const currency = requireActiveCurrency(code)
+      const administrator = requireRateAdministrator(changedBy)
+      const validOld = oldRate == null ? null : requirePositiveRate(oldRate)
+      const validNew = newRate == null ? null : requirePositiveRate(newRate)
+      if (typeof reason !== "string" || !reason.trim()) throw new Error("Audit reason is required")
+      repo.recordRateAuditLog(currency.iso_code, validOld, validNew, administrator, reason.trim(), new Date().toISOString())
+      return ok()
+    } catch (e) { return fail(String(e)) }
   })
 
   ipcMain.handle("currency:delete", (_, code: string): IpcResult => {
     try {
-      repo.deleteCurrency(code);
+      const currency = repo.getCurrencies().find((row) => row.iso_code === normalizeCurrencyCode(code))
+      if (!currency) throw new Error(`Currency is not registered: ${code}`)
+      const settings = repo.getSettings()
+      const protectedCodes = new Set([settings.currencyCode, settings.accountingCurrencyCode, settings.rateBaseCurrencyCode])
+      if (protectedCodes.has(currency.iso_code)) throw new Error(`Currency ${currency.iso_code} is currently configured as a system currency and cannot be removed`)
+      // Currency rows are audit identities. Deletion is intentionally implemented as
+      // deactivation so historical snapshots and rate logs remain resolvable.
+      repo.toggleCurrencyActive(currency.iso_code, false)
       return ok();
     } catch (e) {
       return fail(String(e));
@@ -868,4 +1416,41 @@ export function registerIpcHandlers(): void {
   ipcMain.handle("masterData:deleteRow", (_e, table: string, id: string): IpcResult => {
     try { repo.deleteMasterRow(table, id); return ok() } catch (e) { return fail(String(e)) }
   })
+}
+
+function recordInventoryTransaction(input: {
+  itemType: "weapon" | "accessory" | "ammunition"
+  itemId: string
+  transactionType: "receipt" | "adjustment" | "sale" | "return"
+  quantityDelta: number
+  unitAmount?: number
+  currency?: string
+  shipmentId?: string | null
+  notes?: string
+  userId: string
+}): void {
+  const valuation = input.unitAmount == null
+    ? undefined
+    : backendCurrencyService.createValuation(
+      input.unitAmount,
+      input.currency?.trim().toUpperCase() || backendCurrencyService.getDefaultTransactionCurrency(),
+    )
+  getDb().prepare(`
+    INSERT INTO inventory_transactions
+      (id, item_type, item_id, transaction_type, quantity_delta, unit_amount,
+       currency, valuation, shipment_id, notes, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    generateId("ITX", "inventory_transactions"),
+    input.itemType,
+    input.itemId,
+    input.transactionType,
+    input.quantityDelta,
+    valuation == null ? null : String(valuation.originalAmount),
+    valuation?.originalCurrency ?? null,
+    valuation ? JSON.stringify(valuation) : null,
+    input.shipmentId ?? null,
+    input.notes ?? "",
+    input.userId,
+  )
 }

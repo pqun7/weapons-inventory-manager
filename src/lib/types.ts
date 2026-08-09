@@ -10,7 +10,7 @@ export type InvoiceStatus = "Pending" | "Overdue" | "Paid" | "Void"
 
 export type DebtLifecycle = "Pending" | "Overdue" | "Paid"
 
-export type PaymentMethod = "Cash" | "Card" | "Bank Transfer" | "Check" | "Other"
+export type PaymentMethod = "cash" | "card" | "bank_transfer" | "check" | "other"
 
 export type SaleMode = "Retail" | "Wholesale"
 
@@ -32,15 +32,20 @@ export type ShipmentProductType = "weapon" | "ammunition" | "accessory"
 
 /**
  * Dual-valuation pattern: every monetary value stores its original currency,
- * the exchange rate at time of transaction, and the USD accounting amount.
+ * the exchange rate at time of transaction, and the configured accounting amount.
  * Historical rates are immutable — never recomputed retroactively.
  */
 export interface MoneyValuation {
   originalAmount: number
   originalCurrency: string
   exchangeRate: number
-  accountingAmountUSD: number
+  accountingAmount: number
+  accountingCurrency: string
   exchangeRateDate: string
+  rateSource: "manual" | "api" | "cache" | "default"
+  rateId?: string
+  /** @deprecated Compatibility alias for legacy USD valuations. */
+  accountingAmountUSD?: number
 }
 
 export interface ShipmentLineItem {
@@ -61,6 +66,7 @@ export interface ShipmentLineItem {
   // Dual-valuation for purchase price
   purchasePriceValuation?: MoneyValuation
   retailPriceValuation?: MoneyValuation
+  wholesalePriceValuation?: MoneyValuation
 }
 
 export interface ShipmentDocument {
@@ -265,6 +271,8 @@ export interface Weapon {
 
   purchasePriceValuation?: MoneyValuation
   retailPriceValuation?: MoneyValuation
+  wholesalePriceValuation?: MoneyValuation
+  actualFinalPriceValuation?: MoneyValuation
   salePriceValuation?: MoneyValuation
 }
 
@@ -285,6 +293,8 @@ export interface Accessory {
   quantity: number
   safetyThreshold: number
   price: number
+  priceCurrency?: string
+  priceValuation?: MoneyValuation
   dateAdded: string
   location: StorageLocation
 }
@@ -292,16 +302,18 @@ export interface Accessory {
 export type PackageType = "Carton" | "Box" | "Case" | "Custom"
 
 export interface Ammunition {
-  id: string
-  caliber: string
-  packageType: PackageType
-  unitsPerPackage: number
-  fullPackages: number
-  looseRounds: number
-  safetyThreshold: number
-  price: number
-  dateAdded: string
-  location: StorageLocation
+  id: string;
+  caliber: string;
+  packageType: PackageType;
+  unitsPerPackage: number;
+  fullPackages: number;
+  looseRounds: number;
+  safetyThreshold: number;
+  price: number;
+  priceCurrency?: string;
+  priceValuation?: MoneyValuation;
+  dateAdded: string;
+  location: StorageLocation;
 }
 
 export function ammoTotalRounds(a: Pick<Ammunition, "fullPackages" | "unitsPerPackage" | "looseRounds">): number {
@@ -329,7 +341,7 @@ export interface Shipment {
   actualArrivalDate?: string
   lineItems?: ShipmentLineItem[]
   documents?: ShipmentDocument[]
-  // Dual-valuation: total shipment cost in original currency + USD accounting
+  // Dual-valuation: total shipment cost in original and accounting currencies
   totalCostValuation?: MoneyValuation
 }
 
@@ -367,7 +379,17 @@ export interface Invoice {
   notes: string
   voided: boolean
   taxAmount: number
-  // Dual-valuation: original currency, exchange rate, USD accounting amount
+  currency?: string
+  accountingCurrency?: string
+  exchangeRate?: number
+  exchangeRateDate?: string
+  rateSource?: MoneyValuation["rateSource"]
+  totalOriginalAccounting?: number
+  totalNegotiatedAccounting?: number
+  totalPaidAccounting?: number
+  balanceAccounting?: number
+  taxAmountAccounting?: number
+  // Dual-valuation: original currency, exchange rate, and accounting amount
   totalValuation?: MoneyValuation
 }
 
@@ -377,6 +399,13 @@ export interface PaymentRecord {
   invoiceNumber: string
   date: string
   amount: number
+  currency?: string
+  accountingAmount?: number
+  accountingCurrency?: string
+  exchangeRate?: number
+  exchangeRateDate?: string
+  rateSource?: MoneyValuation["rateSource"]
+  rateId?: string
   method: PaymentMethod
   employee: string
   notes: string
@@ -447,6 +476,8 @@ export interface UserPermissions {
 export interface SystemSettings {
   currencySymbol: string
   currencyCode: string
+  accountingCurrencyCode: string
+  rateBaseCurrencyCode: string
   supportedCurrencies: string[]
   currencyFrequency: Record<string, number>
   taxPercent: number
@@ -480,6 +511,7 @@ export interface UserPreferences {
   reportViewMode: "original" | "accounting" | "display"
   language?: string
   dateFormat?: string
+  inventoryVisibleColumns?: string[]
 }
 
 // ============ Store Indices ============

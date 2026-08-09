@@ -1,9 +1,11 @@
-import { useState, useMemo, useEffect } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from "@/components/ui/command"
 import { useStore } from "@/lib/store"
+import { useCurrency } from "@/lib/currency-context"
+import { useI18n } from "@/lib/i18n"
 
 interface SmartCurrencyInputProps {
   value: string | number
@@ -11,6 +13,8 @@ interface SmartCurrencyInputProps {
   placeholder?: string
   className?: string
   disabled?: boolean
+  currency?: string
+  onCurrencyChange?: (currency: string) => void
 }
 
 export function SmartCurrencyInput({
@@ -19,16 +23,21 @@ export function SmartCurrencyInput({
   placeholder = "0.00",
   className,
   disabled,
+  currency,
+  onCurrencyChange,
 }: SmartCurrencyInputProps) {
-  const settings = useStore((s) => s.settings)
-  const trackCurrencyUsage = useStore((s) => s.trackCurrencyUsage)
+  const trackCurrencyUsage = useStore((state) => state.trackCurrencyUsage)
+  const { currencies, transactionCurrency, currencyPresentation } = useCurrency()
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
-  const [selectedCode, setSelectedCode] = useState(settings.currencyCode)
+  const [internalCurrency, setInternalCurrency] = useState(currency ?? transactionCurrency)
+  const selectedCode = currency ?? internalCurrency
 
-  const symbol = useMemo(() => {
-    const map: Record<string, string> = { USD: "$", SAR: "ر.س", EUR: "€", GBP: "£", JPY: "¥" }
-    return map[selectedCode] ?? selectedCode
-  }, [selectedCode])
+  const presentation = useMemo(() => currencyPresentation(selectedCode), [currencyPresentation, selectedCode])
+
+  useEffect(() => {
+    if (currency) setInternalCurrency(currency)
+  }, [currency])
 
   useEffect(() => {
     trackCurrencyUsage(selectedCode)
@@ -46,35 +55,46 @@ export function SmartCurrencyInput({
             {selectedCode}
           </button>
         </PopoverTrigger>
-        <PopoverContent className="w-32 p-0" align="start">
+        <PopoverContent className="w-40 p-0" align="start">
           <Command>
             <CommandList>
-              <CommandEmpty>No currency found.</CommandEmpty>
+              <CommandEmpty>{t("settings.noCurrencies")}</CommandEmpty>
               <CommandGroup>
-                {settings.supportedCurrencies.map((code) => (
+                {currencies.map((item) => {
+                  const itemPresentation = currencyPresentation(item.isoCode)
+                  return (
                   <CommandItem
-                    key={code}
-                    value={code}
-                    onSelect={(v) => { setSelectedCode(v); setOpen(false) }}
+                    key={item.isoCode}
+                    value={item.isoCode}
+                    onSelect={() => {
+                      setInternalCurrency(item.isoCode)
+                      onCurrencyChange?.(item.isoCode)
+                      setOpen(false)
+                    }}
                     className="text-xs"
                   >
-                    {code}
+                    <span className="w-10 font-mono text-[10px]">{itemPresentation.code}</span>
+                    <span className="flex min-w-0 flex-col">
+                      <span className="text-xs">{itemPresentation.symbol}</span>
+                      <span className="truncate text-[9px] text-muted-foreground">{itemPresentation.name}</span>
+                    </span>
                   </CommandItem>
-                ))}
+                  )
+                })}
               </CommandGroup>
             </CommandList>
           </Command>
         </PopoverContent>
       </Popover>
       <div className="relative flex-1">
-        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{symbol}</span>
+        <span className="absolute start-2 top-1/2 max-w-16 -translate-y-1/2 truncate text-[10px] text-muted-foreground">{presentation.compactSymbol}</span>
         <Input
           type="number"
           value={value}
-          onChange={(e) => onValueChange(e.target.value)}
+          onChange={(event) => onValueChange(event.target.value)}
           placeholder={placeholder}
           disabled={disabled}
-          className="h-8 pl-6 text-xs tabular-nums"
+          className="h-8 ps-16 text-xs tabular-nums"
         />
       </div>
     </div>

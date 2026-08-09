@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { useI18n } from "@/lib/i18n"
 
 interface SearchableComboboxProps {
   value: string
@@ -21,13 +22,14 @@ export function SearchableCombobox({
   value,
   onValueChange,
   options,
-  placeholder = "Select...",
-  searchPlaceholder = "Search...",
+  placeholder,
+  searchPlaceholder,
   onCreateNew,
   allowCreate = false,
   className,
   invalid,
 }: SearchableComboboxProps) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
@@ -70,7 +72,7 @@ export function SearchableCombobox({
           aria-expanded={open}
           className={cn("h-8 w-full justify-between text-xs font-normal", !value && "text-muted-foreground", invalid && "border-destructive", className)}
         >
-          <span className="truncate">{value || placeholder}</span>
+          <span className="truncate">{value || placeholder || t("common.selectPlaceholder")}</span>
           <ChevronsUpDown className="ml-1 size-3.5 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -80,14 +82,14 @@ export function SearchableCombobox({
             <Search className="mr-1 size-3.5 shrink-0 text-muted-foreground" />
             <CommandInput
               ref={inputRef}
-              placeholder={searchPlaceholder}
+              placeholder={searchPlaceholder || t("common.search")}
               value={search}
               onValueChange={setSearch}
               className="h-7 text-xs"
             />
           </div>
           <CommandList>
-            <CommandEmpty>{showCreate ? "Type to create new..." : "No results found."}</CommandEmpty>
+            <CommandEmpty>{showCreate ? t("common.typeToCreate") : t("common.noResults")}</CommandEmpty>
             {filtered.length > 0 && (
               <CommandGroup>
                 {filtered.map((option) => (
@@ -102,7 +104,7 @@ export function SearchableCombobox({
               <CommandGroup>
                 <CommandItem onSelect={handleCreate} className="text-xs">
                   <Plus className="mr-1 size-3.5 text-primary" />
-                  <span>Create <span className="font-medium">"{search.trim()}"</span></span>
+                  <span>{t("common.createValue", { value: `“${search.trim()}”` })}</span>
                 </CommandItem>
               </CommandGroup>
             )}

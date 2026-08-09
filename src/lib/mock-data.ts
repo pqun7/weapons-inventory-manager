@@ -396,7 +396,7 @@ function generateInvoices(weapons: Weapon[], customers: Customer[], suppliers: S
     if (paidAmount > 0) {
       payments.push({
         id: `PAY${pad(payCounter, 5)}`, invoiceId, invoiceNumber,
-        date, amount: paidAmount, method: pick(["Cash", "Card", "Bank Transfer"] as PaymentMethod[]),
+        date, amount: paidAmount, method: pick(["cash", "card", "bank_transfer"] as PaymentMethod[]),
         employee: "Admin User", notes: paidAmount >= negotiated ? "Full payment" : "Partial payment",
       })
       payCounter++
@@ -424,7 +424,7 @@ function generateInvoices(weapons: Weapon[], customers: Customer[], suppliers: S
     if (paid > 0) {
       payments.push({
         id: `PAY${pad(payCounter, 5)}`, invoiceId, invoiceNumber: `PUR-${date.replace(/-/g, "")}-${pad(i + 1, 4)}`,
-        date, amount: paid, method: pick(["Bank Transfer", "Check"] as PaymentMethod[]),
+        date, amount: paid, method: pick(["bank_transfer", "check"] as PaymentMethod[]),
         employee: "Admin User", notes: "Supplier payment",
       })
       payCounter++
@@ -475,7 +475,10 @@ const DEFAULT_USERS: User[] = [
 const DEFAULT_SETTINGS: SystemSettings = {
   currencySymbol: "$",
   currencyCode: "USD",
-  supportedCurrencies: ["USD", "SAR", "EUR"],
+  accountingCurrencyCode: "USD",
+  rateBaseCurrencyCode: "USD",
+  preferredDisplayCurrency: "USD",
+  supportedCurrencies: ["USD", "SAR", "SDG", "EGP"],
   currencyFrequency: {},
   taxPercent: 0,
   invoiceHeader: "WEAPON STORE MANAGEMENT SYSTEM",

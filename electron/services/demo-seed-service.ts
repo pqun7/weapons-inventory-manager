@@ -1,6 +1,7 @@
 import { getDb } from "../database.js"
 import { repo } from "../repositories/index.js"
 import { generateMockData } from "../../src/lib/mock-data.js"
+import { backendCurrencyService } from "./currency-service.js"
 
 type SeedCountMap = Record<string, number>
 
@@ -42,15 +43,63 @@ export function seedDemoDataIfNeeded(): { seeded: boolean; skipped: boolean; cou
     const db = getDb()
 
     const insertAll = db.transaction(() => {
+        const currency = backendCurrencyService.getDefaultTransactionCurrency()
+        const snapshot = backendCurrencyService.getRateSnapshot(currency)
+        const valuation = (amount: number) => backendCurrencyService.createValuationFromSnapshot(String(amount), snapshot)
+        const weapons = mock.weapons.map((weapon) => ({
+            ...weapon,
+            purchasePriceValuation: valuation(weapon.purchasePrice),
+            retailPriceValuation: valuation(weapon.retailPrice),
+            wholesalePriceValuation: valuation(weapon.wholesalePrice),
+            actualFinalPriceValuation: weapon.actualFinalPrice == null ? undefined : valuation(weapon.actualFinalPrice),
+            salePriceValuation: weapon.actualFinalPrice == null ? undefined : valuation(weapon.actualFinalPrice),
+        }))
+        const accessories = mock.accessories.map((item) => ({
+            ...item,
+            priceCurrency: currency,
+            priceValuation: valuation(item.price),
+        }))
+        const ammunition = mock.ammunition.map((item) => ({
+            ...item,
+            priceCurrency: currency,
+            priceValuation: valuation(item.price),
+        }))
+        const invoices = mock.invoices.map((invoice) => ({
+            ...invoice,
+            currency,
+            accountingCurrency: snapshot.accountingCurrency,
+            exchangeRate: snapshot.exchangeRate,
+            exchangeRateDate: snapshot.exchangeRateDate,
+            rateSource: snapshot.rateSource,
+            totalOriginalAccounting: valuation(invoice.totalOriginal).accountingAmount,
+            totalNegotiatedAccounting: valuation(invoice.totalNegotiated).accountingAmount,
+            totalPaidAccounting: valuation(invoice.totalPaid).accountingAmount,
+            balanceAccounting: valuation(invoice.balance).accountingAmount,
+            taxAmountAccounting: valuation(invoice.taxAmount).accountingAmount,
+            totalValuation: valuation(invoice.totalNegotiated + invoice.taxAmount),
+        }))
+        const payments = mock.payments.map((payment) => {
+            const paymentValuation = valuation(payment.amount)
+            return {
+                ...payment,
+                currency,
+                accountingAmount: paymentValuation.accountingAmount,
+                accountingCurrency: paymentValuation.accountingCurrency,
+                exchangeRate: paymentValuation.exchangeRate,
+                exchangeRateDate: paymentValuation.exchangeRateDate,
+                rateSource: paymentValuation.rateSource,
+                rateId: paymentValuation.rateId,
+            }
+        })
         // Correct insertion order respecting foreign keys
         for (const s of mock.suppliers) repo.insertSupplier(s)
-        for (const s of mock.shipments) repo.insertShipment(s)
-        for (const w of mock.weapons) repo.insertWeapon(w)
+        for (const s of mock.shipments) repo.insertShipment({ ...s, currency })
+        for (const w of weapons) repo.insertWeapon(w)
         for (const c of mock.customers) repo.insertCustomer(c)
-        for (const inv of mock.invoices) repo.insertInvoice(inv)
-        for (const p of mock.payments) repo.insertPayment(p)
-        for (const a of mock.accessories) repo.insertAccessory(a)
-        for (const a of mock.ammunition) repo.insertAmmunition(a)
+        for (const inv of invoices) repo.insertInvoice(inv)
+        for (const p of payments) repo.insertPayment(p)
+        for (const a of accessories) repo.insertAccessory(a)
+        for (const a of ammunition) repo.insertAmmunition(a)
         for (const l of mock.auditLogs) repo.insertAuditLog(l)
         for (const n of mock.notifications) repo.insertNotification(n)
     })

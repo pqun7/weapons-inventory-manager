@@ -93,6 +93,7 @@ vi.mock("@/lib/db", () => {
     dbGetMasterData: vi.fn(async () => ({ weaponTypes: [], weaponSubtypes: [], calibers: [], subtypeCalibers: [], brands: [], models: [], warehouses: [], storageLocations: [] })),
     dbGetCurrencies: vi.fn(async () => engine.getCurrencies().data),
     dbGetOverrides: vi.fn(async () => engine.getOverrides().data),
+    dbGetSettings: vi.fn(async () => ({ accountingCurrencyCode: "USD" })),
     dbUpdateCurrencyRate: vi.fn(async (_code: string, _rate: number, _updatedAt: string) => engine.updateCurrencyRate(_code, _rate, _updatedAt)),
     dbRecordRateHistory: vi.fn(async (_code: string, _rate: number, _source: string) => engine.recordRateHistory()),
     dbSetManualOverride: vi.fn(async (_code: string, _rate: number, _changedBy: string, _reason: string, _updatedAt: string) => engine.setManualOverride(_code, _rate, _changedBy, _reason, _updatedAt)),
@@ -102,6 +103,7 @@ vi.mock("@/lib/db", () => {
     dbToggleCurrencyActive: vi.fn(async () => engine.toggleCurrencyActive()),
     dbTransaction: vi.fn(async (cb: () => unknown) => engine.transaction(cb)),
     dbRecordRateAuditLog: vi.fn(async (code: string, oldRate: number | null, newRate: number | null, changedBy: string, reason: string, changedAt: string) => engine.recordRateAuditLog(code, oldRate, newRate, changedBy, reason, changedAt)),
+    dbDeleteCurrency: vi.fn(async () => undefined),
     _resetDbForTesting: vi.fn(),
   }
 })

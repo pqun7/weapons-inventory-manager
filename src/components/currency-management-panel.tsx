@@ -15,10 +15,12 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { CurrencyService, type CurrencyInfo, type ExchangeRateOverride, type AuditLogEntry } from "@/lib/currency-service"
 import { useStore } from "@/lib/store"
 import { useI18n } from "@/lib/i18n"
+import { useCurrency } from "@/lib/currency-context"
 import { toast } from "sonner"
 
 export function CurrencyManagementPanel() {
   const { t } = useI18n()
+  const { accountingCurrency, currencyPresentation } = useCurrency()
   const store = useStore()
   const currentUser = store.getCurrentUser()
   const isAdmin = currentUser?.role === "Admin"
@@ -115,7 +117,12 @@ export function CurrencyManagementPanel() {
       return
     }
     try {
-      await CurrencyService.addCurrency(code, newName.trim(), newSymbol.trim() || code, Number(newPrecision) || 2, rate)
+      const precision = Number(newPrecision)
+      if (!Number.isInteger(precision) || precision < 0 || precision > 4) {
+        toast.error(t("settings.invalidPrecision"))
+        return
+      }
+      await CurrencyService.addCurrency(code, newName.trim(), newSymbol.trim() || code, precision, rate)
       toast.success(`${code} ${t("settings.currencyAdded")}`)
       setAddCurrencyOpen(false)
       setNewCode(""); setNewName(""); setNewSymbol(""); setNewPrecision("2"); setNewRate("")
@@ -137,7 +144,7 @@ export function CurrencyManagementPanel() {
 
   // ✅ معالج فتح نافذة تأكيد الحذف
   const handleDeleteRequest = (currency: CurrencyInfo) => {
-    if (currency.isoCode === "USD") {
+    if (currency.isoCode === accountingCurrency) {
       toast.error(t("settings.cannotDeleteUSD"))
       return
     }
@@ -219,7 +226,7 @@ export function CurrencyManagementPanel() {
                       <div className="sm:col-span-2">
                         <Label className="text-xs">{t("settings.initialRate")}</Label>
                         <Input type="number" step="any" value={newRate} onChange={(e) => setNewRate(e.target.value)} placeholder="0.92" className="h-8 text-xs" />
-                        <p className="mt-1 text-[10px] text-muted-foreground">{t("settings.ratePerUSD")}</p>
+                        <p className="mt-1 text-[10px] text-muted-foreground">{t("settings.ratePerUSD", { currency: accountingCurrency })}</p>
                       </div>
                     </div>
                     <DialogFooter>
@@ -256,8 +263,8 @@ export function CurrencyManagementPanel() {
                       currencies.map((c) => (
                         <TableRow key={c.isoCode} className={!c.isActive ? "opacity-50 bg-muted/20" : ""}>
                           <TableCell className="py-1.5 text-[11px] font-mono font-medium">{c.isoCode}</TableCell>
-                          <TableCell className="py-1.5 text-[11px]">{c.name}</TableCell>
-                          <TableCell className="py-1.5 text-[11px]">{c.symbol}</TableCell>
+                          <TableCell className="py-1.5 text-[11px]">{currencyPresentation(c.isoCode).name}</TableCell>
+                          <TableCell className="py-1.5 text-[11px]">{currencyPresentation(c.isoCode).compactSymbol}</TableCell>
                           <TableCell className="py-1.5 text-[11px] tabular-nums">{c.decimalPrecision}</TableCell>
                           <TableCell className="py-1.5 text-[11px] tabular-nums">{c.lastKnownRate.toFixed(4)}</TableCell>
                           <TableCell className="py-1.5 text-[11px] text-muted-foreground">
@@ -282,7 +289,7 @@ export function CurrencyManagementPanel() {
                           </TableCell>
                           <TableCell className="py-1.5">
                             <div className="flex items-center gap-1">
-                              {c.isoCode === "USD" ? (
+                              {c.isoCode === accountingCurrency ? (
                                 <Badge variant="secondary" className="text-[9px]">{t("settings.accounting")}</Badge>
                               ) : (
                                 <Button
@@ -324,7 +331,7 @@ export function CurrencyManagementPanel() {
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="size-4 text-amber-500 shrink-0 mt-0.5" />
                   <div className="text-[11px] text-muted-foreground">
-                    {t("settings.rateManagementDesc")}
+                    {t("settings.rateManagementDesc", { currency: accountingCurrency })}
                   </div>
                 </div>
               </div>
@@ -343,7 +350,7 @@ export function CurrencyManagementPanel() {
                     {currencies.map((c) => {
                       const override = getOverride(c.isoCode)
                       const isManual = override?.mode === "manual"
-                      const rate = CurrencyService.getRate(c.isoCode)
+                      const rate = c.isActive ? CurrencyService.getRate(c.isoCode) : c.lastKnownRate
                       const source = CurrencyService.getRateSource(c.isoCode)
                       return (
                         <TableRow key={c.isoCode} className={!c.isActive ? "opacity-50 bg-muted/20" : ""}>
@@ -397,7 +404,7 @@ export function CurrencyManagementPanel() {
                                 </>
                               ) : (
                                 <>
-                                  {c.isoCode !== "USD" && (
+                                  {c.isoCode !== accountingCurrency && (
                                     <>
                                       <Button
                                         size="sm"
@@ -435,7 +442,7 @@ export function CurrencyManagementPanel() {
               </div>
               <Separator className="my-3" />
               <div className="text-[10px] text-muted-foreground">
-                {t("settings.ratePerUSDNote")}
+                {t("settings.ratePerUSDNote", { currency: accountingCurrency })}
               </div>
             </CardContent>
           </Card>

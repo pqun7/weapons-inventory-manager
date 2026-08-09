@@ -2,8 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import Database from "better-sqlite3"
 import { CREATE_TABLES_SQL, SEED_MASTER_DATA_SQL, SCHEMA_VERSION } from "@/lib/db/schema"
 import type { Database as DB } from "better-sqlite3"
-import { readFileSync, existsSync } from "fs"
-import { globSync } from "node:fs"
+import { readFileSync, existsSync, readdirSync } from "fs"
+import { join } from "path"
+
+function sourceFiles(root: string): string[] {
+  return (readdirSync(root, { recursive: true }) as string[])
+    .filter((file) => file.endsWith(".ts") || file.endsWith(".tsx"))
+    .map((file) => join(root, file))
+}
 
 function createInMemoryDb(): DB {
   const db = new Database(":memory:")
@@ -121,9 +127,7 @@ describe("Database Connection & Resource Management", () => {
 
 describe("Legacy sql.js Removal Audit", () => {
   it("production source contains no imports of sql.js", () => {
-    const srcFiles = globSync("src/**/*.ts") as string[]
-    const srcTsxFiles = globSync("src/**/*.tsx") as string[]
-    const allFiles = [...srcFiles, ...srcTsxFiles].filter(f => !f.includes(".test.") && !f.endsWith(".d.ts"))
+    const allFiles = sourceFiles("src").filter(f => !f.includes(".test.") && !f.endsWith(".d.ts"))
 
     for (const file of allFiles) {
       const content = readFileSync(file, "utf-8")
@@ -135,7 +139,7 @@ describe("Legacy sql.js Removal Audit", () => {
   })
 
   it("electron source contains no imports of sql.js", () => {
-    const electronFiles = globSync("electron/**/*.ts")
+    const electronFiles = sourceFiles("electron")
     for (const file of electronFiles) {
       const content = readFileSync(file, "utf-8")
       expect(content, `${file} should not import sql.js`).not.toMatch(/from\s+["']sql\.js["']/)
@@ -144,8 +148,9 @@ describe("Legacy sql.js Removal Audit", () => {
     }
   })
 
-  it("vite config has no sql.js external or optimizeDeps exclusion", () => {
-    const content = readFileSync("vite.config.ts", "utf-8")
+  it("build config has no sql.js external or dependency exclusion", () => {
+    const configPath = existsSync("rsbuild.config.ts") ? "rsbuild.config.ts" : "vite.config.ts"
+    const content = readFileSync(configPath, "utf-8")
     expect(content).not.toMatch(/sql\.js/)
     expect(content).not.toMatch(/sql-wasm/i)
     expect(content).not.toMatch(/optimizeDeps.*exclude/i)
@@ -178,9 +183,7 @@ describe("Legacy sql.js Removal Audit", () => {
 
 describe("Renderer DB Access Isolation", () => {
   it("no src/ file imports better-sqlite3 directly", () => {
-    const srcFiles = globSync("src/**/*.ts") as string[]
-    const srcTsxFiles = globSync("src/**/*.tsx") as string[]
-    const allFiles = [...srcFiles, ...srcTsxFiles].filter(f => !f.includes(".test.") && !f.endsWith(".d.ts"))
+    const allFiles = sourceFiles("src").filter(f => !f.includes(".test.") && !f.endsWith(".d.ts"))
 
     for (const file of allFiles) {
       const content = readFileSync(file, "utf-8")

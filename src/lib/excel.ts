@@ -190,8 +190,13 @@ export async function exportExcelChecklist(sheets: ExcelSheetOption[]): Promise<
     const data = state.weapons.map((w) => ({
       ID: w.id, "Serial Number": w.serialNumber, Brand: w.brand, Model: w.model,
       Type: w.weaponType, "Sub-Type": w.subType, Caliber: w.caliber, Condition: w.condition,
-      Status: w.status, "Purchase Price": w.purchasePrice, "Retail Price": w.retailPrice,
-      "Wholesale Price": w.wholesalePrice, "Actual Final Price": w.actualFinalPrice ?? "",
+       Status: w.status,
+       "Original Currency": w.purchasePriceValuation?.originalCurrency ?? "UNKNOWN",
+       "Purchase Price": w.purchasePrice, "Purchase Accounting Amount": w.purchasePriceValuation?.accountingAmount ?? "",
+       "Retail Price": w.retailPrice, "Retail Accounting Amount": w.retailPriceValuation?.accountingAmount ?? "",
+       "Wholesale Price": w.wholesalePrice, "Wholesale Accounting Amount": w.wholesalePriceValuation?.accountingAmount ?? "",
+       "Accounting Currency": w.purchasePriceValuation?.accountingCurrency ?? "",
+       "Actual Final Price": w.actualFinalPrice ?? "",
       "Supplier ID": w.supplierId, "Shipment ID": w.shipmentId ?? "", "Date Added": w.dateAdded,
       Notes: w.notes,
     }))
@@ -204,7 +209,13 @@ export async function exportExcelChecklist(sheets: ExcelSheetOption[]): Promise<
     const data = state.invoices.filter((i) => i.type === "Sale").map((i) => ({
       "Invoice Number": i.invoiceNumber, Customer: i.customerName, Date: i.date,
       "Due Date": i.dueDate, "Original Total": i.totalOriginal, "Negotiated Total": i.totalNegotiated,
-      "Paid": i.totalPaid, "Balance": i.balance, Status: i.status, Mode: i.saleMode,
+       "Currency": i.currency ?? "UNKNOWN", "Paid": i.totalPaid, "Balance": i.balance,
+       "Accounting Currency": i.accountingCurrency ?? i.totalValuation?.accountingCurrency ?? "",
+       "Negotiated Accounting Amount": i.totalNegotiatedAccounting ?? i.totalValuation?.accountingAmount ?? "",
+       "Paid Accounting Amount": i.totalPaidAccounting ?? "", "Balance Accounting Amount": i.balanceAccounting ?? "",
+       "Exchange Rate": i.exchangeRate ?? i.totalValuation?.exchangeRate ?? "",
+       "Exchange Rate Date": i.exchangeRateDate ?? i.totalValuation?.exchangeRateDate ?? "",
+       Status: i.status, Mode: i.saleMode,
       Employee: i.employeeName, Voided: i.voided ? "Yes" : "No",
     }))
     const ws = XLSX.utils.json_to_sheet(data)
@@ -239,7 +250,12 @@ export async function exportExcelChecklist(sheets: ExcelSheetOption[]): Promise<
       return {
         "Shipment Number": s.shipmentNumber, "Supplier ID": s.supplierId, Date: s.shipmentDate,
         "Expected Items": s.totalExpectedItems, "Registered": registered,
-        "Remaining": s.totalExpectedItems - registered, Status: s.status, Notes: s.notes,
+        "Remaining": s.totalExpectedItems - registered, Status: s.status,
+        Currency: s.currency ?? "UNKNOWN", "Total Cost": s.totalCostValuation?.originalAmount ?? "",
+        "Accounting Currency": s.totalCostValuation?.accountingCurrency ?? "",
+        "Total Cost Accounting Amount": s.totalCostValuation?.accountingAmount ?? "",
+        "Exchange Rate": s.totalCostValuation?.exchangeRate ?? "",
+        "Exchange Rate Date": s.totalCostValuation?.exchangeRateDate ?? "", Notes: s.notes,
       }
     })
     const ws = XLSX.utils.json_to_sheet(data)
@@ -251,7 +267,10 @@ export async function exportExcelChecklist(sheets: ExcelSheetOption[]): Promise<
     const data = state.invoices.filter((i) => i.balance > 0 && !i.voided).map((i) => ({
       "Invoice Number": i.invoiceNumber, "Customer/Supplier": i.customerName,
       Type: i.type, "Original": i.totalOriginal, "Negotiated": i.totalNegotiated,
-      "Paid": i.totalPaid, "Balance": i.balance, "Due Date": i.dueDate, Status: i.status,
+       Currency: i.currency ?? "UNKNOWN", "Paid": i.totalPaid, "Balance": i.balance,
+       "Accounting Currency": i.accountingCurrency ?? i.totalValuation?.accountingCurrency ?? "",
+       "Paid Accounting Amount": i.totalPaidAccounting ?? "", "Balance Accounting Amount": i.balanceAccounting ?? "",
+       "Due Date": i.dueDate, Status: i.status,
     }))
     const ws = XLSX.utils.json_to_sheet(data)
     autoFitColumns(ws, data)

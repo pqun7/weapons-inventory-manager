@@ -1,4 +1,4 @@
-import { useMemo, memo } from "react"
+import { useMemo, memo, useEffect } from "react"
 import {
   Package, TrendingUp, DollarSign, Landmark, AlertTriangle, Truck,
   ShoppingCart, Plus, FileSpreadsheet, Database, Receipt, Activity,
@@ -21,10 +21,23 @@ import { useStore } from "@/lib/store"
 import { useNav } from "@/lib/nav"
 import { useI18n } from "@/lib/i18n"
 import { useCurrency } from "@/lib/currency-context"
+import { invoiceAccountingAmount, multiplyMoney, sumMoney, valuationAccountingAmount } from "@/lib/money-ui"
 import { formatDateShort, formatDateTime, formatMonthShort, invoiceStatusClass } from "@/lib/format"
 import { ammoTotalRounds } from "@/lib/types"
 
 const COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)", "var(--chart-1)"]
+
+function auditCurrency(metadata: string): string | null {
+  try {
+    const parsed = JSON.parse(metadata) as Record<string, unknown>
+    for (const key of ["paymentCurrency", "currency", "invoiceCurrency"]) {
+      if (typeof parsed[key] === "string" && parsed[key]) return parsed[key] as string
+    }
+  } catch {
+    // Legacy audit metadata can be absent or malformed; do not invent a currency.
+  }
+  return null
+}
 
 const KpiCard = memo(function KpiCard({
   label, value, icon: Icon, color, sub,
@@ -49,10 +62,22 @@ export function DashboardPage() {
   const invoices = useStore((s) => s.invoices)
   const shipments = useStore((s) => s.shipments)
   const auditLogs = useStore((s) => s.auditLogs)
+  const refreshFromDb = useStore((s) => s.refreshFromDb)
   const accessories = useStore((s) => s.accessories)
   const ammunition = useStore((s) => s.ammunition)
   const { navigate, setFinancialFilter } = useNav()
-  const { format: formatUSD } = useCurrency()
+  const { formatAccountingAggregate, formatInvoice } = useCurrency()
+
+  useEffect(() => {
+    void refreshFromDb()
+  }, [refreshFromDb])
+
+  const weaponById = useMemo(() => new Map(weapons.map((w) => [w.id, w])), [weapons])
+  const accessoryById = useMemo(() => new Map(accessories.map((item) => [item.id, item])), [accessories])
+  const ammunitionById = useMemo(() => new Map(ammunition.map((item) => [item.id, item])), [ammunition])
+
+  const suppliers = useStore((s) => s.suppliers)
+  const supplierById = useMemo(() => new Map(suppliers.map((supplier) => [supplier.id, supplier.name])), [suppliers])
 
   const chartConfig = {
     revenue: { label: t("dash.chart.revenue"), color: "var(--chart-1)" },
@@ -64,16 +89,22 @@ export function DashboardPage() {
   const stats = useMemo(() => {
     const now = new Date()
     const available = weapons.filter((w) => w.status === "Available")
-    const invValue = available.reduce((s, w) => s + (w.purchasePriceValuation?.accountingAmountUSD ?? w.purchasePrice), 0)
+    const invValue = sumMoney(available.map((weapon) =>
+      valuationAccountingAmount(weapon.purchasePriceValuation, weapon.purchasePrice)))
     const saleInvoices = invoices.filter((i) => i.type === "Sale" && !i.voided)
-    const revenue = saleInvoices.reduce((s, i) => s + (i.totalValuation?.accountingAmountUSD ?? i.totalNegotiated), 0)
-    const cost = saleInvoices.reduce((s, i) => {
-      const invWeapons = weapons.filter((w) => i.weaponIds.includes(w.id))
-      return s + invWeapons.reduce((ws, w) => ws + (w.purchasePriceValuation?.accountingAmountUSD ?? w.purchasePrice), 0)
-    }, 0)
-    const netProfit = revenue - cost
-    const activeDebts = invoices.filter((i) => i.balance > 0 && !i.voided).reduce((s, i) => s + (i.totalValuation?.accountingAmountUSD ?? i.balance), 0)
-    const overdueDebts = invoices.filter((i) => i.status === "Overdue" && !i.voided).reduce((s, i) => s + (i.totalValuation?.accountingAmountUSD ?? i.balance), 0)
+    const revenue = sumMoney(saleInvoices.map((invoice) => invoiceAccountingAmount(invoice, "totalNegotiated")))
+    const invoiceCost = (invoice: typeof saleInvoices[number]) => sumMoney(invoice.lineItems.map((item) => {
+      const pricedItem = item.itemType === "weapon"
+        ? { valuation: weaponById.get(item.itemId)?.purchasePriceValuation, amount: weaponById.get(item.itemId)?.purchasePrice }
+        : item.itemType === "accessory"
+          ? { valuation: accessoryById.get(item.itemId)?.priceValuation, amount: accessoryById.get(item.itemId)?.price }
+          : { valuation: ammunitionById.get(item.itemId)?.priceValuation, amount: ammunitionById.get(item.itemId)?.price }
+      return multiplyMoney(valuationAccountingAmount(pricedItem.valuation, pricedItem.amount), item.quantity)
+    }))
+    const cost = sumMoney(saleInvoices.map(invoiceCost))
+    const netProfit = sumMoney([revenue, -cost])
+    const activeDebts = sumMoney(invoices.filter((i) => i.balance > 0 && !i.voided).map((invoice) => invoiceAccountingAmount(invoice, "balance")))
+    const overdueDebts = sumMoney(invoices.filter((i) => i.status === "Overdue" && !i.voided).map((invoice) => invoiceAccountingAmount(invoice, "balance")))
     const pendingShipments = shipments.filter((s) => s.status !== "Arrived" && s.status !== "Cancelled")
     const inTransitShipments = shipments.filter((s) => s.status === "In Transit")
     const delayedShipments = shipments.filter((s) => s.status === "Delayed")
@@ -82,13 +113,14 @@ export function DashboardPage() {
       const d = new Date(s.actualArrivalDate)
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
     }).length
-    const inTransitValue = inTransitShipments.reduce((sum, s) => {
-      const items = s.lineItems ?? []
-      return sum + items.reduce((li, item) => li + (item.purchasePriceValuation?.accountingAmountUSD ?? item.purchasePrice * item.quantity), 0)
-    }, 0)
+    const inTransitValue = sumMoney(inTransitShipments.map((shipment) => shipment.totalCostValuation?.accountingAmount
+      ?? sumMoney((shipment.lineItems ?? []).map((item) => multiplyMoney(
+        valuationAccountingAmount(item.purchasePriceValuation, item.purchasePrice),
+        item.quantity,
+      )))))
 
     return { invValue, revenue, netProfit, activeDebts, overdueDebts, pendingShipments: pendingShipments.length, inTransitShipments: inTransitShipments.length, delayedShipments: delayedShipments.length, arrivedThisMonth, inTransitValue, availableCount: available.length }
-  }, [weapons, invoices, shipments])
+  }, [weapons, invoices, shipments, weaponById, accessoryById, ammunitionById])
 
   const monthlyData = useMemo(() => {
     const months: Record<string, { revenue: number; profit: number }> = {}
@@ -101,27 +133,35 @@ export function DashboardPage() {
     invoices.filter((i) => i.type === "Sale" && !i.voided).forEach((i) => {
       const key = formatMonthShort(new Date(i.date))
       if (months[key]) {
-        months[key].revenue += i.totalValuation?.accountingAmountUSD ?? i.totalNegotiated
-        const invWeapons = weapons.filter((w) => i.weaponIds.includes(w.id))
-        months[key].profit += (i.totalValuation?.accountingAmountUSD ?? i.totalNegotiated) - invWeapons.reduce((s, w) => s + (w.purchasePriceValuation?.accountingAmountUSD ?? w.purchasePrice), 0)
+        const revenue = invoiceAccountingAmount(i, "totalNegotiated") ?? 0
+        const cost = sumMoney(i.lineItems.map((item) => {
+          const pricedItem = item.itemType === "weapon"
+            ? { valuation: weaponById.get(item.itemId)?.purchasePriceValuation, amount: weaponById.get(item.itemId)?.purchasePrice }
+            : item.itemType === "accessory"
+              ? { valuation: accessoryById.get(item.itemId)?.priceValuation, amount: accessoryById.get(item.itemId)?.price }
+              : { valuation: ammunitionById.get(item.itemId)?.priceValuation, amount: ammunitionById.get(item.itemId)?.price }
+          return multiplyMoney(valuationAccountingAmount(pricedItem.valuation, pricedItem.amount), item.quantity)
+        }))
+        months[key].revenue += revenue
+        months[key].profit = sumMoney([months[key].profit, revenue, -cost])
       }
     })
     return Object.entries(months).map(([month, v]) => ({
-      month, revenue: Math.round(v.revenue), profit: Math.round(v.profit),
+      month, revenue: v.revenue, profit: v.profit,
       margin: v.revenue > 0 ? Math.round((v.profit / v.revenue) * 100) : 0,
     }))
-  }, [invoices, weapons, t])
+  }, [invoices, weaponById, accessoryById, ammunitionById])
 
   const categoryData = useMemo(() => {
     const counts: Record<string, number> = {}
     invoices.filter((i) => i.type === "Sale" && !i.voided).forEach((i) => {
       i.weaponIds.forEach((wid) => {
-        const w = weapons.find((wp) => wp.id === wid)
+        const w = weaponById.get(wid)
         if (w) counts[w.weaponType] = (counts[w.weaponType] ?? 0) + 1
       })
     })
     return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
-  }, [invoices, weapons])
+  }, [invoices, weaponById])
 
   const supplierData = useMemo(() => {
     const counts: Record<string, number> = {}
@@ -129,15 +169,15 @@ export function DashboardPage() {
       counts[w.supplierId] = (counts[w.supplierId] ?? 0) + 1
     })
     return Object.entries(counts)
-      .map(([supId, count]) => ({ name: supId, value: count }))
+      .map(([supId, count]) => ({ name: supplierById.get(supId) ?? supId, value: count }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 6)
-  }, [weapons])
+  }, [weapons, supplierById])
 
   const topCustomers = useMemo(() => {
     const spend: Record<string, number> = {}
     invoices.filter((i) => i.type === "Sale" && !i.voided).forEach((i) => {
-      spend[i.customerName] = (spend[i.customerName] ?? 0) + i.totalNegotiated
+      spend[i.customerName] = sumMoney([spend[i.customerName], invoiceAccountingAmount(i, "totalNegotiated")])
     })
     return Object.entries(spend).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5)
   }, [invoices])
@@ -150,11 +190,11 @@ export function DashboardPage() {
   const todayLogs = useMemo(() => auditLogs.slice(0, 12), [auditLogs])
 
   const kpis = [
-    { label: t("dash.kpi.inventoryValue"), value: formatUSD(stats.invValue), icon: Package, color: "text-chart-2", sub: `${stats.availableCount} ${t("dash.kpi.available")}` },
-    { label: t("dash.kpi.grossRevenue"), value: formatUSD(stats.revenue), icon: TrendingUp, color: "text-chart-1", sub: t("dash.kpi.allSales") },
-    { label: t("dash.kpi.netProfit"), value: formatUSD(stats.netProfit), icon: DollarSign, color: "text-chart-3", sub: t("dash.kpi.revenueMinusCost") },
-    { label: t("dash.kpi.activeDebts"), value: formatUSD(stats.activeDebts), icon: Landmark, color: "text-status-reserved", sub: t("dash.kpi.outstanding") },
-    { label: t("dash.kpi.overdueDebts"), value: formatUSD(stats.overdueDebts), icon: AlertTriangle, color: "text-status-sold", sub: t("dash.kpi.pastDue") },
+    { label: t("dash.kpi.inventoryValue"), value: formatAccountingAggregate(stats.invValue), icon: Package, color: "text-chart-2", sub: `${stats.availableCount} ${t("dash.kpi.available")}` },
+    { label: t("dash.kpi.grossRevenue"), value: formatAccountingAggregate(stats.revenue), icon: TrendingUp, color: "text-chart-1", sub: t("dash.kpi.allSales") },
+    { label: t("dash.kpi.netProfit"), value: formatAccountingAggregate(stats.netProfit), icon: DollarSign, color: "text-chart-3", sub: t("dash.kpi.revenueMinusCost") },
+    { label: t("dash.kpi.activeDebts"), value: formatAccountingAggregate(stats.activeDebts), icon: Landmark, color: "text-status-reserved", sub: t("dash.kpi.outstanding") },
+    { label: t("dash.kpi.overdueDebts"), value: formatAccountingAggregate(stats.overdueDebts), icon: AlertTriangle, color: "text-status-sold", sub: t("dash.kpi.pastDue") },
     { label: t("dash.kpi.pendingShipments"), value: stats.pendingShipments.toString(), icon: Truck, color: "text-status-returned", sub: `${stats.inTransitShipments} ${t("dash.kpi.inTransit")} · ${stats.delayedShipments} ${t("dash.kpi.delayed")}` },
   ]
 
@@ -307,7 +347,7 @@ export function DashboardPage() {
                     <span className="truncate text-[10px] text-muted-foreground">{s.customerName}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold tabular-nums">{formatUSD(s.totalValuation?.accountingAmountUSD ?? s.totalNegotiated)}</span>
+                    <span className="text-xs font-bold tabular-nums">{formatInvoice(s, "totalNegotiated")}</span>
                     <Badge variant="outline" className={`h-4 px-1 text-[9px] ${invoiceStatusClass(s.status)}`}>{t(`status.${s.status}`)}</Badge>
                   </div>
                 </div>
@@ -375,7 +415,7 @@ export function DashboardPage() {
                     <span className="truncate text-[11px] font-medium">{i.customerName}</span>
                     <span className="font-mono text-[10px] text-muted-foreground">{i.invoiceNumber}</span>
                   </div>
-                  <span className="text-xs font-bold tabular-nums text-status-sold-fg">{formatUSD(i.totalValuation?.accountingAmountUSD ?? i.balance)}</span>
+                  <span className="text-xs font-bold tabular-nums text-status-sold-fg">{formatInvoice(i, "balance")}</span>
                 </div>
               )) : <span className="py-4 text-center text-xs text-muted-foreground">{t("dash.noOverdueDebts")}</span>}
             </div>
@@ -420,7 +460,10 @@ export function DashboardPage() {
                   <Activity className="size-3 text-muted-foreground" />
                 </div>
                 <div className="flex min-w-0 flex-col">
-                  <span className="truncate text-[11px] font-medium">{log.description}</span>
+                  <span className="truncate text-[11px] font-medium">
+                    {log.description}
+                    {auditCurrency(log.metadata) && <Badge variant="secondary" className="ms-1 h-4 px-1 text-[9px]">{auditCurrency(log.metadata)}</Badge>}
+                  </span>
                   <span className="text-[10px] text-muted-foreground">{formatDateTime(log.timestamp)}</span>
                 </div>
               </div>

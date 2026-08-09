@@ -14,9 +14,11 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { toast } from "sonner"
+import { useI18n } from "@/lib/i18n"
 
 export function MasterDataPanel() {
   const md = useDynamicMasterData()
+  const { t } = useI18n()
 
   const [newTypeName, setNewTypeName] = useState("")
   const [newSubtypeName, setNewSubtypeName] = useState("")
@@ -34,7 +36,7 @@ export function MasterDataPanel() {
     return (
       <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
         <Spinner className="size-4" />
-        <span className="text-xs">Loading master data…</span>
+        <span className="text-xs">{t("master.loading")}</span>
       </div>
     )
   }
@@ -45,7 +47,7 @@ export function MasterDataPanel() {
         <AlertCircle className="size-4 shrink-0" />
         {md.error}
         <Button size="sm" variant="outline" className="ml-auto h-7" onClick={md.refresh}>
-          <RefreshCw className="size-3.5" /> Retry
+          <RefreshCw className="size-3.5" /> {t("master.retry")}
         </Button>
       </div>
     )
@@ -56,14 +58,14 @@ export function MasterDataPanel() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Layers className="size-4 text-muted-foreground" />
-          <span className="text-sm font-semibold">Master Data</span>
+          <span className="text-sm font-semibold">{t("master.title")}</span>
         </div>
         <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={md.refresh}>
-          <RefreshCw className="size-3.5" /> Refresh
+          <RefreshCw className="size-3.5" /> {t("master.refresh")}
         </Button>
       </div>
       <p className="text-[11px] text-muted-foreground">
-        Manage weapon classification lookups, brands, models, and storage locations used across all intake and shipment forms.
+        {t("master.description")}
       </p>
       <Separator />
 
@@ -72,7 +74,7 @@ export function MasterDataPanel() {
         {/* ── Weapon Types ── */}
         <AccordionItem value="weapon-types" className="rounded-lg border px-3">
           <AccordionTrigger className="py-2 text-xs font-medium hover:no-underline">
-            Weapon Types
+            {t("master.weaponTypes")}
             <Badge variant="secondary" className="ml-auto mr-2 text-[10px]">{md.weaponTypes.length}</Badge>
           </AccordionTrigger>
           <AccordionContent className="pb-3">
@@ -80,7 +82,7 @@ export function MasterDataPanel() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/40">
-                    <TableHead className="h-7 text-[10px]">Label</TableHead>
+                    <TableHead className="h-7 text-[10px]">{t("master.label")}</TableHead>
                     <TableHead className="h-7 w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -97,7 +99,7 @@ export function MasterDataPanel() {
               </Table>
             </div>
             <AddRow
-              placeholder="New weapon type (e.g. Revolver)"
+              placeholder={t("master.newWeaponType")}
               value={newTypeName}
               onChange={setNewTypeName}
               onAdd={() => {
@@ -113,7 +115,7 @@ export function MasterDataPanel() {
         {/* ── Weapon Subtypes ── */}
         <AccordionItem value="weapon-subtypes" className="rounded-lg border px-3">
           <AccordionTrigger className="py-2 text-xs font-medium hover:no-underline">
-            Weapon Sub-Types
+            {t("master.weaponSubTypes")}
             <Badge variant="secondary" className="ml-auto mr-2 text-[10px]">{md.weaponSubtypes.length}</Badge>
           </AccordionTrigger>
           <AccordionContent className="pb-3">
@@ -121,8 +123,8 @@ export function MasterDataPanel() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/40">
-                    <TableHead className="h-7 text-[10px]">Parent Type</TableHead>
-                    <TableHead className="h-7 text-[10px]">Sub-Type</TableHead>
+                    <TableHead className="h-7 text-[10px]">{t("master.parentType")}</TableHead>
+                    <TableHead className="h-7 text-[10px]">{t("master.subType")}</TableHead>
                     <TableHead className="h-7 w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -145,7 +147,7 @@ export function MasterDataPanel() {
             <div className="mt-2 flex items-center gap-2">
               <Select value={newSubtypeParent} onValueChange={setNewSubtypeParent}>
                 <SelectTrigger className="h-7 w-36 text-[11px]">
-                  <SelectValue placeholder="Parent type" />
+                  <SelectValue placeholder={t("master.parentTypePlaceholder")} />
                 </SelectTrigger>
                 <SelectContent>
                   {md.weaponTypes.map(t => (
@@ -155,7 +157,7 @@ export function MasterDataPanel() {
               </Select>
               <Input
                 className="h-7 text-[11px] flex-1"
-                placeholder="Sub-type name"
+                placeholder={t("master.subTypePlaceholder")}
                 value={newSubtypeName}
                 onChange={(e) => setNewSubtypeName(e.target.value)}
                 onKeyDown={(e) => {
@@ -184,7 +186,7 @@ export function MasterDataPanel() {
         {/* ── Calibers ── */}
         <AccordionItem value="calibers" className="rounded-lg border px-3">
           <AccordionTrigger className="py-2 text-xs font-medium hover:no-underline">
-            Calibers
+            {t("master.calibers")}
             <Badge variant="secondary" className="ml-auto mr-2 text-[10px]">{md.calibers.length}</Badge>
           </AccordionTrigger>
           <AccordionContent className="pb-3">
@@ -192,7 +194,7 @@ export function MasterDataPanel() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/40">
-                    <TableHead className="h-7 text-[10px]">Caliber</TableHead>
+                    <TableHead className="h-7 text-[10px]">{t("master.caliber")}</TableHead>
                     <TableHead className="h-7 w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -209,7 +211,7 @@ export function MasterDataPanel() {
               </Table>
             </div>
             <AddRow
-              placeholder="New caliber (e.g. .45 ACP)"
+              placeholder={t("master.newCaliber")}
               value={newCaliberName}
               onChange={setNewCaliberName}
               onAdd={() => {
@@ -225,7 +227,7 @@ export function MasterDataPanel() {
         {/* ── Brands ── */}
         <AccordionItem value="brands" className="rounded-lg border px-3">
           <AccordionTrigger className="py-2 text-xs font-medium hover:no-underline">
-            Brands
+            {t("master.brands")}
             <Badge variant="secondary" className="ml-auto mr-2 text-[10px]">{md.brands.length}</Badge>
           </AccordionTrigger>
           <AccordionContent className="pb-3">
@@ -238,7 +240,7 @@ export function MasterDataPanel() {
               ))}
             </div>
             <AddRow
-              placeholder="New brand (e.g. Heckler & Koch)"
+              placeholder={t("master.newBrand")}
               value={newBrandName}
               onChange={setNewBrandName}
               onAdd={() => {
@@ -254,7 +256,7 @@ export function MasterDataPanel() {
         {/* ── Models ── */}
         <AccordionItem value="models" className="rounded-lg border px-3">
           <AccordionTrigger className="py-2 text-xs font-medium hover:no-underline">
-            Models
+            {t("master.models")}
             <Badge variant="secondary" className="ml-auto mr-2 text-[10px]">{md.models.length}</Badge>
           </AccordionTrigger>
           <AccordionContent className="pb-3">
@@ -262,8 +264,8 @@ export function MasterDataPanel() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/40">
-                    <TableHead className="h-7 text-[10px]">Model</TableHead>
-                    <TableHead className="h-7 text-[10px]">Brand</TableHead>
+                    <TableHead className="h-7 text-[10px]">{t("master.model")}</TableHead>
+                    <TableHead className="h-7 text-[10px]">{t("master.brand")}</TableHead>
                     <TableHead className="h-7 w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -273,7 +275,7 @@ export function MasterDataPanel() {
                     return (
                       <TableRow key={m.id}>
                         <TableCell className="py-1.5 text-[11px] font-medium">{m.label}</TableCell>
-                        <TableCell className="py-1.5 text-[11px] text-muted-foreground">{brand?.label ?? <span className="italic">unlinked</span>}</TableCell>
+                        <TableCell className="py-1.5 text-[11px] text-muted-foreground">{brand?.label ?? <span className="italic">{t("master.unlinked")}</span>}</TableCell>
                         <TableCell className="py-1.5">
                           <DeleteBtn onConfirm={() => md.deleteModel(m.id)} />
                         </TableCell>
@@ -282,7 +284,7 @@ export function MasterDataPanel() {
                   })}
                   {md.models.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={3} className="py-4 text-center text-[11px] text-muted-foreground italic">No models yet — add one below</TableCell>
+                      <TableCell colSpan={3} className="py-4 text-center text-[11px] text-muted-foreground italic">{t("master.noModels")}</TableCell>
                     </TableRow>
                   )}
                 </TableBody>
@@ -291,7 +293,7 @@ export function MasterDataPanel() {
             <div className="mt-2 flex items-center gap-2">
               <Select value={newModelBrand} onValueChange={setNewModelBrand}>
                 <SelectTrigger className="h-7 w-32 text-[11px]">
-                  <SelectValue placeholder="Brand (opt.)" />
+                  <SelectValue placeholder={t("master.brandOptional")} />
                 </SelectTrigger>
                 <SelectContent>
                   {md.brands.map(b => (
@@ -301,7 +303,7 @@ export function MasterDataPanel() {
               </Select>
               <Input
                 className="h-7 text-[11px] flex-1"
-                placeholder="Model name (e.g. G17)"
+                placeholder={t("master.modelPlaceholder")}
                 value={newModelName}
                 onChange={(e) => setNewModelName(e.target.value)}
                 onKeyDown={(e) => {
@@ -330,7 +332,7 @@ export function MasterDataPanel() {
         {/* ── Warehouses ── */}
         <AccordionItem value="warehouses" className="rounded-lg border px-3">
           <AccordionTrigger className="py-2 text-xs font-medium hover:no-underline">
-            Warehouses
+            {t("master.warehouses")}
             <Badge variant="secondary" className="ml-auto mr-2 text-[10px]">{md.warehouses.length}</Badge>
           </AccordionTrigger>
           <AccordionContent className="pb-3">
@@ -341,14 +343,14 @@ export function MasterDataPanel() {
                   <div key={w.id} className="flex items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-1">
                     <Database className="size-3 text-muted-foreground" />
                     <span className="text-[11px] font-medium">{w.label}</span>
-                    <Badge variant="outline" className="text-[9px]">{locCount} locations</Badge>
+                    <Badge variant="outline" className="text-[9px]">{locCount} {t("master.locations")}</Badge>
                     <DeleteBtn onConfirm={() => md.deleteWarehouse(w.id)} iconOnly />
                   </div>
                 )
               })}
             </div>
             <AddRow
-              placeholder="New warehouse (e.g. Vault)"
+              placeholder={t("master.newWarehouse")}
               value={newWarehouseName}
               onChange={setNewWarehouseName}
               onAdd={() => {
@@ -364,7 +366,7 @@ export function MasterDataPanel() {
         {/* ── Storage Locations ── */}
         <AccordionItem value="storage-locations" className="rounded-lg border px-3">
           <AccordionTrigger className="py-2 text-xs font-medium hover:no-underline">
-            Storage Locations
+            {t("master.storageLocations")}
             <Badge variant="secondary" className="ml-auto mr-2 text-[10px]">{md.storageLocations.length}</Badge>
           </AccordionTrigger>
           <AccordionContent className="pb-3">
@@ -372,9 +374,9 @@ export function MasterDataPanel() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/40">
-                    <TableHead className="h-7 text-[10px]">Warehouse</TableHead>
-                    <TableHead className="h-7 text-[10px]">Shelf</TableHead>
-                    <TableHead className="h-7 text-[10px]">Bin</TableHead>
+                    <TableHead className="h-7 text-[10px]">{t("master.warehouse")}</TableHead>
+                    <TableHead className="h-7 text-[10px]">{t("master.shelf")}</TableHead>
+                    <TableHead className="h-7 text-[10px]">{t("master.bin")}</TableHead>
                     <TableHead className="h-7 w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -394,7 +396,7 @@ export function MasterDataPanel() {
                   })}
                   {md.storageLocations.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={4} className="py-4 text-center text-[11px] text-muted-foreground italic">No locations yet</TableCell>
+                      <TableCell colSpan={4} className="py-4 text-center text-[11px] text-muted-foreground italic">{t("master.noLocations")}</TableCell>
                     </TableRow>
                   )}
                 </TableBody>
@@ -403,7 +405,7 @@ export function MasterDataPanel() {
             <div className="mt-2 flex items-center gap-2">
               <Select value={newLocWarehouse} onValueChange={setNewLocWarehouse}>
                 <SelectTrigger className="h-7 w-28 text-[11px]">
-                  <SelectValue placeholder="Warehouse" />
+                  <SelectValue placeholder={t("master.warehouse")} />
                 </SelectTrigger>
                 <SelectContent>
                   {md.warehouses.map(w => (
@@ -411,14 +413,14 @@ export function MasterDataPanel() {
                   ))}
                 </SelectContent>
               </Select>
-              <Input className="h-7 text-[11px] w-20" placeholder="Shelf" value={newLocShelf} onChange={(e) => setNewLocShelf(e.target.value)} />
-              <Input className="h-7 text-[11px] w-20" placeholder="Bin" value={newLocBin} onChange={(e) => setNewLocBin(e.target.value)} />
+              <Input className="h-7 text-[11px] w-20" placeholder={t("master.shelf")} value={newLocShelf} onChange={(e) => setNewLocShelf(e.target.value)} />
+              <Input className="h-7 text-[11px] w-20" placeholder={t("master.bin")} value={newLocBin} onChange={(e) => setNewLocBin(e.target.value)} />
               <Button
                 size="sm" className="h-7 shrink-0"
                 disabled={!newLocWarehouse || !newLocShelf.trim()}
                 onClick={() => {
                   md.createStorageLocation(newLocWarehouse, newLocShelf.trim(), newLocBin.trim())
-                  toast.success("Storage location added")
+                  toast.success(t("master.added", { item: t("master.storageLocations") }))
                   setNewLocShelf(""); setNewLocBin("")
                 }}
               >
@@ -456,6 +458,7 @@ function AddRow({ placeholder, value, onChange, onAdd }: {
 }
 
 function DeleteBtn({ onConfirm }: { onConfirm: () => void; iconOnly?: boolean }) {
+  const { t } = useI18n()
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
@@ -465,14 +468,14 @@ function DeleteBtn({ onConfirm }: { onConfirm: () => void; iconOnly?: boolean })
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle className="text-sm">Delete this entry?</AlertDialogTitle>
+          <AlertDialogTitle className="text-sm">{t("master.deleteTitle")}</AlertDialogTitle>
           <AlertDialogDescription className="text-xs">
-            This removes the lookup value permanently. Existing weapon records retain their current text — only future entries stop seeing it as a suggestion.
+            {t("master.deleteDescription")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel className="h-8 text-xs">Cancel</AlertDialogCancel>
-          <AlertDialogAction className="h-8 text-xs bg-destructive hover:bg-destructive/90" onClick={onConfirm}>Delete</AlertDialogAction>
+          <AlertDialogCancel className="h-8 text-xs">{t("common.cancel")}</AlertDialogCancel>
+          <AlertDialogAction className="h-8 text-xs bg-destructive hover:bg-destructive/90" onClick={onConfirm}>{t("common.delete")}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

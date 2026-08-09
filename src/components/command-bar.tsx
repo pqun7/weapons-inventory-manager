@@ -13,11 +13,13 @@ import { Package, Users, Receipt, Truck, Search, Pin } from "lucide-react"
 import { useNav } from "@/lib/nav"
 import { useStore } from "@/lib/store"
 import { useI18n } from "@/lib/i18n"
+import { useCurrency } from "@/lib/currency-context"
 import { useDebounce } from "@/hooks"
 
 export function CommandBar() {
   const { commandBarOpen, setCommandBarOpen, navigate, setSelectedWeaponId } = useNav()
   const { t } = useI18n()
+  const { formatInvoice } = useCurrency()
   const weapons = useStore((s) => s.weapons)
   const customers = useStore((s) => s.customers)
   const suppliers = useStore((s) => s.suppliers)
@@ -186,7 +188,7 @@ export function CommandBar() {
                 <Receipt className="size-4 text-muted-foreground" />
                 <div className="flex flex-col">
                   <span className="text-sm font-medium">{i.invoiceNumber}</span>
-                  <span className="text-xs text-muted-foreground">{i.customerName} — ${i.balance} bal.</span>
+                  <span className="text-xs text-muted-foreground">{i.customerName} — {formatInvoice(i, "balance")} bal.</span>
                 </div>
               </CommandItem>
             ))}

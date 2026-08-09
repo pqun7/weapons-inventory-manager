@@ -1,7 +1,9 @@
 import Decimal from "decimal.js"
+import { formatLocalizedCurrency } from "./currency-display.js"
 import {
   dbAddCurrency,
   dbGetCurrencies,
+  dbGetSettings,
   dbGetOverrides,
   dbGetRateAuditLog,
   dbRecordRateAuditLog,
@@ -43,6 +45,7 @@ export interface AuditLogEntry {
   changedBy: string | null
   changedAt: string
   reason: string | null
+  source?: RateSource
 }
 
 export type RateSource = "api" | "manual" | "cache" | "default"
@@ -53,16 +56,6 @@ interface CachedRate {
   fetchedAt: Date
 }
 
-const ACCOUNTING_CURRENCY = "USD"
-const FALLBACK_RATES: Record<string, number> = {
-  USD: 1,
-  SDG: 600,
-  SAR: 3.75,
-  AED: 3.67,
-  EUR: 0.92,
-  EGP: 48.5,
-}
-
 class CurrencyServiceClass {
   private currencies: Map<string, CurrencyInfo> = new Map()
   private overrides: Map<string, ExchangeRateOverride> = new Map()
@@ -70,9 +63,20 @@ class CurrencyServiceClass {
   private loaded = false
   private loadPromise: Promise<void> | null = null
   private listeners: Set<() => void> = new Set()
+  private accountingCurrencyCode = ""
 
   get accountingCurrency(): string {
-    return ACCOUNTING_CURRENCY
+    if (!this.accountingCurrencyCode) throw new Error("Accounting currency is not configured")
+    return this.accountingCurrencyCode
+  }
+
+  configureAccountingCurrency(code: string): void {
+    const normalized = code.trim().toUpperCase()
+    if (!/^[A-Z]{3}$/.test(normalized)) throw new Error("Accounting currency is not configured")
+    if (this.accountingCurrencyCode === normalized) return
+    this.accountingCurrencyCode = normalized
+    this.loaded = false
+    this.rateCache.clear()
   }
 
   get isLoaded(): boolean {
@@ -97,35 +101,29 @@ class CurrencyServiceClass {
     if (this.loaded) return
     if (this.loadPromise) return this.loadPromise
     this.loadPromise = this._doLoad()
-    await this.loadPromise
+    try {
+      await this.loadPromise
+    } finally {
+      this.loadPromise = null
+    }
   }
 
   private async _doLoad(): Promise<void> {
     try {
-      await Promise.all([this.loadCurrencies(), this.loadOverrides()])
+      const [, , settings] = await Promise.all([this.loadCurrencies(), this.loadOverrides(), dbGetSettings()])
+      const accountingCurrency = settings.accountingCurrencyCode?.trim().toUpperCase()
+      if (!accountingCurrency || !/^[A-Z]{3}$/.test(accountingCurrency)) {
+        throw new Error("Accounting currency is not configured")
+      }
+      const accountingDefinition = this.currencies.get(accountingCurrency)
+      if (!accountingDefinition?.isActive) throw new Error(`Accounting currency is unavailable: ${accountingCurrency}`)
+      this.accountingCurrencyCode = accountingCurrency
       this.loaded = true
     } catch (err) {
-      console.error("CurrencyService load failed, using fallbacks:", err)
-      this.loadFallbacks()
-      this.loaded = true
+      this.loaded = false
+      throw err
     }
     this.notify()
-  }
-
-  // ✅ تعديل: تفعيل USD, SAR, SDG فقط كوضع افتراضي عند استخدام القيم الاحتياطية
-  private loadFallbacks() {
-    const defaultActive = new Set(["USD", "SAR", "SDG"])
-    for (const [code, rate] of Object.entries(FALLBACK_RATES)) {
-      this.currencies.set(code, {
-        isoCode: code,
-        name: code,
-        symbol: code,
-        decimalPrecision: 2,
-        isActive: defaultActive.has(code), // USD, SAR, SDG مفعلة فقط
-        lastKnownRate: rate,
-        lastRateUpdatedAt: null,
-      })
-    }
   }
 
   private async loadCurrencies(): Promise<void> {
@@ -185,7 +183,7 @@ class CurrencyServiceClass {
   }
 
   getRate(currencyCode: string): number {
-    if (currencyCode === ACCOUNTING_CURRENCY) return 1
+    if (currencyCode === this.accountingCurrencyCode) return 1
     const override = this.overrides.get(currencyCode)
     if (override?.mode === "manual" && override.manualRate != null) {
       return override.manualRate
@@ -193,12 +191,14 @@ class CurrencyServiceClass {
     const cached = this.rateCache.get(currencyCode)
     if (cached) return cached.rate
     const currency = this.currencies.get(currencyCode)
-    if (currency && currency.lastKnownRate) return currency.lastKnownRate
-    return FALLBACK_RATES[currencyCode] ?? 1
+    if (currency && currency.isActive && Number.isFinite(currency.lastKnownRate) && currency.lastKnownRate > 0) {
+      return currency.lastKnownRate
+    }
+    throw new Error(`No valid exchange rate is available for ${currencyCode}`)
   }
 
   getRateSource(currencyCode: string): RateSource {
-    if (currencyCode === ACCOUNTING_CURRENCY) return "default"
+    if (currencyCode === this.accountingCurrencyCode) return "default"
     const override = this.overrides.get(currencyCode)
     if (override?.mode === "manual" && override.manualRate != null) return "manual"
     const cached = this.rateCache.get(currencyCode)
@@ -208,42 +208,37 @@ class CurrencyServiceClass {
     return "default"
   }
 
-  convertToUSD(amount: number, fromCurrency: string): number {
-    if (fromCurrency === ACCOUNTING_CURRENCY) return amount
+  convertToAccounting(amount: number, fromCurrency: string): number {
+    if (fromCurrency === this.accountingCurrencyCode) return amount
     const rate = this.getRate(fromCurrency)
-    if (rate === 0) return 0
+    if (!Number.isFinite(rate) || rate <= 0) throw new Error(`Invalid exchange rate for ${fromCurrency}`)
     const decAmount = new DecimalAny(amount)
     const decRate = new DecimalAny(rate)
     return decAmount.dividedBy(decRate).toNumber()
   }
 
-  convertFromUSD(usdAmount: number, toCurrency: string): number {
-    if (toCurrency === ACCOUNTING_CURRENCY) return usdAmount
+  convertFromAccounting(accountingAmount: number, toCurrency: string): number {
+    if (toCurrency === this.accountingCurrencyCode) return accountingAmount
     const rate = this.getRate(toCurrency)
-    const decUsd = new DecimalAny(usdAmount)
+    const decUsd = new DecimalAny(accountingAmount)
     const decRate = new DecimalAny(rate)
     return decUsd.times(decRate).toNumber()
   }
 
   convert(amount: number, fromCurrency: string, toCurrency: string): number {
-    const usd = this.convertToUSD(amount, fromCurrency)
-    return this.convertFromUSD(usd, toCurrency)
+    const accountingAmount = this.convertToAccounting(amount, fromCurrency)
+    return this.convertFromAccounting(accountingAmount, toCurrency)
   }
 
   format(amount: number, currencyCode: string, locale: string = "en-US"): string {
     const currency = this.currencies.get(currencyCode)
     const precision = currency?.decimalPrecision ?? 2
-    const formatted = new Intl.NumberFormat(locale, {
-      minimumFractionDigits: precision,
-      maximumFractionDigits: precision,
-    }).format(amount)
-    const symbol = currency?.symbol ?? currencyCode
-    return `${symbol} ${formatted}`
-  }
-
-  formatUSD(usdAmount: number, displayCurrency: string, locale: string = "en-US"): string {
-    const displayAmount = this.convertFromUSD(usdAmount, displayCurrency)
-    return this.format(displayAmount, displayCurrency, locale)
+    return formatLocalizedCurrency(
+      amount,
+      { isoCode: currencyCode, name: currency?.name, symbol: currency?.symbol },
+      locale,
+      precision,
+    )
   }
 
   roundAccounting(amount: number): number {
@@ -254,23 +249,6 @@ class CurrencyServiceClass {
     const currency = this.currencies.get(currencyCode)
     const precision = currency?.decimalPrecision ?? 2
     return new DecimalAny(amount).toDecimalPlaces(precision, DecimalAny.ROUND_HALF_UP).toNumber()
-  }
-
-  createValuation(originalAmount: number, originalCurrency: string): {
-    originalAmount: number
-    originalCurrency: string
-    exchangeRate: number
-    accountingAmountUSD: number
-    exchangeRateDate: string
-  } {
-    const rate = this.getRate(originalCurrency)
-    return {
-      originalAmount: this.roundAccounting(originalAmount),
-      originalCurrency,
-      exchangeRate: rate,
-      accountingAmountUSD: this.roundAccounting(this.convertToUSD(originalAmount, originalCurrency)),
-      exchangeRateDate: new Date().toISOString(),
-    }
   }
 
   async updateCurrencyRate(code: string, rate: number, source: RateSource = "api"): Promise<void> {
@@ -313,12 +291,13 @@ class CurrencyServiceClass {
     if (rate <= 0) {
       throw new Error("Rate must be greater than zero.")
     }
-    const oldRate = this.getRate(code)
     const now = new Date().toISOString()
     await dbSetManualOverride(code, rate, changedBy, reason, now)
-    await dbUpdateCurrencyRate(code, rate, now)
-    await dbRecordRateHistory(code, rate, "manual")
-    await dbRecordRateAuditLog(code, oldRate, rate, changedBy, reason, now)
+    const currency = this.currencies.get(code)
+    if (currency) {
+      currency.lastKnownRate = rate
+      currency.lastRateUpdatedAt = now
+    }
     this.overrides.set(code, {
       currencyCode: code,
       mode: "manual",
@@ -335,10 +314,8 @@ class CurrencyServiceClass {
     if (!userRole || userRole.toLowerCase() !== "admin") {
       throw new Error("Unauthorized: Administrator role required to modify currency rates.")
     }
-    const oldRate = this.getRate(code)
     const now = new Date().toISOString()
     await dbSetAutomaticMode(code, changedBy, now)
-    await dbRecordRateAuditLog(code, oldRate, null, changedBy, "Switched to automatic mode", now)
     this.overrides.set(code, {
       currencyCode: code,
       mode: "automatic",
@@ -409,8 +386,8 @@ class CurrencyServiceClass {
   }
 
   async deleteCurrency(code: string): Promise<void> {
-    if (code === ACCOUNTING_CURRENCY) {
-      throw new Error("Cannot delete the accounting currency (USD).")
+    if (code === this.accountingCurrencyCode) {
+      throw new Error(`Cannot delete the accounting currency (${this.accountingCurrencyCode}).`)
     }
     if (!this.currencies.has(code)) {
       throw new Error(`Currency ${code} does not exist.`)

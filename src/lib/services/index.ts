@@ -1,54 +1,6 @@
-import { useStore, type SaleInput, type BulkIntakeInput, type PaymentInput, type DueDateExtensionInput, type BulkShipmentCreateInput } from "../store"
-import type { ServiceResult, SaleResult, DebtResult, Weapon } from "../types"
+import { useStore, type BulkIntakeInput, type PaymentInput, type DueDateExtensionInput, type BulkShipmentCreateInput } from "../store"
+import type { ServiceResult, DebtResult } from "../types"
 import { ammoTotalRounds } from "../types"
-
-// ============ SaleService ============
-
-export const SaleService = {
-  validateSale(input: SaleInput): ServiceResult {
-    const store = useStore.getState()
-    if (input.weaponIds.length === 0 && input.lineItems.length === 0) {
-      return { success: false, error: "Select at least one weapon or item" }
-    }
-    for (const weaponId of input.weaponIds) {
-      const weapon = store.weapons.find((w) => w.id === weaponId)
-      if (!weapon) return { success: false, error: `Weapon ${weaponId} not found` }
-      if (weapon.status === "Sold") return { success: false, error: `Weapon ${weapon.serialNumber} is already sold` }
-      if (weapon.status === "Reserved") return { success: false, error: `Weapon ${weapon.serialNumber} is reserved` }
-    }
-    if (!input.customerId) return { success: false, error: "Customer is required" }
-    if (!input.invoiceNumber.trim()) return { success: false, error: "Invoice number is required" }
-    if (input.totalNegotiated <= 0) return { success: false, error: "Negotiated total must be greater than 0" }
-
-    const existingInvoice = store.invoices.find((i) => i.invoiceNumber === input.invoiceNumber)
-    if (existingInvoice) return { success: false, error: "Invoice number already exists" }
-
-    return { success: true }
-  },
-
-  validateProfitMargin(input: SaleInput): { valid: boolean; needsApproval: boolean; netProfit: number; marginPercent: number } {
-    const store = useStore.getState()
-    const weapons = input.weaponIds
-      .map((id) => store.weapons.find((w) => w.id === id))
-      .filter((w): w is Weapon => w !== undefined)
-    const totalCost = weapons.reduce((sum, w) => sum + w.purchasePrice, 0)
-    const netProfit = input.totalNegotiated - totalCost
-    const marginPercent = totalCost > 0 ? (netProfit / totalCost) * 100 : 100
-    const minMargin = store.settings.minProfitMarginPercent
-    return {
-      valid: marginPercent >= minMargin,
-      needsApproval: marginPercent < minMargin,
-      netProfit,
-      marginPercent,
-    }
-  },
-
-  async execute(input: SaleInput): Promise<SaleResult> {
-    const validation = this.validateSale(input)
-    if (!validation.success) return { success: false, error: validation.error }
-    return useStore.getState().completeSale(input)
-  },
-}
 
 // ============ InventoryService ============
 
@@ -168,8 +120,10 @@ export const DebtService = {
     if (!invoice) return { success: false, error: "Invoice not found" }
     if (invoice.voided) return { success: false, error: "Cannot pay a voided invoice" }
     if (invoice.balance <= 0) return { success: false, error: "Invoice is already fully paid" }
-    if (input.amount <= 0) return { success: false, error: "Payment amount must be greater than 0" }
-    if (input.amount > invoice.balance) return { success: false, error: "Amount paid cannot exceed the remaining balance" }
+    if (!Number.isFinite(input.amount) || input.amount <= 0) return { success: false, error: "Payment amount must be a finite number greater than 0" }
+    if (input.currency && !/^[A-Za-z]{3}$/.test(input.currency.trim())) return { success: false, error: "Payment currency must be a three-letter code" }
+    // Cross-currency overpayment checks are authoritative only after conversion
+    // in the backend payment transaction.
     return { success: true }
   },
 

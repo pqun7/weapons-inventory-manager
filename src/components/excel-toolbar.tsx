@@ -24,7 +24,7 @@ export function ExcelToolbar() {
   const handleExport = () => {
     const enabledSheets = sheets.filter((s) => s.enabled)
     if (enabledSheets.length === 0) {
-      toast.error("Select at least one sheet to export")
+      toast.error(t("excel.selectOneSheet"))
       return
     }
     exportExcelChecklist(enabledSheets)
@@ -59,7 +59,7 @@ export function ExcelToolbar() {
         </DialogTrigger>
         <DialogContent>
           <DialogHeader><DialogTitle className="text-sm flex items-center gap-2"><FileSpreadsheet className="size-4" /> {t("excel.exportData")}</DialogTitle></DialogHeader>
-          <DialogDescription className="text-xs">Select sheets to include in the export</DialogDescription>
+          <DialogDescription className="text-xs">{t("excel.selectSheets")}</DialogDescription>
           <div className="grid gap-2">
             {sheets.map((s) => (
               <div key={s.key} className="flex items-center gap-2 rounded-md border p-2">
@@ -86,19 +86,19 @@ export function ExcelToolbar() {
             <div className="flex flex-col gap-3">
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-md border p-2">
-                  <span className="text-[10px] text-muted-foreground">Total Rows</span>
+                  <span className="text-[10px] text-muted-foreground">{t("excel.totalRows")}</span>
                   <div className="text-lg font-bold">{importPreview.totalRows}</div>
                 </div>
                 <div className="rounded-md border p-2">
-                  <span className="text-[10px] text-muted-foreground">New Weapons</span>
+                  <span className="text-[10px] text-muted-foreground">{t("excel.newWeapons")}</span>
                   <div className="text-lg font-bold text-status-returned">{importPreview.newWeapons}</div>
                 </div>
                 <div className="rounded-md border p-2">
-                  <span className="text-[10px] text-muted-foreground">New Invoices</span>
+                  <span className="text-[10px] text-muted-foreground">{t("excel.newInvoices")}</span>
                   <div className="text-lg font-bold text-status-returned">{importPreview.newInvoices}</div>
                 </div>
                 <div className="rounded-md border p-2">
-                  <span className="text-[10px] text-muted-foreground">Duplicates</span>
+                  <span className="text-[10px] text-muted-foreground">{t("excel.duplicates")}</span>
                   <div className="text-lg font-bold text-status-sold">{importPreview.duplicateSerials.length + importPreview.duplicateInvoices.length}</div>
                 </div>
               </div>
@@ -107,11 +107,11 @@ export function ExcelToolbar() {
                 <div className="flex items-start gap-2 rounded-md border border-status-reserved/30 bg-status-reserved/10 p-2">
                   <AlertTriangle className="size-4 shrink-0 text-status-reserved" />
                   <div className="flex flex-col">
-                    <span className="text-xs font-medium">Conflicts detected</span>
+                    <span className="text-xs font-medium">{t("excel.conflicts")}</span>
                     {importPreview.conflicts.map((c, i) => <span key={i} className="text-[10px] text-muted-foreground">{c}</span>)}
                     {importPreview.duplicateSerials.length > 0 && (
                       <span className="text-[10px] text-muted-foreground mt-1">
-                        Duplicate serials: {importPreview.duplicateSerials.slice(0, 3).join(", ")}{importPreview.duplicateSerials.length > 3 ? "..." : ""}
+                        {t("excel.duplicateSerials")}: {importPreview.duplicateSerials.slice(0, 3).join(", ")}{importPreview.duplicateSerials.length > 3 ? "..." : ""}
                       </span>
                     )}
                   </div>
@@ -119,12 +119,12 @@ export function ExcelToolbar() {
               ) : (
                 <div className="flex items-start gap-2 rounded-md border border-status-returned/30 bg-status-returned/10 p-2">
                   <CheckCircle2 className="size-4 shrink-0 text-status-returned" />
-                  <span className="text-xs font-medium">No conflicts detected — all records are valid</span>
+                  <span className="text-xs font-medium">{t("excel.noConflicts")}</span>
                 </div>
               )}
 
               <div className="text-[10px] text-muted-foreground">
-                Note: Import validation only analyzes conflicts. Actual data import requires the JSON Snapshot restore.
+                {t("excel.validationNote")}
               </div>
             </div>
           )}

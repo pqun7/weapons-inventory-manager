@@ -10,6 +10,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { AlertTriangle, Info, Trash2 } from "lucide-react"
+import { useI18n } from "@/lib/i18n"
 
 type ConfirmVariant = "default" | "destructive" | "warning"
 
@@ -37,11 +38,12 @@ export function ConfirmDialog({
   title,
   description,
   impactSummary,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
   variant = "default",
   onConfirm,
 }: ConfirmDialogProps) {
+  const { t } = useI18n()
   const cfg = variantConfig[variant]
   const Icon = cfg.icon
 
@@ -57,7 +59,7 @@ export function ConfirmDialog({
         </AlertDialogHeader>
         {impactSummary && impactSummary.length > 0 && (
           <div className="rounded-md border bg-muted/50 p-2.5">
-            <p className="mb-1 text-[10px] font-medium text-muted-foreground">Impact Summary:</p>
+            <p className="mb-1 text-[10px] font-medium text-muted-foreground">{t("common.impactSummary")}:</p>
             <ul className="flex flex-col gap-0.5">
               {impactSummary.map((item, i) => (
                 <li key={i} className="flex items-start gap-1.5 text-[11px]">
@@ -69,12 +71,12 @@ export function ConfirmDialog({
           </div>
         )}
         <AlertDialogFooter>
-          <AlertDialogCancel className="h-8 text-xs">{cancelLabel}</AlertDialogCancel>
+          <AlertDialogCancel className="h-8 text-xs">{cancelLabel ?? t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction
             className={cn("h-8 text-xs", cfg.buttonClass)}
             onClick={(e) => { e.preventDefault(); onConfirm() }}
           >
-            {confirmLabel}
+            {confirmLabel ?? t("common.confirm")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

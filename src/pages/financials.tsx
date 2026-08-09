@@ -21,33 +21,38 @@ import { useCurrency } from "@/lib/currency-context"
 import { DebtService } from "@/lib/services"
 import { cn } from "@/lib/utils"
 import {
-  formatCurrency, formatDate, formatDateShort, daysUntilDue, invoiceStatusClass, debtLifecycleIcon,
+  formatDate, formatDateShort, daysUntilDue, invoiceStatusClass, debtLifecycleIcon,
 } from "@/lib/format"
 import type { Invoice, PaymentMethod, SavedFilter } from "@/lib/types"
 import { toast } from "sonner"
+import { invoiceAccountingAmount, sumMoney, type InvoiceMoneyField } from "@/lib/money-ui"
 
 type QuickFilter = "all" | "overdue" | "not-overdue"
 
-const PAYMENT_METHODS: PaymentMethod[] = ["Cash", "Card", "Bank Transfer", "Check", "Other"]
+const PAYMENT_METHODS: PaymentMethod[] = ["cash", "card", "bank_transfer", "check", "other"]
 
 const paymentMethodKey: Record<PaymentMethod, string> = {
-  "Cash": "fin.cash",
-  "Card": "fin.card",
-  "Bank Transfer": "fin.transfer",
-  "Check": "fin.transfer",
-  "Other": "fin.credit",
+  "cash": "fin.cash",
+  "card": "fin.card",
+  "bank_transfer": "fin.transfer",
+  "check": "fin.transfer",
+  "other": "fin.credit",
 }
 
 export function FinancialsPage() {
   const { t } = useI18n()
   const invoices = useStore((s) => s.invoices)
   const payments = useStore((s) => s.payments)
-  const settings = useStore((s) => s.settings)
   const voidInvoice = useStore((s) => s.voidInvoice)
+  const refreshFromDb = useStore((s) => s.refreshFromDb)
   const getCurrentUser = useStore((s) => s.getCurrentUser)
   const currentUser = getCurrentUser()
   const { financialFilter, setFinancialFilter } = useNav()
-  const { reportViewMode, setReportViewMode, format: formatUSD, formatOriginal, displayCurrency } = useCurrency()
+  const {
+    reportViewMode, setReportViewMode, displayCurrency, currencies,
+    transactionCurrency, accountingCurrency, formatInvoice, formatPayment,
+    formatOriginal, formatAccountingAggregate, currencyPresentation,
+  } = useCurrency()
 
   const [tab, setTab] = useState<"receivable" | "payable">("receivable")
   const [search, setSearch] = useState("")
@@ -58,27 +63,36 @@ export function FinancialsPage() {
 
   // Payment form
   const [payAmount, setPayAmount] = useState("")
-  const [payMethod, setPayMethod] = useState<PaymentMethod>("Cash")
+  const [payMethod, setPayMethod] = useState<PaymentMethod>("cash")
   const [payNotes, setPayNotes] = useState("")
+  const [payCurrency, setPayCurrency] = useState(transactionCurrency)
 
   // Extend form
   const [newDueDate, setNewDueDate] = useState("")
   const [extendReason, setExtendReason] = useState("")
 
-  const fmtAmount = useCallback((invoice: Invoice, amount: number): string => {
-    if (reportViewMode === "original" && invoice.totalValuation) {
-      return formatOriginal(amount, invoice.totalValuation.originalCurrency)
-    }
-    return formatUSD(invoice.totalValuation?.accountingAmountUSD ?? amount)
-  }, [reportViewMode, formatUSD, formatOriginal])
+  useEffect(() => {
+    void refreshFromDb()
+  }, [refreshFromDb])
+
+  const fmtAmount = useCallback((invoice: Invoice, field: InvoiceMoneyField): string => {
+    return formatInvoice(invoice, field, reportViewMode)
+  }, [formatInvoice, reportViewMode])
+
+  const formatReportAggregate = useCallback((amount: number): string => {
+    return formatAccountingAggregate(amount, reportViewMode)
+  }, [formatAccountingAggregate, reportViewMode])
 
   // Reset forms when selected invoice changes
   useEffect(() => {
     setPayAmount("")
     setPayNotes("")
+    const invoice = invoices.find((item) => item.id === selectedInvoiceId)
+    const invoiceCurrency = invoice?.currency
+    setPayCurrency(currencies.some((item) => item.isoCode === invoiceCurrency) ? invoiceCurrency! : transactionCurrency)
     setNewDueDate("")
     setExtendReason("")
-  }, [selectedInvoiceId])
+  }, [selectedInvoiceId, invoices, currencies, transactionCurrency])
 
   useEffect(() => {
     setQuickFilterState(financialFilter === "overdue" ? "overdue" : "all")
@@ -113,9 +127,8 @@ export function FinancialsPage() {
   const totals = useMemo(() => {
     const active = filteredInvoices.filter((i) => i.balance > 0)
     const overdue = filteredInvoices.filter((i) => i.status === "Overdue")
-    const toUSD = (i: Invoice, val: number) => i.totalValuation?.accountingAmountUSD ?? val
-    const grandBalance = active.reduce((s, i) => s + toUSD(i, i.balance), 0)
-    const overdueTotal = overdue.reduce((s, i) => s + toUSD(i, i.balance), 0)
+    const grandBalance = sumMoney(active.map((invoice) => invoiceAccountingAmount(invoice, "balance")))
+    const overdueTotal = sumMoney(overdue.map((invoice) => invoiceAccountingAmount(invoice, "balance")))
     return { grandBalance, overdueTotal, count: active.length }
   }, [filteredInvoices])
 
@@ -152,12 +165,15 @@ export function FinancialsPage() {
     const result = await DebtService.registerPayment({
       invoiceId: selectedInvoiceId,
       amount,
+      currency: payCurrency,
       method: payMethod,
       notes: payNotes,
     })
     if (result.success) {
-      toast.success(`${t("toast.paymentRegistered")} — ${t("fin.balance")}: ${formatCurrency(result.newBalance ?? 0, settings.currencySymbol)}`)
+      const invoiceCurrency = selectedInvoice?.currency ?? transactionCurrency
+      toast.success(`${t("toast.paymentRegistered")} — ${t("fin.balance")}: ${formatOriginal(result.newBalance ?? 0, invoiceCurrency)}`)
       setPayOpen(false)
+      await refreshFromDb()
     } else {
       toast.error(result.error)
     }
@@ -176,6 +192,7 @@ export function FinancialsPage() {
     if (result.success) {
       toast.success(t("toast.dueDateExtended"))
       setExtendOpen(false)
+      await refreshFromDb()
     } else {
       toast.error(result.error)
     }
@@ -188,6 +205,7 @@ export function FinancialsPage() {
       toast.success(t("toast.invoiceVoided"))
       setVoidConfirmOpen(false)
       setSelectedInvoiceId(null)
+      await refreshFromDb()
     } else {
       toast.error(result.error)
     }
@@ -196,7 +214,7 @@ export function FinancialsPage() {
   const quickFilterChips: { key: QuickFilter; label: string }[] = [
     { key: "all", label: t("fin.allInvoices") },
     { key: "overdue", label: t("fin.overdue") },
-    { key: "not-overdue", label: t("status.Overdue") },
+    { key: "not-overdue", label: t("status.NotOverdue") },
   ]
 
   return (
@@ -249,16 +267,16 @@ export function FinancialsPage() {
           <FinancialGrid
             invoices={filteredInvoices} selectedInvoiceId={selectedInvoiceId}
             onSelect={setSelectedInvoiceId} search={search} setSearch={setSearch}
-            totals={totals} t={t} fmtAmount={fmtAmount} reportViewMode={reportViewMode}
-            formatUSD={formatUSD}
+            totals={totals} t={t} fmtAmount={fmtAmount}
+            formatAccountingAggregate={formatReportAggregate}
           />
         </TabsContent>
         <TabsContent value="payable">
           <FinancialGrid
             invoices={filteredInvoices} selectedInvoiceId={selectedInvoiceId}
             onSelect={setSelectedInvoiceId} search={search} setSearch={setSearch}
-            totals={totals} t={t} fmtAmount={fmtAmount} reportViewMode={reportViewMode}
-            formatUSD={formatUSD}
+            totals={totals} t={t} fmtAmount={fmtAmount}
+            formatAccountingAggregate={formatReportAggregate}
           />
         </TabsContent>
       </Tabs>
@@ -283,10 +301,10 @@ export function FinancialsPage() {
 
               {/* Financial Summary Cards */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <StatBox label={t("fin.total")} value={fmtAmount(selectedInvoice, selectedInvoice.totalOriginal)} />
-                <StatBox label={t("fin.invoiceType")} value={fmtAmount(selectedInvoice, selectedInvoice.totalNegotiated)} />
-                <StatBox label={t("fin.paid")} value={fmtAmount(selectedInvoice, selectedInvoice.totalPaid)} color="text-status-returned" />
-                <StatBox label={t("fin.balance")} value={fmtAmount(selectedInvoice, selectedInvoice.balance)} color={selectedInvoice.balance > 0 ? "text-status-sold" : "text-status-returned"} />
+                <StatBox label={t("fin.total")} value={fmtAmount(selectedInvoice, "totalOriginal")} />
+                <StatBox label={t("fin.invoiceType")} value={fmtAmount(selectedInvoice, "totalNegotiated")} />
+                <StatBox label={t("fin.paid")} value={fmtAmount(selectedInvoice, "totalPaid")} color="text-status-returned" />
+                <StatBox label={t("fin.balance")} value={fmtAmount(selectedInvoice, "balance")} color={selectedInvoice.balance > 0 ? "text-status-sold" : "text-status-returned"} />
               </div>
 
               {/* Due Date & Lifecycle */}
@@ -321,7 +339,7 @@ export function FinancialsPage() {
                     icon={<Receipt className="size-3" />}
                     label={t("fin.invoiceNumber")}
                     date={selectedInvoice.date}
-                    detail={`${fmtAmount(selectedInvoice, selectedInvoice.totalNegotiated)}`}
+                    detail={fmtAmount(selectedInvoice, "totalNegotiated")}
                   />
                   {invoicePayments.map((p) => (
                     <TimelineEntry
@@ -329,7 +347,7 @@ export function FinancialsPage() {
                       icon={<DollarSign className="size-3" />}
                       label={`${t("fin.registerPayment")} (${t(paymentMethodKey[p.method])})`}
                       date={p.date}
-                      detail={`${fmtAmount(selectedInvoice, p.amount)} — ${p.employee}`}
+                      detail={`${formatPayment(p, "original")} → ${formatPayment(p, "accounting")} — ${p.employee}`}
                     />
                   ))}
                   {selectedInvoice.status === "Paid" && (
@@ -365,7 +383,14 @@ export function FinancialsPage() {
                         {invoicePayments.map((p) => (
                           <TableRow key={p.id}>
                             <TableCell className="py-1 text-[10px]">{formatDateShort(p.date)}</TableCell>
-                            <TableCell className="py-1 text-[10px] font-medium tabular-nums">{fmtAmount(selectedInvoice, p.amount)}</TableCell>
+                            <TableCell className="py-1 text-[10px] font-medium tabular-nums">
+                              <div>{formatPayment(p, "original")}</div>
+                              {p.currency !== p.accountingCurrency && (
+                                <div className="text-[9px] font-normal text-muted-foreground">
+                                  ≈ {formatPayment(p, "accounting")} · rate {p.exchangeRate} · {p.exchangeRateDate ? formatDateShort(p.exchangeRateDate) : "—"}
+                                </div>
+                              )}
+                            </TableCell>
                             <TableCell className="py-1 text-[10px]">{t(paymentMethodKey[p.method])}</TableCell>
                             <TableCell className="py-1 text-[10px]">{p.employee}</TableCell>
                             <TableCell className="py-1 text-[10px] text-muted-foreground">{p.notes}</TableCell>
@@ -414,13 +439,31 @@ export function FinancialsPage() {
           <DialogHeader>
             <DialogTitle className="text-sm">{t("fin.registerPayment")}</DialogTitle>
             <DialogDescription className="text-xs">
-              {selectedInvoice ? `${t("fin.invoiceNumber")}: ${selectedInvoice.invoiceNumber} — ${t("fin.balance")}: ${fmtAmount(selectedInvoice, selectedInvoice.balance)}` : ''}
+              {selectedInvoice ? `${t("fin.invoiceNumber")}: ${selectedInvoice.invoiceNumber} — ${t("fin.balance")}: ${fmtAmount(selectedInvoice, "balance")}` : ''}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
             <div>
-              <Label className="text-xs">{t("fin.paymentAmount")} ({t("fin.balance")}: {selectedInvoice ? fmtAmount(selectedInvoice, selectedInvoice.balance) : ''})</Label>
-              <Input type="number" max={selectedInvoice?.balance} value={payAmount} onChange={(e) => setPayAmount(e.target.value)} className="h-8 text-xs" />
+              <Label className="text-xs">{t("fin.paymentAmount")} ({payCurrency})</Label>
+              <Input type="number" min="0" step="any" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} className="h-8 text-xs" />
+              {selectedInvoice && (
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  {t("fin.balance")}: {fmtAmount(selectedInvoice, "balance")} · {t("report.accountingCurrency")}: {accountingCurrency}
+                </p>
+              )}
+            </div>
+            <div>
+              <Label className="text-xs">{t("settings.currency")}</Label>
+              <Select value={payCurrency} onValueChange={setPayCurrency}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {currencies.map((currency) => (
+                    <SelectItem key={currency.isoCode} value={currency.isoCode}>
+                      {currency.isoCode} — {currencyPresentation(currency.isoCode).name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label className="text-xs">{t("fin.paymentMethod")}</Label>
@@ -491,18 +534,17 @@ export function FinancialsPage() {
 }
 
 function FinancialGrid({
-  invoices, selectedInvoiceId, onSelect, search, setSearch, totals, t, fmtAmount, reportViewMode, formatUSD,
+  invoices, selectedInvoiceId, onSelect, search, setSearch, totals, t, fmtAmount, formatAccountingAggregate,
 }: {
   invoices: Invoice[]; selectedInvoiceId: string | null; onSelect: (id: string) => void
   search: string; setSearch: (v: string) => void
   totals: { grandBalance: number; overdueTotal: number; count: number }
   t: (key: string, params?: Record<string, string | number>) => string
-  fmtAmount: (invoice: Invoice, amount: number) => string
-  reportViewMode: string
-  formatUSD: (usdAmount: number) => string
+  fmtAmount: (invoice: Invoice, field: InvoiceMoneyField) => string
+  formatAccountingAggregate: (accountingAmount: number) => string
 }) {
-  const grandBalanceDisplay = reportViewMode === "display" ? formatUSD(totals.grandBalance) : reportViewMode === "accounting" ? formatUSD(totals.grandBalance) : formatUSD(totals.grandBalance)
-  const overdueDisplay = reportViewMode === "display" ? formatUSD(totals.overdueTotal) : reportViewMode === "accounting" ? formatUSD(totals.overdueTotal) : formatUSD(totals.overdueTotal)
+  const grandBalanceDisplay = formatAccountingAggregate(totals.grandBalance)
+  const overdueDisplay = formatAccountingAggregate(totals.overdueTotal)
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
@@ -546,9 +588,9 @@ function FinancialGrid({
                     <TableCell className={cn("py-1.5 text-[10px]", isOverdue && "text-status-sold font-medium")}>{i.customerName}</TableCell>
                     <TableCell className="py-1.5 text-[10px] text-muted-foreground">{formatDateShort(i.date)}</TableCell>
                     <TableCell className="py-1.5 text-[10px] text-muted-foreground">{formatDateShort(i.dueDate)}</TableCell>
-                    <TableCell className="py-1.5 text-end text-[10px] tabular-nums">{fmtAmount(i, i.totalNegotiated)}</TableCell>
-                    <TableCell className="py-1.5 text-end text-[10px] tabular-nums">{fmtAmount(i, i.totalPaid)}</TableCell>
-                    <TableCell className={cn("py-1.5 text-end text-[10px] font-medium tabular-nums", isOverdue && "text-status-sold")}>{fmtAmount(i, i.balance)}</TableCell>
+                    <TableCell className="py-1.5 text-end text-[10px] tabular-nums">{fmtAmount(i, "totalNegotiated")}</TableCell>
+                    <TableCell className="py-1.5 text-end text-[10px] tabular-nums">{fmtAmount(i, "totalPaid")}</TableCell>
+                    <TableCell className={cn("py-1.5 text-end text-[10px] font-medium tabular-nums", isOverdue && "text-status-sold")}>{fmtAmount(i, "balance")}</TableCell>
                     <TableCell className="py-1.5">
                       <Badge variant="outline" className={cn("text-[9px]", invoiceStatusClass(i.status), isOverdue && "text-status-sold")}>{t(`status.${i.status}`)}</Badge>
                     </TableCell>

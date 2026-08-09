@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Search, Plus, Building2, Phone, Mail, MapPin, Package, Truck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,9 +9,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Separator } from "@/components/ui/separator"
 import { useStore } from "@/lib/store"
-import { DebtService } from "@/lib/services"
 import { useNav } from "@/lib/nav"
-import { formatCurrency, formatDate } from "@/lib/format"
+import { useCurrency } from "@/lib/currency-context"
+import { invoiceAccountingAmount, sumMoney, valuationAccountingAmount } from "@/lib/money-ui"
+import { formatDate } from "@/lib/format"
 import { toast } from "sonner"
 import { useI18n } from "@/lib/i18n"
 
@@ -20,8 +21,10 @@ export function SuppliersPage() {
   const suppliers = useStore((s) => s.suppliers)
   const weapons = useStore((s) => s.weapons)
   const shipments = useStore((s) => s.shipments)
+  const invoices = useStore((s) => s.invoices)
   const addSupplier = useStore((s) => s.addSupplier)
-  const settings = useStore((s) => s.settings)
+  const refreshFromDb = useStore((s) => s.refreshFromDb)
+  const { formatAccountingAggregate, formatValuation } = useCurrency()
   const { navigate } = useNav()
 
   const [search, setSearch] = useState("")
@@ -33,15 +36,43 @@ export function SuppliersPage() {
   const [newEmail, setNewEmail] = useState("")
   const [newAddress, setNewAddress] = useState("")
 
+  useEffect(() => {
+    void refreshFromDb()
+  }, [refreshFromDb])
+
   const enriched = useMemo(() => {
-    return suppliers.map((s) => {
-      const summary = DebtService.getSupplierDebtSummary(s.id)
-      const supplied = weapons.filter((w) => w.supplierId === s.id)
-      const totalValue = supplied.reduce((sum, w) => sum + w.purchasePrice, 0)
-      const supShipments = shipments.filter((sh) => sh.supplierId === s.id)
-      return { ...s, ...summary, weaponCount: supplied.length, supplyValue: totalValue, shipmentCount: supShipments.length }
+    const weaponCounts = new Map<string, number>()
+    const supplyValues = new Map<string, number>()
+    for (const weapon of weapons) {
+      if (!weapon.supplierId) continue
+      weaponCounts.set(weapon.supplierId, (weaponCounts.get(weapon.supplierId) ?? 0) + 1)
+      supplyValues.set(weapon.supplierId, sumMoney([
+        supplyValues.get(weapon.supplierId),
+        valuationAccountingAmount(weapon.purchasePriceValuation, weapon.purchasePrice),
+      ]))
+    }
+    const shipmentCounts = new Map<string, number>()
+    for (const shipment of shipments) shipmentCounts.set(shipment.supplierId, (shipmentCounts.get(shipment.supplierId) ?? 0) + 1)
+    const debtBySupplier = new Map<string, { grandTotalOutstanding: number; totalOverdueBalance: number }>()
+    for (const invoice of invoices) {
+      if (invoice.type !== "Purchase" || invoice.voided || !invoice.supplierId) continue
+      const current = debtBySupplier.get(invoice.supplierId) ?? { grandTotalOutstanding: 0, totalOverdueBalance: 0 }
+      if (invoice.balance > 0) current.grandTotalOutstanding = sumMoney([current.grandTotalOutstanding, invoiceAccountingAmount(invoice, "balance")])
+      if (invoice.status === "Overdue") current.totalOverdueBalance = sumMoney([current.totalOverdueBalance, invoiceAccountingAmount(invoice, "balance")])
+      debtBySupplier.set(invoice.supplierId, current)
+    }
+    return suppliers.map((supplier) => {
+      const debt = debtBySupplier.get(supplier.id)
+      return {
+        ...supplier,
+        grandTotalOutstanding: debt?.grandTotalOutstanding ?? 0,
+        totalOverdueBalance: debt?.totalOverdueBalance ?? 0,
+        weaponCount: weaponCounts.get(supplier.id) ?? 0,
+        supplyValue: supplyValues.get(supplier.id) ?? 0,
+        shipmentCount: shipmentCounts.get(supplier.id) ?? 0,
+      }
     })
-  }, [suppliers, weapons, shipments])
+  }, [suppliers, weapons, shipments, invoices])
 
   const filtered = useMemo(() => {
     if (!search) return enriched
@@ -53,9 +84,20 @@ export function SuppliersPage() {
   const selectedShipments = selectedId ? shipments.filter((sh) => sh.supplierId === selectedId) : []
   const selectedWeapons = selectedId ? weapons.filter((w) => w.supplierId === selectedId).slice(0, 10) : []
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!newName.trim()) { toast.error(t("sup.name")); return }
-    addSupplier({ name: newName.trim(), contactPerson: newContact.trim(), phone: newPhone.trim(), email: newEmail.trim(), address: newAddress.trim() })
+    const result = await addSupplier({
+      name: newName.trim(),
+      contactPerson: newContact.trim(),
+      phone: newPhone.trim(),
+      email: newEmail.trim(),
+      address: newAddress.trim(),
+    })
+    if (!result.success) {
+      toast.error(result.error ?? "Failed to add supplier")
+      return
+    }
+    await refreshFromDb()
     toast.success(t("toast.supplierAdded"))
     setNewName(""); setNewContact(""); setNewPhone(""); setNewEmail(""); setNewAddress("")
     setAddOpen(false)
@@ -99,7 +141,7 @@ export function SuppliersPage() {
                       <div className="flex flex-col"><span className="text-xs font-medium">{s.name}</span><span className="text-[10px] text-muted-foreground">{s.id}</span></div>
                     </TableCell>
                     <TableCell className="py-1.5 text-end text-xs tabular-nums">{s.weaponCount}</TableCell>
-                    <TableCell className="py-1.5 text-end text-xs tabular-nums text-muted-foreground">{formatCurrency(s.supplyValue, settings.currencySymbol)}</TableCell>
+                    <TableCell className="py-1.5 text-end text-xs tabular-nums text-muted-foreground">{formatAccountingAggregate(s.supplyValue)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -117,9 +159,9 @@ export function SuppliersPage() {
               <CardContent className="flex flex-col gap-3">
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <Box label={t("settings.weapons")} value={selected.weaponCount.toString()} />
-                  <Box label={t("common.total")} value={formatCurrency(selected.supplyValue, settings.currencySymbol)} />
+                  <Box label={t("common.total")} value={formatAccountingAggregate(selected.supplyValue)} />
                   <Box label={t("sup.totalOrders")} value={selected.shipmentCount.toString()} />
-                  <Box label={t("fin.totalOutstanding")} value={formatCurrency(selected.grandTotalOutstanding, settings.currencySymbol)} color={selected.grandTotalOutstanding > 0 ? "text-status-sold" : ""} />
+                  <Box label={t("fin.totalOutstanding")} value={formatAccountingAggregate(selected.grandTotalOutstanding)} color={selected.grandTotalOutstanding > 0 ? "text-status-sold" : ""} />
                 </div>
                 <Separator />
                 <div className="grid gap-1.5 text-xs">
@@ -150,7 +192,7 @@ export function SuppliersPage() {
                       <TableHeader><TableRow className="bg-muted/50"><TableHead className="h-7 text-[10px]">{t("weapon.serial")}</TableHead><TableHead className="h-7 text-[10px]">{t("weapon.brand")}</TableHead><TableHead className="h-7 text-[10px] text-end">{t("common.purchasePrice")}</TableHead></TableRow></TableHeader>
                       <TableBody>
                         {selectedWeapons.map((w) => (
-                          <TableRow key={w.id}><TableCell className="py-1 font-mono text-[10px]">{w.serialNumber}</TableCell><TableCell className="py-1 text-[10px]">{w.brand} {w.model}</TableCell><TableCell className="py-1 text-end text-[10px] tabular-nums">{formatCurrency(w.purchasePrice, settings.currencySymbol)}</TableCell></TableRow>
+                          <TableRow key={w.id}><TableCell className="py-1 font-mono text-[10px]">{w.serialNumber}</TableCell><TableCell className="py-1 text-[10px]">{w.brand} {w.model}</TableCell><TableCell className="py-1 text-end text-[10px] tabular-nums">{formatValuation(w.purchasePriceValuation, "display", w.purchasePrice)}</TableCell></TableRow>
                         ))}
                       </TableBody>
                     </Table>

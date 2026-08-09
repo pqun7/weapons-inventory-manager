@@ -14,8 +14,9 @@ import { Package, History, Receipt, ImageIcon, StickyNote, Upload, Truck } from 
 import { useStore } from "@/lib/store"
 import { useNav } from "@/lib/nav"
 import { useI18n } from "@/lib/i18n"
+import { useCurrency } from "@/lib/currency-context"
 import {
-  formatCurrency, formatDate, formatDateTime, statusBadgeClass, statusDotClass,
+  formatDate, formatDateTime, statusBadgeClass, statusDotClass,
 } from "@/lib/format"
 import type { WeaponStatus } from "@/lib/types"
 import { toast } from "sonner"
@@ -31,7 +32,7 @@ export const WeaponDetailPanel = memo(function WeaponDetailPanel({
   const updateWeaponNotes = useStore((s) => s.updateWeaponNotes)
   const addWeaponImage = useStore((s) => s.addWeaponImage)
   const bindWeaponToShipment = useStore((s) => s.bindWeaponToShipment)
-  const settings = useStore((s) => s.settings)
+  const { formatValuation, formatInvoice } = useCurrency()
   const { navigate } = useNav()
   const { t } = useI18n()
   const [notesDraft, setNotesDraft] = useState("")
@@ -85,11 +86,11 @@ export const WeaponDetailPanel = memo(function WeaponDetailPanel({
 
         <Tabs defaultValue="data" className="flex h-[calc(100vh-80px)] flex-col">
           <TabsList className="grid h-9 w-full grid-cols-5 rounded-none border-b bg-transparent">
-            <TabsTrigger value="data" className="text-xs"><Package className="size-3" />Data</TabsTrigger>
-            <TabsTrigger value="movement" className="text-xs"><History className="size-3" />Move</TabsTrigger>
-            <TabsTrigger value="sales" className="text-xs"><Receipt className="size-3" />Sales</TabsTrigger>
-            <TabsTrigger value="images" className="text-xs"><ImageIcon className="size-3" />Images</TabsTrigger>
-            <TabsTrigger value="notes" className="text-xs"><StickyNote className="size-3" />Notes</TabsTrigger>
+            <TabsTrigger value="data" className="text-xs"><Package className="size-3" />{t("weaponDetail.data")}</TabsTrigger>
+            <TabsTrigger value="movement" className="text-xs"><History className="size-3" />{t("weaponDetail.movement")}</TabsTrigger>
+            <TabsTrigger value="sales" className="text-xs"><Receipt className="size-3" />{t("weaponDetail.sales")}</TabsTrigger>
+            <TabsTrigger value="images" className="text-xs"><ImageIcon className="size-3" />{t("weaponDetail.images")}</TabsTrigger>
+            <TabsTrigger value="notes" className="text-xs"><StickyNote className="size-3" />{t("weaponDetail.notes")}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="data" className="flex-1 overflow-y-auto p-3 scrollbar-thin">
@@ -99,24 +100,24 @@ export const WeaponDetailPanel = memo(function WeaponDetailPanel({
               <DataRow label={t("weapon.brand")} value={weapon.brand} />
               <DataRow label={t("weapon.model")} value={weapon.model} />
               <DataRow label={t("weapon.weaponType")} value={t(`weaponType.${weapon.weaponType}`)} />
-              <DataRow label="Sub-Type" value={weapon.subType} />
+              <DataRow label={t("master.subType")} value={weapon.subType} />
               <DataRow label={t("weapon.caliber")} value={weapon.caliber} />
               <DataRow label={t("weapon.condition")} value={t(`status.${weapon.condition}`)} />
               <DataRow label={t("weapon.status")} value={t(`status.${weapon.status}`)} />
               <Separator className="my-1" />
-              <DataRow label={t("weapon.purchasePrice")} value={formatCurrency(weapon.purchasePrice, settings.currencySymbol)} />
-              <DataRow label="Retail Price" value={formatCurrency(weapon.retailPrice, settings.currencySymbol)} />
-              <DataRow label="Wholesale Price" value={formatCurrency(weapon.wholesalePrice, settings.currencySymbol)} />
+              <DataRow label={t("weapon.purchasePrice")} value={formatValuation(weapon.purchasePriceValuation, "display", weapon.purchasePrice)} />
+              <DataRow label={t("weaponDetail.retailPrice")} value={formatValuation(weapon.retailPriceValuation, "display", weapon.retailPrice)} />
+              <DataRow label={t("weaponDetail.wholesalePrice")} value={formatValuation(weapon.wholesalePriceValuation, "display", weapon.wholesalePrice)} />
               {weapon.actualFinalPrice !== null && (
-                <DataRow label="Actual Final Price" value={formatCurrency(weapon.actualFinalPrice, settings.currencySymbol)} />
+                <DataRow label={t("weaponDetail.actualFinalPrice")} value={formatValuation(weapon.actualFinalPriceValuation, "display", weapon.actualFinalPrice)} />
               )}
               <Separator className="my-1" />
               <DataRow label={t("weapon.supplier")} value={supplier?.name ?? weapon.supplierId} />
               <DataRow label={t("weapon.dateAdded")} value={formatDate(weapon.dateAdded)} />
-              {weapon.batchId && <DataRow label="Batch ID" value={weapon.batchId} mono />}
+              {weapon.batchId && <DataRow label={t("weaponDetail.batchId")} value={weapon.batchId} mono />}
 
               <Separator className="my-2" />
-              <Label className="text-xs font-medium">Change Status</Label>
+              <Label className="text-xs font-medium">{t("weaponDetail.changeStatus")}</Label>
               <Select
                 value={weapon.status}
                 onValueChange={async (v) => {
@@ -140,7 +141,7 @@ export const WeaponDetailPanel = memo(function WeaponDetailPanel({
 
               <Separator className="my-2" />
               <Label className="flex items-center gap-1 text-xs font-medium">
-                <Truck className="size-3" /> Shipment Binding
+                <Truck className="size-3" /> {t("weaponDetail.shipmentBinding")}
               </Label>
               {linkedShipment ? (
                 <div className="flex items-center justify-between rounded-md border p-2">
@@ -148,12 +149,12 @@ export const WeaponDetailPanel = memo(function WeaponDetailPanel({
                     <span className="font-mono text-[11px] font-medium">{linkedShipment.shipmentNumber}</span>
                     <span className="text-[10px] text-muted-foreground">{t(`status.${linkedShipment.status}`)}</span>
                   </div>
-                  <Button size="xs" variant="ghost" onClick={() => { onOpenChange(false); navigate("shipments") }}>View</Button>
+                  <Button size="xs" variant="ghost" onClick={() => { onOpenChange(false); navigate("shipments") }}>{t("common.view")}</Button>
                 </div>
               ) : (
                 <Select onValueChange={handleBindShipment}>
                   <SelectTrigger size="sm" className="h-7 text-xs">
-                    <SelectValue placeholder="Bind to shipment..." />
+                    <SelectValue placeholder={t("weaponDetail.bindShipment")} />
                   </SelectTrigger>
                   <SelectContent>
                     {shipments.filter((s) => s.status !== "Arrived").map((s) => (
@@ -197,19 +198,19 @@ export const WeaponDetailPanel = memo(function WeaponDetailPanel({
                     <Badge variant="outline" className="h-4 px-1 text-[9px]">{t(`status.${linkedInvoice.status}`)}</Badge>
                   </div>
                   <Separator className="my-1.5" />
-                  <DataRow label="Customer" value={linkedInvoice.customerName} />
+                  <DataRow label={t("weaponDetail.customer")} value={linkedInvoice.customerName} />
                   <DataRow label={t("common.date")} value={formatDate(linkedInvoice.date)} />
-                  <DataRow label={t("common.total")} value={formatCurrency(linkedInvoice.totalNegotiated, settings.currencySymbol)} />
-                  <DataRow label="Mode" value={linkedInvoice.saleMode} />
+                  <DataRow label={t("common.total")} value={formatInvoice(linkedInvoice, "totalNegotiated")} />
+                  <DataRow label={t("weaponDetail.mode")} value={linkedInvoice.saleMode} />
                 </div>
                 <Button size="sm" variant="outline" onClick={() => { onOpenChange(false); navigate("financials") }}>
-                  <Receipt className="size-3.5" /> View Invoice Details
+                  <Receipt className="size-3.5" /> {t("weaponDetail.viewInvoice")}
                 </Button>
               </div>
             ) : (
               <div className="flex h-32 flex-col items-center justify-center gap-1 text-muted-foreground">
                 <Receipt className="size-8 opacity-30" />
-                <span className="text-xs">No sales records for this weapon</span>
+                <span className="text-xs">{t("weaponDetail.noSales")}</span>
               </div>
             )}
           </TabsContent>
@@ -217,7 +218,7 @@ export const WeaponDetailPanel = memo(function WeaponDetailPanel({
           <TabsContent value="images" className="flex-1 overflow-y-auto p-3 scrollbar-thin">
             <div className="flex flex-col gap-2">
               <Label className="flex items-center gap-1.5 text-xs">
-                <Upload className="size-3.5" /> Upload Image
+                <Upload className="size-3.5" /> {t("weaponDetail.uploadImage")}
               </Label>
               <Input type="file" accept="image/*" onChange={handleImageUpload} className="h-8 text-xs" />
               <Separator className="my-1" />
@@ -230,7 +231,7 @@ export const WeaponDetailPanel = memo(function WeaponDetailPanel({
               ) : (
                 <div className="flex h-24 flex-col items-center justify-center gap-1 text-muted-foreground">
                   <ImageIcon className="size-8 opacity-30" />
-                  <span className="text-xs">No images uploaded</span>
+                  <span className="text-xs">{t("weaponDetail.noImages")}</span>
                 </div>
               )}
             </div>
@@ -238,14 +239,14 @@ export const WeaponDetailPanel = memo(function WeaponDetailPanel({
 
           <TabsContent value="notes" className="flex-1 overflow-y-auto p-3 scrollbar-thin">
             <div className="flex flex-col gap-2">
-              <Label className="text-xs font-medium">Managerial Annotations</Label>
+              <Label className="text-xs font-medium">{t("weaponDetail.annotations")}</Label>
               <Textarea
                 value={notesDraft || weapon.notes}
                 onChange={(e) => setNotesDraft(e.target.value)}
-                placeholder="Add operational notes, inspection details, or annotations..."
+                placeholder={t("weaponDetail.notesPlaceholder")}
                 className="min-h-[120px] text-xs"
               />
-              <Button size="sm" onClick={handleSaveNotes}>Save Notes</Button>
+              <Button size="sm" onClick={handleSaveNotes}>{t("weaponDetail.saveNotes")}</Button>
             </div>
           </TabsContent>
         </Tabs>

@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useStore } from "@/lib/store"
 import { useI18n } from "@/lib/i18n"
+import { useCurrency } from "@/lib/currency-context"
 import { formatDate, shipmentStatusClass, shipmentDelayDays } from "@/lib/format"
 import type { ShipmentStatus, SavedFilter } from "@/lib/types"
 import { toast } from "sonner"
@@ -24,10 +25,12 @@ const SHIPMENT_STATUSES: ShipmentStatus[] = ["Pending", "In Transit", "Delayed",
 
 export function ShipmentsPage() {
   const { t } = useI18n()
+  const { transactionCurrency, formatOriginal } = useCurrency()
   const shipments = useStore((s) => s.shipments)
   const suppliers = useStore((s) => s.suppliers)
   const weapons = useStore((s) => s.weapons)
   const autoFlagDelayedShipments = useStore((s) => s.autoFlagDelayedShipments)
+  const refreshFromDb = useStore((s) => s.refreshFromDb)
 
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<ShipmentStatus | "all">("all")
@@ -39,8 +42,16 @@ export function ShipmentsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    autoFlagDelayedShipments()
-  }, [autoFlagDelayedShipments])
+    void refreshFromDb().then(() => autoFlagDelayedShipments())
+  }, [refreshFromDb, autoFlagDelayedShipments])
+
+  const registeredByShipmentId = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const weapon of weapons) {
+      if (weapon.shipmentId) counts.set(weapon.shipmentId, (counts.get(weapon.shipmentId) ?? 0) + 1)
+    }
+    return counts
+  }, [weapons])
 
   const supplierMap = useMemo(() => {
     const map: Record<string, string> = {}
@@ -156,7 +167,7 @@ export function ShipmentsPage() {
             {filtered.length === 0 ? (
               <div className="flex h-32 items-center justify-center text-xs text-muted-foreground">{t("ship.noShipments")}</div>
             ) : filtered.map((s) => {
-              const registered = weapons.filter((w) => w.shipmentId === s.id).length
+              const registered = registeredByShipmentId.get(s.id) ?? 0
               const pct = s.totalExpectedItems > 0 ? Math.round((registered / s.totalExpectedItems) * 100) : 0
               const delayDays = shipmentDelayDays(s.expectedArrivalDate, s.status)
               const hasItems = (s.lineItems?.length ?? 0) > 0
@@ -259,7 +270,7 @@ export function ShipmentsPage() {
                     <span>{t("weapon.model")}</span>
                     <span>{t("common.quantity")}</span>
                     <span>{t("ship.serials")}</span>
-                    <span>{t("common.purchasePrice")}</span>
+                    <span>{t("common.purchasePrice")} ({transactionCurrency})</span>
                   </div>
                   {importedItems.map((item, i) => (
                     <div key={i} className="grid grid-cols-6 gap-2 border-b py-1 text-[10px] last:border-0">
@@ -268,7 +279,7 @@ export function ShipmentsPage() {
                       <span className="truncate">{item.modelLabel ?? ""}</span>
                       <span className="tabular-nums">{item.quantity}</span>
                       <span className="tabular-nums">{item.serialNumbers.length}</span>
-                      <span className="tabular-nums">{item.purchasePrice}</span>
+                      <span className="tabular-nums">{formatOriginal(item.purchasePrice, transactionCurrency)}</span>
                     </div>
                   ))}
                 </div>

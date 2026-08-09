@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react"
+import { useState, useMemo, useCallback, useEffect } from "react"
 import {
   Search, Plus, Users, Phone, Mail, MapPin, Trash2, Clock,
   FileText, Download, Receipt,
@@ -15,8 +15,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { SavedFiltersBar } from "@/components/ui/saved-filters-bar"
 import { useStore } from "@/lib/store"
-import { DebtService } from "@/lib/services"
-import { formatCurrency, formatDate, invoiceStatusClass } from "@/lib/format"
+import { useCurrency } from "@/lib/currency-context"
+import { invoiceAccountingAmount, sumMoney } from "@/lib/money-ui"
+import { formatDate, invoiceStatusClass } from "@/lib/format"
 import type { SavedFilter, Invoice } from "@/lib/types"
 import { toast } from "sonner"
 import { useI18n } from "@/lib/i18n"
@@ -31,7 +32,8 @@ export function CustomersPage() {
   const getInvoicesByCustomerId = useStore((s) => s.getInvoicesByCustomerId)
   const addCustomer = useStore((s) => s.addCustomer)
   const deleteCustomer = useStore((s) => s.deleteCustomer)
-  const settings = useStore((s) => s.settings)
+  const refreshFromDb = useStore((s) => s.refreshFromDb)
+  const { formatAccountingAggregate, formatInvoice, formatInvoiceLine, formatPayment } = useCurrency()
 
   const [search, setSearch] = useState("")
   const [tab, setTab] = useState<CustomerTab>("all")
@@ -46,12 +48,47 @@ export function CustomersPage() {
   // Invoice detail dialog
   const [detailInvoice, setDetailInvoice] = useState<Invoice | null>(null)
 
+  useEffect(() => {
+    void refreshFromDb()
+  }, [refreshFromDb])
+
   const enriched = useMemo(() => {
+    const activeInvoices = useStore.getState().invoices.filter((i) => !i.voided)
+    const paymentsByInvoice = new Map<string, string>()
+    for (const payment of payments) {
+      const current = paymentsByInvoice.get(payment.invoiceId)
+      if (!current || payment.date > current) paymentsByInvoice.set(payment.invoiceId, payment.date)
+    }
+    const summaryByCustomer = new Map<string, { totalInvoices: number; openInvoices: number; grandTotalOutstanding: number; totalOverdueBalance: number; lastPaymentDate: string | null }>()
+    for (const invoice of activeInvoices) {
+      if (!invoice.customerId) continue // 👈 Guard clause narrows type to 'string'
+
+      const current = summaryByCustomer.get(invoice.customerId) ?? { totalInvoices: 0, openInvoices: 0, grandTotalOutstanding: 0, totalOverdueBalance: 0, lastPaymentDate: null }
+      current.totalInvoices += 1
+      if (invoice.balance > 0) {
+        current.openInvoices += 1
+        current.grandTotalOutstanding = sumMoney([current.grandTotalOutstanding, invoiceAccountingAmount(invoice, "balance")])
+      }
+      if (invoice.status === "Overdue") current.totalOverdueBalance = sumMoney([current.totalOverdueBalance, invoiceAccountingAmount(invoice, "balance")])
+      const paymentDate = paymentsByInvoice.get(invoice.id)
+      if (paymentDate && (!current.lastPaymentDate || paymentDate > current.lastPaymentDate)) current.lastPaymentDate = paymentDate
+      summaryByCustomer.set(invoice.customerId, current)
+    }
     return customers.map((c) => {
-      const summary = DebtService.getCustomerDebtSummary(c.id)
-      return { ...c, ...summary }
+      const summary = summaryByCustomer.get(c.id)
+      const daysSinceLastPayment = summary?.lastPaymentDate
+        ? Math.max(0, Math.floor((Date.now() - new Date(summary.lastPaymentDate).getTime()) / 86400000))
+        : null
+      return {
+        ...c,
+        totalInvoices: summary?.totalInvoices ?? 0,
+        openInvoices: summary?.openInvoices ?? 0,
+        grandTotalOutstanding: summary?.grandTotalOutstanding ?? 0,
+        totalOverdueBalance: summary?.totalOverdueBalance ?? 0,
+        daysSinceLastPayment,
+      }
     })
-  }, [customers])
+  }, [customers, payments])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -127,9 +164,9 @@ export function CustomersPage() {
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as CustomerTab)}>
         <TabsList className="h-8">
-          <TabsTrigger value="all" className="text-xs">All</TabsTrigger>
-          <TabsTrigger value="dealers" className="text-xs">Dealers</TabsTrigger>
-          <TabsTrigger value="direct" className="text-xs">Direct Buyers</TabsTrigger>
+          <TabsTrigger value="all" className="text-xs">{t("common.all")}</TabsTrigger>
+          <TabsTrigger value="dealers" className="text-xs">{t("cust.dealers")}</TabsTrigger>
+          <TabsTrigger value="direct" className="text-xs">{t("cust.directBuyers")}</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -138,7 +175,7 @@ export function CustomersPage() {
           <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-xs"><Users className="size-3.5" /> {t("cust.title")} ({filtered.length})</CardTitle></CardHeader>
           <CardContent className="max-h-[500px] overflow-y-auto p-0 scrollbar-thin">
             <Table>
-              <TableHeader><TableRow className="bg-muted/50"><TableHead className="h-8 text-[10px]">{t("cust.name")}</TableHead><TableHead className="h-8 text-[10px] text-right">Debt</TableHead><TableHead className="h-8"></TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow className="bg-muted/50"><TableHead className="h-8 text-[10px]">{t("cust.name")}</TableHead><TableHead className="h-8 text-[10px] text-end">{t("common.debt")}</TableHead><TableHead className="h-8"></TableHead></TableRow></TableHeader>
               <TableBody>
                 {filtered.map((c) => (
                   <TableRow key={c.id} className={`cursor-pointer ${selectedId === c.id ? "bg-muted" : ""}`} onClick={() => setSelectedId(c.id)}>
@@ -149,7 +186,7 @@ export function CustomersPage() {
                       </div>
                     </TableCell>
                     <TableCell className="py-1.5 text-right">
-                      <span className={`text-xs tabular-nums ${c.grandTotalOutstanding > 0 ? "font-bold text-status-sold" : "text-muted-foreground"}`}>{formatCurrency(c.grandTotalOutstanding, settings.currencySymbol)}</span>
+                      <span className={`text-xs tabular-nums ${c.grandTotalOutstanding > 0 ? "font-bold text-status-sold" : "text-muted-foreground"}`}>{formatAccountingAggregate(c.grandTotalOutstanding)}</span>
                     </TableCell>
                     <TableCell className="py-1.5"><Button size="icon-xs" variant="ghost" onClick={(e) => { e.stopPropagation(); handleDelete(c.id) }}><Trash2 className="size-3" /></Button></TableCell>
                   </TableRow>
@@ -170,7 +207,7 @@ export function CustomersPage() {
                   </div>
                   <div className="flex gap-1.5">
                     {selected.isWholesaleBuyer && <Badge variant="secondary" className="text-[10px]">Wholesale ({selected.wholesaleDiscountPercent}%)</Badge>}
-                    {selected.totalOverdueBalance > 0 && <Badge variant="outline" className="text-[10px] text-status-sold">Overdue</Badge>}
+                    {selected.totalOverdueBalance > 0 && <Badge variant="outline" className="text-[10px] text-status-sold">{t("common.overdue")}</Badge>}
                   </div>
                 </div>
               </CardHeader>
@@ -178,8 +215,8 @@ export function CustomersPage() {
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <SummaryBox label="Total Invoices" value={selected.totalInvoices.toString()} />
                   <SummaryBox label="Open" value={selected.openInvoices.toString()} />
-                  <SummaryBox label="Outstanding" value={formatCurrency(selected.grandTotalOutstanding, settings.currencySymbol)} color={selected.grandTotalOutstanding > 0 ? "text-status-sold" : ""} />
-                  <SummaryBox label="Overdue" value={formatCurrency(selected.totalOverdueBalance, settings.currencySymbol)} color={selected.totalOverdueBalance > 0 ? "text-status-sold" : ""} />
+                  <SummaryBox label="Outstanding" value={formatAccountingAggregate(selected.grandTotalOutstanding)} color={selected.grandTotalOutstanding > 0 ? "text-status-sold" : ""} />
+                  <SummaryBox label="Overdue" value={formatAccountingAggregate(selected.totalOverdueBalance)} color={selected.totalOverdueBalance > 0 ? "text-status-sold" : ""} />
                 </div>
                 <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                   <Clock className="size-3" />
@@ -193,10 +230,10 @@ export function CustomersPage() {
                 </div>
                 <Separator />
                 <div>
-                  <h4 className="mb-1.5 text-xs font-medium">Invoice History (click for details)</h4>
+                  <h4 className="mb-1.5 text-xs font-medium">{t("cust.invoiceHistory")}</h4>
                   <div className="max-h-[200px] overflow-y-auto rounded-md border scrollbar-thin">
                     <Table>
-                      <TableHeader><TableRow className="bg-muted/50"><TableHead className="h-7 text-[10px]">Invoice</TableHead><TableHead className="h-7 text-[10px] text-right">Total</TableHead><TableHead className="h-7 text-[10px] text-right">Balance</TableHead><TableHead className="h-7 text-[10px]">{t("cust.status")}</TableHead><TableHead className="h-7 text-[10px]">Date</TableHead></TableRow></TableHeader>
+                      <TableHeader><TableRow className="bg-muted/50"><TableHead className="h-7 text-[10px]">{t("common.invoice")}</TableHead><TableHead className="h-7 text-[10px] text-end">{t("common.total")}</TableHead><TableHead className="h-7 text-[10px] text-end">{t("common.balance")}</TableHead><TableHead className="h-7 text-[10px]">{t("cust.status")}</TableHead><TableHead className="h-7 text-[10px]">{t("common.date")}</TableHead></TableRow></TableHeader>
                       <TableBody>
                         {selectedInvoices.map((i) => (
                           <TableRow
@@ -205,13 +242,13 @@ export function CustomersPage() {
                             onClick={() => setDetailInvoice(i)}
                           >
                             <TableCell className="py-1 font-mono text-[10px]">{i.invoiceNumber}</TableCell>
-                            <TableCell className="py-1 text-right text-[10px] tabular-nums">{formatCurrency(i.totalNegotiated, settings.currencySymbol)}</TableCell>
-                            <TableCell className="py-1 text-right text-[10px] tabular-nums">{formatCurrency(i.balance, settings.currencySymbol)}</TableCell>
+                            <TableCell className="py-1 text-right text-[10px] tabular-nums">{formatInvoice(i, "totalNegotiated")}</TableCell>
+                            <TableCell className="py-1 text-right text-[10px] tabular-nums">{formatInvoice(i, "balance")}</TableCell>
                             <TableCell className="py-1"><Badge variant="outline" className={`text-[9px] ${invoiceStatusClass(i.status)}`}>{i.status}</Badge></TableCell>
                             <TableCell className="py-1 text-[10px] text-muted-foreground">{formatDate(i.date)}</TableCell>
                           </TableRow>
                         ))}
-                        {selectedInvoices.length === 0 && <TableRow><TableCell colSpan={5} className="h-12 text-center text-[11px] text-muted-foreground">No invoices</TableCell></TableRow>}
+                        {selectedInvoices.length === 0 && <TableRow><TableCell colSpan={5} className="h-12 text-center text-[11px] text-muted-foreground">{t("cust.noInvoices")}</TableCell></TableRow>}
                       </TableBody>
                     </Table>
                   </div>
@@ -239,36 +276,36 @@ export function CustomersPage() {
               </DialogHeader>
               <div className="space-y-3 text-xs">
                 <div className="grid grid-cols-2 gap-2">
-                  <div><span className="text-muted-foreground">Customer:</span> {detailInvoice.customerName}</div>
-                  <div><span className="text-muted-foreground">Date:</span> {detailInvoice.date}</div>
-                  <div><span className="text-muted-foreground">Due:</span> {detailInvoice.dueDate}</div>
+                  <div><span className="text-muted-foreground">{t("nav.customers")}:</span> {detailInvoice.customerName}</div>
+                  <div><span className="text-muted-foreground">{t("common.date")}:</span> {detailInvoice.date}</div>
+                  <div><span className="text-muted-foreground">{t("sales.dueDate")}:</span> {detailInvoice.dueDate}</div>
                   <div>
-                    <span className="text-muted-foreground">Status:</span>{" "}
+                    <span className="text-muted-foreground">{t("common.status")}:</span>{" "}
                     <Badge variant="outline" className={cn("text-[9px]", invoiceStatusClass(detailInvoice.status))}>{detailInvoice.status}</Badge>
                   </div>
-                  <div><span className="text-muted-foreground">Total:</span> {formatCurrency(detailInvoice.totalNegotiated, settings.currencySymbol)}</div>
-                  <div><span className="text-muted-foreground">Paid:</span> {formatCurrency(detailInvoice.totalPaid, settings.currencySymbol)}</div>
-                  <div><span className="text-muted-foreground">Balance:</span> {formatCurrency(detailInvoice.balance, settings.currencySymbol)}</div>
-                  <div><span className="text-muted-foreground">Tax:</span> {formatCurrency(detailInvoice.taxAmount, settings.currencySymbol)}</div>
+                  <div><span className="text-muted-foreground">{t("common.total")}:</span> {formatInvoice(detailInvoice, "totalNegotiated")}</div>
+                  <div><span className="text-muted-foreground">{t("common.paid")}:</span> {formatInvoice(detailInvoice, "totalPaid")}</div>
+                  <div><span className="text-muted-foreground">{t("common.balance")}:</span> {formatInvoice(detailInvoice, "balance")}</div>
+                  <div><span className="text-muted-foreground">{t("common.tax")}:</span> {formatInvoice(detailInvoice, "taxAmount")}</div>
                 </div>
 
                 <Separator />
 
                 {/* Line Items */}
                 <div>
-                  <h4 className="font-medium mb-1">Items</h4>
+                  <h4 className="font-medium mb-1">{t("common.items")}</h4>
                   <div className="max-h-40 overflow-y-auto custom-scrollbar rounded border">
                     <Table>
                       <TableHeader>
-                        <TableRow><TableHead className="h-6 text-[10px]">Name</TableHead><TableHead className="h-6 text-[10px] text-right">Qty</TableHead><TableHead className="h-6 text-[10px] text-right">Unit Price</TableHead><TableHead className="h-6 text-[10px] text-right">Total</TableHead></TableRow>
+                        <TableRow><TableHead className="h-6 text-[10px]">{t("common.name")}</TableHead><TableHead className="h-6 text-[10px] text-end">{t("common.quantity")}</TableHead><TableHead className="h-6 text-[10px] text-end">{t("common.unitPrice")}</TableHead><TableHead className="h-6 text-[10px] text-end">{t("common.total")}</TableHead></TableRow>
                       </TableHeader>
                       <TableBody>
                         {detailInvoice.lineItems.map((item, idx) => (
                           <TableRow key={idx}>
                             <TableCell className="py-0.5 text-[10px]">{item.name}</TableCell>
                             <TableCell className="py-0.5 text-right text-[10px]">{item.quantity}</TableCell>
-                            <TableCell className="py-0.5 text-right text-[10px]">{formatCurrency(item.unitPrice, settings.currencySymbol)}</TableCell>
-                            <TableCell className="py-0.5 text-right text-[10px]">{formatCurrency(item.total, settings.currencySymbol)}</TableCell>
+                            <TableCell className="py-0.5 text-right text-[10px]">{formatInvoiceLine(detailInvoice, item.unitPrice)}</TableCell>
+                            <TableCell className="py-0.5 text-right text-[10px]">{formatInvoiceLine(detailInvoice, item.total)}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -280,18 +317,21 @@ export function CustomersPage() {
 
                 {/* Payments */}
                 <div>
-                  <h4 className="font-medium mb-1">Payments</h4>
+                  <h4 className="font-medium mb-1">{t("common.payments")}</h4>
                   {payments.filter(p => p.invoiceId === detailInvoice.id).length > 0 ? (
                     <div className="max-h-40 overflow-y-auto custom-scrollbar rounded border">
                       <Table>
                         <TableHeader>
-                          <TableRow><TableHead className="h-6 text-[10px]">Date</TableHead><TableHead className="h-6 text-[10px] text-right">Amount</TableHead><TableHead className="h-6 text-[10px]">Method</TableHead></TableRow>
+                          <TableRow><TableHead className="h-6 text-[10px]">{t("common.date")}</TableHead><TableHead className="h-6 text-[10px] text-end">{t("common.amount")}</TableHead><TableHead className="h-6 text-[10px]">{t("common.method")}</TableHead></TableRow>
                         </TableHeader>
                         <TableBody>
                           {payments.filter(p => p.invoiceId === detailInvoice.id).map((p) => (
                             <TableRow key={p.id}>
                               <TableCell className="py-0.5 text-[10px]">{p.date}</TableCell>
-                              <TableCell className="py-0.5 text-right text-[10px]">{formatCurrency(p.amount, settings.currencySymbol)}</TableCell>
+                              <TableCell className="py-0.5 text-right text-[10px]">
+                                <div>{formatPayment(p, "original")}</div>
+                                {p.currency !== p.accountingCurrency && <div className="text-[9px] text-muted-foreground">≈ {formatPayment(p, "accounting")}</div>}
+                              </TableCell>
                               <TableCell className="py-0.5 text-[10px]">{p.method}</TableCell>
                             </TableRow>
                           ))}
@@ -299,13 +339,13 @@ export function CustomersPage() {
                       </Table>
                     </div>
                   ) : (
-                    <p className="text-[10px] text-muted-foreground">No payments recorded.</p>
+                    <p className="text-[10px] text-muted-foreground">{t("cust.noPayments")}</p>
                   )}
                 </div>
 
                 {/* Attached Documents */}
                 <div>
-                  <h4 className="font-medium mb-1">Documents</h4>
+                  <h4 className="font-medium mb-1">{t("common.documents")}</h4>
                   {detailInvoice.attachments.length > 0 ? (
                     <div className="space-y-1">
                       {parseAttachments(detailInvoice.attachments).map((doc, i) => (
@@ -325,7 +365,7 @@ export function CustomersPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-[10px] text-muted-foreground">No documents attached.</p>
+                    <p className="text-[10px] text-muted-foreground">{t("cust.noDocuments")}</p>
                   )}
                 </div>
               </div>

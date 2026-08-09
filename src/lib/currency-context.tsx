@@ -1,18 +1,37 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from "react"
 import { CurrencyService, type CurrencyInfo } from "@/lib/currency-service"
+import { useStore } from "@/lib/store"
+import {
+  formatAccountingAggregate as formatAggregate,
+  formatInvoiceMoney,
+  formatInvoiceLineMoney,
+  formatPaymentMoney,
+  formatValuation as formatMoneyValuation,
+  type InvoiceMoneyField,
+} from "@/lib/money-ui"
+import type { Invoice, MoneyValuation, PaymentRecord } from "@/lib/types"
+import { getCurrencyPresentation, type CurrencyPresentation } from "@/lib/currency-display"
 
 type ReportViewMode = "original" | "accounting" | "display"
 
 interface CurrencyContextValue {
   displayCurrency: string
+  accountingCurrency: string
+  transactionCurrency: string
   setDisplayCurrency: (code: string) => void
   reportViewMode: ReportViewMode
   setReportViewMode: (mode: ReportViewMode) => void
   currencies: CurrencyInfo[]
   isLoaded: boolean
-  format: (usdAmount: number, currencyOverride?: string) => string
+  format: (accountingAmount: number, currencyOverride?: string) => string
   formatOriginal: (amount: number, currencyCode: string) => string
-  convertToDisplay: (usdAmount: number) => number
+  formatValuation: (valuation: MoneyValuation | undefined, mode?: ReportViewMode, unresolvedAmount?: number, unresolvedCurrency?: string) => string
+  formatInvoice: (invoice: Invoice, field: InvoiceMoneyField, mode?: ReportViewMode) => string
+  formatInvoiceLine: (invoice: Invoice, amount: number) => string
+  formatPayment: (payment: PaymentRecord, mode?: ReportViewMode) => string
+  formatAccountingAggregate: (amount: number, mode?: ReportViewMode) => string
+  currencyPresentation: (code: string) => CurrencyPresentation
+  convertToDisplay: (accountingAmount: number) => number
   refresh: () => void
 }
 
@@ -40,6 +59,10 @@ export function CurrencyProvider({
   const [currencies, setCurrencies] = useState<CurrencyInfo[]>([])
   const [isLoaded, setIsLoaded] = useState(false)
   const [, forceUpdate] = useState({})
+  const settings = useStore((state) => state.settings)
+  const accountingCurrency = settings.accountingCurrencyCode
+  const transactionCurrency = settings.currencyCode
+  CurrencyService.configureAccountingCurrency(accountingCurrency)
 
   useEffect(() => {
     setDisplayCurrencyState(externalDisplayCurrency)
@@ -69,7 +92,24 @@ export function CurrencyProvider({
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [accountingCurrency]);
+
+  useEffect(() => CurrencyService.subscribe(refresh), [refresh])
+
+  const resolvedDisplayCurrency = useMemo(() => {
+    if (!isLoaded || currencies.length === 0) return displayCurrency
+    if (currencies.some((currency) => currency.isoCode === displayCurrency)) return displayCurrency
+    return currencies.find((currency) => currency.isoCode === settings.preferredDisplayCurrency)?.isoCode
+      ?? currencies.find((currency) => currency.isoCode === transactionCurrency)?.isoCode
+      ?? currencies.find((currency) => currency.isoCode === accountingCurrency)?.isoCode
+      ?? currencies[0].isoCode
+  }, [accountingCurrency, currencies, displayCurrency, isLoaded, settings.preferredDisplayCurrency, transactionCurrency])
+
+  useEffect(() => {
+    if (!isLoaded || resolvedDisplayCurrency === displayCurrency) return
+    setDisplayCurrencyState(resolvedDisplayCurrency)
+    onDisplayCurrencyChange(resolvedDisplayCurrency)
+  }, [displayCurrency, isLoaded, onDisplayCurrencyChange, resolvedDisplayCurrency])
 
   useEffect(() => {
     performance.mark("boot:provider:currency:mounted")
@@ -77,9 +117,10 @@ export function CurrencyProvider({
   }, [])
 
   const setDisplayCurrency = useCallback((code: string) => {
+    if (!currencies.some((currency) => currency.isoCode === code && currency.isActive)) return
     setDisplayCurrencyState(code)
     onDisplayCurrencyChange(code)
-  }, [onDisplayCurrencyChange])
+  }, [currencies, onDisplayCurrencyChange])
 
   const setReportViewMode = useCallback((mode: ReportViewMode) => {
     setReportViewModeState(mode)
@@ -87,17 +128,17 @@ export function CurrencyProvider({
   }, [onReportViewModeChange])
 
   const convertToDisplay = useCallback(
-    (usdAmount: number) => CurrencyService.convertFromUSD(usdAmount, displayCurrency),
-    [displayCurrency]
+    (accountingAmount: number) => CurrencyService.convertFromAccounting(accountingAmount, resolvedDisplayCurrency),
+    [resolvedDisplayCurrency]
   )
 
   const format = useCallback(
-    (usdAmount: number, currencyOverride?: string) => {
-      const targetCurrency = currencyOverride || displayCurrency
-      const displayAmount = CurrencyService.convertFromUSD(usdAmount, targetCurrency)
+    (accountingAmount: number, currencyOverride?: string) => {
+      const targetCurrency = currencyOverride || resolvedDisplayCurrency
+      const displayAmount = CurrencyService.convertFromAccounting(accountingAmount, targetCurrency)
       return CurrencyService.format(displayAmount, targetCurrency, locale)
     },
-    [displayCurrency, locale]
+    [resolvedDisplayCurrency, locale]
   )
 
   const formatOriginal = useCallback(
@@ -105,10 +146,57 @@ export function CurrencyProvider({
     [locale]
   )
 
+  const formatValuation = useCallback(
+    (valuation: MoneyValuation | undefined, mode: ReportViewMode = "display", unresolvedAmount?: number, unresolvedCurrency?: string) =>
+      formatMoneyValuation(
+        valuation,
+        resolvedDisplayCurrency,
+        locale,
+        mode,
+        unresolvedAmount,
+        unresolvedCurrency ?? accountingCurrency,
+      ),
+    [accountingCurrency, resolvedDisplayCurrency, locale],
+  )
+
+  const formatInvoice = useCallback(
+    (invoice: Invoice, field: InvoiceMoneyField, mode: ReportViewMode = "display") =>
+      formatInvoiceMoney(invoice, field, resolvedDisplayCurrency, locale, mode),
+    [resolvedDisplayCurrency, locale],
+  )
+
+  const formatInvoiceLine = useCallback(
+    (invoice: Invoice, amount: number) => formatInvoiceLineMoney(invoice, amount, resolvedDisplayCurrency, locale),
+    [resolvedDisplayCurrency, locale],
+  )
+
+  const formatPayment = useCallback(
+    (payment: PaymentRecord, mode: ReportViewMode = "display") =>
+      formatPaymentMoney(payment, resolvedDisplayCurrency, locale, mode),
+    [resolvedDisplayCurrency, locale],
+  )
+
+  const formatAccountingAggregate = useCallback(
+    (amount: number, mode: ReportViewMode = "display") =>
+      formatAggregate(amount, accountingCurrency, resolvedDisplayCurrency, locale, mode),
+    [accountingCurrency, resolvedDisplayCurrency, locale],
+  )
+
+  const currencyPresentation = useCallback((code: string) => {
+    const currency = currencies.find((item) => item.isoCode === code)
+    return getCurrencyPresentation({
+      isoCode: code,
+      name: currency?.name,
+      symbol: currency?.symbol,
+    }, locale)
+  }, [currencies, locale])
+
   return (
     <CurrencyContext.Provider
       value={{
-        displayCurrency,
+        displayCurrency: resolvedDisplayCurrency,
+        accountingCurrency,
+        transactionCurrency,
         setDisplayCurrency,
         reportViewMode,
         setReportViewMode,
@@ -116,6 +204,12 @@ export function CurrencyProvider({
         isLoaded,
         format,
         formatOriginal,
+        formatValuation,
+        formatInvoice,
+        formatInvoiceLine,
+        formatPayment,
+        formatAccountingAggregate,
+        currencyPresentation,
         convertToDisplay,
         refresh,
       }}

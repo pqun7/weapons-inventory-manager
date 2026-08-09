@@ -19,6 +19,19 @@ function rowToCurrencyRow(r: Record<string, unknown>): CurrencyRow {
     last_rate_updated_at: r.last_rate_updated_at as string | null,
   }
 }
+function assertValidPaymentMethod(method: string): void {
+  const validMethods = new Set([
+    "cash",
+    "card",
+    "bank_transfer",
+    "check",
+    "other",
+  ])
+
+  if (!validMethods.has(method)) {
+    throw new Error(`Invalid payment method: ${method}`)
+  }
+}
 
 export class AppRepository {
   getAll(): AllData {
@@ -86,6 +99,8 @@ export class AppRepository {
     db.prepare(`UPDATE system_settings SET
       currency_symbol = @currency_symbol,
       currency_code = @currency_code,
+      accounting_currency_code = @accounting_currency_code,
+      rate_base_currency_code = @rate_base_currency_code,
       supported_currencies = @supported_currencies,
       currency_frequency = @currency_frequency,
       tax_percent = @tax_percent,
@@ -140,14 +155,16 @@ export class AppRepository {
       condition, status,
       purchase_price, retail_price, wholesale_price, actual_final_price,
       date_added, batch_id, notes, images, movement_history,
-      purchase_price_valuation, retail_price_valuation, sale_price_valuation, deleted_at
+      purchase_price_valuation, retail_price_valuation, wholesale_price_valuation,
+      actual_final_price_valuation, sale_price_valuation, deleted_at
     ) VALUES (
       @id, @serial_number, @weapon_type_id, @weapon_subtype_id, @brand_id, @model_id, @caliber_id,
       @storage_location_id, @supplier_id, @shipment_id,
       @condition, @status,
       @purchase_price, @retail_price, @wholesale_price, @actual_final_price,
       @date_added, @batch_id, @notes, @images, @movement_history,
-      @purchase_price_valuation, @retail_price_valuation, @sale_price_valuation, @deleted_at
+      @purchase_price_valuation, @retail_price_valuation, @wholesale_price_valuation,
+      @actual_final_price_valuation, @sale_price_valuation, @deleted_at
     )`).run(row)
   }
 
@@ -159,14 +176,16 @@ export class AppRepository {
       condition, status,
       purchase_price, retail_price, wholesale_price, actual_final_price,
       date_added, batch_id, notes, images, movement_history,
-      purchase_price_valuation, retail_price_valuation, sale_price_valuation, deleted_at
+      purchase_price_valuation, retail_price_valuation, wholesale_price_valuation,
+      actual_final_price_valuation, sale_price_valuation, deleted_at
     ) VALUES (
       @id, @serial_number, @weapon_type_id, @weapon_subtype_id, @brand_id, @model_id, @caliber_id,
       @storage_location_id, @supplier_id, @shipment_id,
       @condition, @status,
       @purchase_price, @retail_price, @wholesale_price, @actual_final_price,
       @date_added, @batch_id, @notes, @images, @movement_history,
-      @purchase_price_valuation, @retail_price_valuation, @sale_price_valuation, @deleted_at
+      @purchase_price_valuation, @retail_price_valuation, @wholesale_price_valuation,
+      @actual_final_price_valuation, @sale_price_valuation, @deleted_at
     )`)
     for (const w of weapons) {
       stmt.run(mappers.weaponToRow(w))
@@ -199,6 +218,8 @@ export class AppRepository {
       movement_history = @movement_history,
       purchase_price_valuation = @purchase_price_valuation,
       retail_price_valuation = @retail_price_valuation,
+      wholesale_price_valuation = @wholesale_price_valuation,
+      actual_final_price_valuation = @actual_final_price_valuation,
       sale_price_valuation = @sale_price_valuation,
       deleted_at = @deleted_at
       WHERE id = @id`).run(row)
@@ -241,11 +262,15 @@ export class AppRepository {
     db.prepare(`INSERT INTO invoices (id, invoice_number, type, customer_id, supplier_id, customer_name,
       date, due_date, total_original, total_negotiated, total_paid, balance, status,
       weapon_ids, line_items, sale_mode, employee_id, employee_name, attachments, shipment_id,
-      notes, voided, tax_amount, total_valuation)
+      notes, voided, tax_amount, total_valuation, currency, accounting_currency,
+      exchange_rate, exchange_rate_date, rate_source, total_original_accounting,
+      total_negotiated_accounting, total_paid_accounting, balance_accounting, tax_amount_accounting)
       VALUES (@id, @invoice_number, @type, @customer_id, @supplier_id, @customer_name,
       @date, @due_date, @total_original, @total_negotiated, @total_paid, @balance, @status,
       @weapon_ids, @line_items, @sale_mode, @employee_id, @employee_name, @attachments, @shipment_id,
-      @notes, @voided, @tax_amount, @total_valuation)`).run(row)
+      @notes, @voided, @tax_amount, @total_valuation, @currency, @accounting_currency,
+      @exchange_rate, @exchange_rate_date, @rate_source, @total_original_accounting,
+      @total_negotiated_accounting, @total_paid_accounting, @balance_accounting, @tax_amount_accounting)`).run(row)
   }
 
   updateInvoice(inv: Invoice): void {
@@ -259,37 +284,81 @@ export class AppRepository {
       sale_mode = @sale_mode, employee_id = @employee_id, employee_name = @employee_name,
       attachments = @attachments, shipment_id = @shipment_id, notes = @notes, voided = @voided,
       tax_amount = @tax_amount, total_valuation = @total_valuation
+      , currency = @currency, accounting_currency = @accounting_currency,
+      exchange_rate = @exchange_rate, exchange_rate_date = @exchange_rate_date,
+      rate_source = @rate_source, total_original_accounting = @total_original_accounting,
+      total_negotiated_accounting = @total_negotiated_accounting,
+      total_paid_accounting = @total_paid_accounting, balance_accounting = @balance_accounting,
+      tax_amount_accounting = @tax_amount_accounting
       WHERE id = @id`).run(row)
   }
 
   insertPayment(p: PaymentRecord): void {
     const db = getDb()
     const row = mappers.paymentToRow(p)
-    db.prepare(`INSERT INTO payment_records (id, invoice_id, invoice_number, date, amount, method, employee, notes)
-      VALUES (@id, @invoice_id, @invoice_number, @date, @amount, @method, @employee, @notes)`).run(row)
+
+    assertValidPaymentMethod(row.method as string)
+
+    db.prepare(`
+    INSERT INTO payment_records (
+      id,
+      invoice_id,
+      invoice_number,
+      date,
+      amount,
+      currency,
+      accounting_amount,
+      accounting_currency,
+      exchange_rate,
+      exchange_rate_date,
+      rate_source,
+      rate_id,
+      method,
+      employee,
+      notes
+    )
+    VALUES (
+      @id,
+      @invoice_id,
+      @invoice_number,
+      @date,
+      @amount,
+      @currency,
+      @accounting_amount,
+      @accounting_currency,
+      @exchange_rate,
+      @exchange_rate_date,
+      @rate_source,
+      @rate_id,
+      @method,
+      @employee,
+      @notes
+    )
+  `).run(row)
   }
 
   insertAccessory(a: Accessory): void {
     const db = getDb()
     const row = mappers.accessoryToRow(a)
-    db.prepare(`INSERT INTO accessories (id, name, type, quantity, safety_threshold, price, date_added, warehouse, shelf, bin)
-      VALUES (@id, @name, @type, @quantity, @safety_threshold, @price, @date_added, @warehouse, @shelf, @bin)`).run(row)
+    db.prepare(`INSERT INTO accessories (id, name, type, quantity, safety_threshold, price, price_currency, price_valuation, date_added, warehouse, shelf, bin)
+      VALUES (@id, @name, @type, @quantity, @safety_threshold, @price, @price_currency, @price_valuation, @date_added, @warehouse, @shelf, @bin)`).run(row)
   }
 
   updateAccessory(a: Accessory): void {
     const db = getDb()
     const row = mappers.accessoryToRow(a)
     db.prepare(`UPDATE accessories SET name = @name, type = @type, quantity = @quantity, safety_threshold = @safety_threshold,
-      price = @price, warehouse = @warehouse, shelf = @shelf, bin = @bin WHERE id = @id`).run(row)
+      price = @price, price_currency = @price_currency, price_valuation = @price_valuation,
+      warehouse = @warehouse, shelf = @shelf, bin = @bin WHERE id = @id`).run(row)
   }
 
   insertAmmunition(a: Ammunition): void {
     const db = getDb()
     const row = mappers.ammoToRow(a)
     db.prepare(`INSERT INTO ammunition (id, caliber, package_type, units_per_package, full_packages, loose_rounds,
-      safety_threshold, price, date_added, warehouse, shelf, bin)
+      safety_threshold, price, price_currency, price_valuation, date_added, warehouse, shelf, bin)
       VALUES (@id, @caliber, @package_type, @units_per_package, @full_packages, @loose_rounds,
-      @safety_threshold, @price, @date_added, @warehouse, @shelf, @bin)`).run(row)
+      @safety_threshold, @price, @price_currency, @price_valuation, @date_added, @warehouse, @shelf, @bin)`).run(row)
   }
 
   updateAmmunition(a: Ammunition): void {
@@ -297,7 +366,8 @@ export class AppRepository {
     const row = mappers.ammoToRow(a)
     db.prepare(`UPDATE ammunition SET caliber = @caliber, package_type = @package_type, units_per_package = @units_per_package,
       full_packages = @full_packages, loose_rounds = @loose_rounds, safety_threshold = @safety_threshold,
-      price = @price, warehouse = @warehouse, shelf = @shelf, bin = @bin WHERE id = @id`).run(row)
+      price = @price, price_currency = @price_currency, price_valuation = @price_valuation,
+      warehouse = @warehouse, shelf = @shelf, bin = @bin WHERE id = @id`).run(row)
   }
 
   insertCustomer(c: Customer): void {
@@ -407,10 +477,10 @@ export class AppRepository {
     )
   }
 
-  recordRateAuditLog(code: string, oldRate: number | null, newRate: number | null, changedBy: string, reason: string, changedAt: string): void {
+  recordRateAuditLog(code: string, oldRate: number | null, newRate: number | null, changedBy: string, reason: string, changedAt: string, source: "manual" | "api" | "cache" | "default" = "manual"): void {
     const id = `ral-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    getDb().prepare(`INSERT INTO exchange_rate_audit_log (id, currency_code, old_rate, new_rate, changed_by, changed_at, reason)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(id, code, oldRate != null ? String(oldRate) : null, newRate != null ? String(newRate) : null, changedBy, changedAt, reason)
+    getDb().prepare(`INSERT INTO exchange_rate_audit_log (id, currency_code, old_rate, new_rate, changed_by, changed_at, reason, source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(id, code, oldRate != null ? String(oldRate) : null, newRate != null ? String(newRate) : null, changedBy, changedAt, reason, source)
   }
 
   getRateAuditLog(limit: number = 50): AuditLogEntry[] {
@@ -423,6 +493,7 @@ export class AppRepository {
       changedBy: r.changed_by as string | null,
       changedAt: r.changed_at as string,
       reason: r.reason as string | null,
+      source: r.source as AuditLogEntry["source"],
     }))
   }
 
@@ -534,59 +605,130 @@ export class AppRepository {
     getDb().prepare(`DELETE FROM ${table} WHERE id = ?`).run(id)
   }
 
-  // insertMasterWeaponType(label: string, sortOrder: number): string {
-  //   const id = `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  //   getDb().prepare("INSERT INTO weapon_types (id, label, sort_order) VALUES (?, ?, ?)").run(id, label, sortOrder)
-  //   return id
-  // }
 
-  // insertMasterWeaponSubtype(weaponTypeId: string, label: string, sortOrder: number): string {
-  //   const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  //   getDb().prepare("INSERT INTO weapon_subtypes (id, weapon_type_id, label, sort_order) VALUES (?, ?, ?, ?)").run(id, weaponTypeId, label, sortOrder)
-  //   return id
-  // }
+  getAccessoryById(id: string): Accessory | undefined {
+    const db = getDb()
+    const row = db.prepare("SELECT * FROM accessories WHERE id = ?").get(id) as Record<string, unknown> | undefined
+    return row ? mappers.rowToAccessory(row as never) : undefined
+  }
 
-  // insertMasterCaliber(label: string): string {
-  //   const id = `cal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  //   getDb().prepare("INSERT INTO calibers (id, label) VALUES (?, ?)").run(id, label)
-  //   return id
-  // }
+  getAmmunitionById(id: string): Ammunition | undefined {
+    const db = getDb()
+    const row = db.prepare("SELECT * FROM ammunition WHERE id = ?").get(id) as Record<string, unknown> | undefined
+    return row ? mappers.rowToAmmo(row as never) : undefined
+  }
 
+  getWeaponById(id: string): Weapon | undefined {
+    const db = getDb()
+    const row = db.prepare(`
+      SELECT
+        w.*,
+        wt.label AS weapon_type,
+        ws.label AS sub_type,
+        c.label AS caliber,
+        b.label AS brand,
+        m.label AS model,
+        COALESCE(wh.label, '') AS warehouse,
+        COALESCE(sl.shelf, '') AS shelf,
+        COALESCE(sl.bin, '') AS bin
+      FROM weapons w
+      LEFT JOIN weapon_types wt ON wt.id = w.weapon_type_id
+      LEFT JOIN weapon_subtypes ws ON ws.id = w.weapon_subtype_id
+      LEFT JOIN calibers c ON c.id = w.caliber_id
+      LEFT JOIN brands b ON b.id = w.brand_id
+      LEFT JOIN models m ON m.id = w.model_id
+      LEFT JOIN storage_locations sl ON sl.id = w.storage_location_id
+      LEFT JOIN warehouses wh ON wh.id = sl.warehouse_id
+      WHERE w.id = ? AND w.deleted_at IS NULL
+    `).get(id) as Record<string, unknown> | undefined
 
-  // insertMasterBrand(label: string): string {
-  //   const id = `br-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  //   getDb().prepare("INSERT INTO brands (id, label) VALUES (?, ?)").run(id, label)
-  //   return id
-  // }
+    return row ? mappers.rowToWeapon(row as never) : undefined
+  }
 
-  // insertMasterModel(label: string, brandId: string | null): string {
-  //   const id = `mdl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  //   getDb().prepare("INSERT INTO models (id, label, brand_id) VALUES (?, ?, ?)").run(id, label, brandId)
-  //   return id
-  // }
+  // Compatibility getters (return weapon IDs)
+  getAmmunitionCompatibleWeaponIds(ammoId: string): string[] {
+    const db = getDb()
+    const rows = db.prepare("SELECT weapon_id FROM ammunition_weapon_compatibility WHERE ammunition_id = ?").all(ammoId) as { weapon_id: string }[];
+    return rows.map(r => r.weapon_id);
+  }
 
-  // insertMasterWarehouse(label: string): string {
-  //   const id = `wh-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  //   getDb().prepare("INSERT INTO warehouses (id, label) VALUES (?, ?)").run(id, label)
-  //   return id
-  // }
+  getAccessoryCompatibleWeaponIds(accessoryId: string): string[] {
+    const db = getDb()
+    const rows = db.prepare("SELECT weapon_id FROM accessory_weapon_compatibility WHERE accessory_id = ?").all(accessoryId) as { weapon_id: string }[];
+    return rows.map(r => r.weapon_id);
+  }
 
-  // insertMasterStorageLocation(warehouseId: string, shelf: string, bin: string): string {
-  //   const id = `loc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  //   getDb().prepare("INSERT INTO storage_locations (id, warehouse_id, shelf, bin) VALUES (?, ?, ?, ?)").run(id, warehouseId, shelf, bin)
-  //   return id
-  // }
-
-  deleteCurrency(code: string): void {
-    const db = getDb();
+  // Set compatibility (atomic replace)
+  setAmmunitionCompatibility(ammoId: string, weaponIds: string[]): void {
+    const db = getDb()
+    const deleteAll = db.prepare("DELETE FROM ammunition_weapon_compatibility WHERE ammunition_id = ?");
+    const insert = db.prepare("INSERT OR IGNORE INTO ammunition_weapon_compatibility (ammunition_id, weapon_id) VALUES (?, ?)");
     db.transaction(() => {
-      // حذف السجلات المرتبطة أولاً
-      db.prepare("DELETE FROM exchange_rate_history WHERE currency_code = ?").run(code);
-      db.prepare("DELETE FROM exchange_rate_overrides WHERE currency_code = ?").run(code);
-      db.prepare("DELETE FROM exchange_rate_audit_log WHERE currency_code = ?").run(code);
-      // ثم حذف العملة نفسها
-      db.prepare("DELETE FROM currencies WHERE iso_code = ?").run(code);
+      deleteAll.run(ammoId);
+      for (const wid of weaponIds) {
+        insert.run(ammoId, wid);
+      }
     })();
+  }
+
+  setAccessoryCompatibility(accessoryId: string, weaponIds: string[]): void {
+    const db = getDb()
+    const deleteAll = db.prepare("DELETE FROM accessory_weapon_compatibility WHERE accessory_id = ?");
+    const insert = db.prepare("INSERT OR IGNORE INTO accessory_weapon_compatibility (accessory_id, weapon_id) VALUES (?, ?)");
+    db.transaction(() => {
+      deleteAll.run(accessoryId);
+      for (const wid of weaponIds) {
+        insert.run(accessoryId, wid);
+      }
+    })();
+  }
+
+  // Weapon search for compatibility (with pagination)
+  searchWeaponsForCompatibility(query: string, limit: number, offset: number): Weapon[] {
+    const normalizedQuery = query.trim()
+    const like = `%${normalizedQuery}%`
+    const safeLimit = Math.max(1, Math.min(Math.trunc(limit), 500))
+    const safeOffset = Math.max(0, Math.trunc(offset))
+    const db = getDb()
+
+    const rows = db.prepare(`
+      SELECT
+        w.*,
+        wt.label AS weapon_type,
+        ws.label AS sub_type,
+        c.label AS caliber,
+        b.label AS brand,
+        m.label AS model,
+        COALESCE(wh.label, '') AS warehouse,
+        COALESCE(sl.shelf, '') AS shelf,
+        COALESCE(sl.bin, '') AS bin
+      FROM weapons w
+      LEFT JOIN weapon_types wt ON wt.id = w.weapon_type_id
+      LEFT JOIN weapon_subtypes ws ON ws.id = w.weapon_subtype_id
+      LEFT JOIN calibers c ON c.id = w.caliber_id
+      LEFT JOIN brands b ON b.id = w.brand_id
+      LEFT JOIN models m ON m.id = w.model_id
+      LEFT JOIN storage_locations sl ON sl.id = w.storage_location_id
+      LEFT JOIN warehouses wh ON wh.id = sl.warehouse_id
+      WHERE w.deleted_at IS NULL
+        AND (
+          ? = ''
+          OR w.serial_number LIKE ?
+          OR b.label LIKE ?
+          OR m.label LIKE ?
+          OR wt.label LIKE ?
+          OR ws.label LIKE ?
+          OR c.label LIKE ?
+        )
+      ORDER BY w.serial_number COLLATE NOCASE
+      LIMIT ? OFFSET ?
+    `).all(
+      normalizedQuery,
+      like, like, like, like, like, like,
+      safeLimit, safeOffset,
+    ) as Record<string, unknown>[]
+
+    return rows.map((row) => mappers.rowToWeapon(row as never))
   }
 
 }

@@ -118,6 +118,7 @@ export interface ShipmentDocumentInput {
 export interface PaymentInput {
   invoiceId: string
   amount: number
+  currency?: string
   method: PaymentMethod
   notes: string
 }
@@ -129,20 +130,28 @@ export interface DueDateExtensionInput {
 }
 
 export interface AddStockInput {
-  itemType: "accessory" | "ammunition"
-  itemId: string
-  quantity: number
-  purchasePrice: number
-  shipmentId: string | null
-  notes: string
-  location?: StorageLocation
+  itemType: "accessory" | "ammunition";
+  itemId: string;
+  // حقول خاصة بالقطع (Accessories)
+  quantity?: number;
+  // حقول خاصة بالذخائر (Ammunition)
+  packages?: number;
+  looseRounds?: number;
+  // تحديث السعر (اختياري)
+  price?: number;
+  currency?: string;
+  // حقول قديمة محفوظة للتوافق مع الإصدارات السابقة (غير مستخدمة في الـ handler الحالي)
+  purchasePrice?: number;
+  shipmentId?: string | null;
+  notes?: string;
+  location?: StorageLocation;
 }
-
 export interface ReceiveAmmoByPackagesInput {
   itemId: string
   numberOfPackages: number
   unitsPerPackage: number
   purchasePrice: number
+  currency?: string
   shipmentId: string | null
   notes: string
   location?: StorageLocation
@@ -152,6 +161,7 @@ export interface ReceiveAmmoByRoundsInput {
   itemId: string
   totalRounds: number
   purchasePrice: number
+  currency?: string
   shipmentId: string | null
   notes: string
   location?: StorageLocation
@@ -290,14 +300,13 @@ function generateId(prefix: string, existing: { id: string }[]): string {
   return `${prefix}${pad(max + 1, 4)}`
 }
 
-async function getCurrencyService() {
-  return (await import("./currency-service.js")).CurrencyService
-}
-
 const DEFAULT_SETTINGS: SystemSettings = {
   currencySymbol: "$",
   currencyCode: "USD",
-  supportedCurrencies: ["USD", "SAR", "EUR"],
+  accountingCurrencyCode: "USD",
+  rateBaseCurrencyCode: "USD",
+  preferredDisplayCurrency: "USD",
+  supportedCurrencies: ["USD", "SAR", "SDG", "EGP"],
   currencyFrequency: {},
   taxPercent: 0,
   invoiceHeader: "WEAPON STORE MANAGEMENT SYSTEM",
@@ -463,11 +472,7 @@ export const useStore = create<StoreState>()(
     getUnreadNotifications: () => get().notifications.filter((n) => !n.read),
 
     getDefaultCurrency: () => {
-      const freq = get().settings.currencyFrequency
-      const entries = Object.entries(freq)
-      if (entries.length === 0) return get().settings.currencyCode
-      entries.sort((a, b) => b[1] - a[1])
-      return entries[0][0]
+      return get().settings.currencyCode
     },
 
     addBulkWeapons: async (input: BulkIntakeInput) => {
@@ -480,71 +485,12 @@ export const useStore = create<StoreState>()(
         await get().refreshFromDb()
         return { success: true, added: result.data.added, duplicates: result.data.duplicates }
       }
-      // Browser fallback
-      const existingSerials = new Set(state.weapons.map(w => w.serialNumber.toLowerCase()))
-      const duplicates: string[] = []
-      const batchId = `BATCH-${Date.now()}`
-      const newWeapons: Weapon[] = []
-      let serialCounter = state.weapons.length + 1
-      const today = new Date().toISOString().split("T")[0]
-      const currentUser = state.getCurrentUser()
-      const currencyService = await getCurrencyService()
-
-      input.serialNumbers.forEach(sn => {
-        const trimmed = sn.trim()
-        if (!trimmed) return
-        if (existingSerials.has(trimmed.toLowerCase())) { duplicates.push(trimmed); return }
-        existingSerials.add(trimmed.toLowerCase())
-        const currency = input.currency || "USD"
-        newWeapons.push({
-          id: `W${pad(serialCounter, 5)}`,
-          serialNumber: trimmed,
-          // New FK fields
-          weaponTypeId: input.weaponTypeId,
-          weaponSubtypeId: input.weaponSubtypeId,
-          caliberId: input.caliberId,
-          brandId: input.brandId,
-          modelId: input.modelId,
-          storageLocationId: input.storageLocationId,
-          // Labels (optional but harmless)
-          weaponType: input.weaponTypeLabel ?? "",
-          subType: input.subTypeLabel ?? "",
-          caliber: input.caliberLabel ?? "",
-          brand: input.brandLabel ?? "",
-          model: input.modelLabel ?? "",
-          location: { warehouse: "", shelf: "", bin: "" }, // will be overwritten by joined data later
-          condition: input.condition,
-          status: "Available",
-          purchasePrice: input.purchasePrice,
-          retailPrice: input.retailPrice,
-          wholesalePrice: input.wholesalePrice,
-          actualFinalPrice: null,
-          supplierId: input.supplierId,
-          shipmentId: input.shipmentId || null,
-          dateAdded: today,
-          batchId,
-          notes: input.notes,
-          images: [],
-          movementHistory: [{
-            id: `MV${pad(serialCounter, 5)}`,
-            timestamp: new Date().toISOString(),
-            fromStatus: "Available",
-            toStatus: "Available",
-            userId: currentUser.id,
-            userName: currentUser.name,
-            reason: "Initial intake",
-          }],
-          purchasePriceValuation: currencyService.createValuation(input.purchasePrice, currency),
-          retailPriceValuation: currencyService.createValuation(input.retailPrice, currency),
-        })
-        serialCounter++
-      })
-
-      if (newWeapons.length > 0) {
-        set({ weapons: [...newWeapons, ...state.weapons] })
-        try { await db.dbBulkInsertWeapons(newWeapons) } catch (e) { console.error("DB persist failed:", e) }
+      return {
+        success: false,
+        added: 0,
+        duplicates: [],
+        error: "The authoritative backend is required for financial inventory intake",
       }
-      return { success: true, added: newWeapons.length, duplicates }
     },
 
     updateWeaponStatus: async (weaponId, status, reason) => {
@@ -589,21 +535,31 @@ export const useStore = create<StoreState>()(
       const weapon = state.weapons.find(w => w.id === weaponId)
       if (!weapon) return { success: false, error: "Weapon not found" }
 
-      // Optimistically update local state
+      // Build the exact normalized entity that must be persisted.
+      // The database stores storage_location_id, not warehouse/shelf/bin on weapons.
+      const updatedWeapon: Weapon = { ...weapon, storageLocationId }
+
       set(state => ({
-        weapons: state.weapons.map(w => w.id === weaponId ? { ...w, storageLocationId } : w),
+        weapons: state.weapons.map(w => w.id === weaponId ? updatedWeapon : w),
       }))
 
       const api = getElectronAPI()
       try {
         if (api) {
-          await api.weapon.update(weapon) // persists the change
-          await get().refreshFromDb()     // re-fetches all data, correcting location
+          const result = await api.weapon.update(updatedWeapon)
+          if (!result?.success) {
+            throw new Error(result?.error ?? "Failed to update weapon location")
+          }
+          await get().refreshFromDb()
         } else {
-          await db.dbUpdateWeapon(weapon)
-          await get().refreshFromDb()     // even in browser, a full reload fixes derived fields
+          await db.dbUpdateWeapon(updatedWeapon)
+          await get().refreshFromDb()
         }
       } catch (e) {
+        // Roll back the optimistic update if persistence fails.
+        set(state => ({
+          weapons: state.weapons.map(w => w.id === weaponId ? weapon : w),
+        }))
         console.error("Failed to update weapon location:", e)
         return { success: false, error: String(e) }
       }
@@ -620,36 +576,13 @@ export const useStore = create<StoreState>()(
       const api = getElectronAPI()
       const state = get()
       const currentUser = state.getCurrentUser()
-      const currencyService = await getCurrencyService()
       if (api) {
         const result = await api.sale.complete(input, { id: currentUser.id, name: currentUser.name })
         if (!result.success) return { success: false, error: result.error }
         await get().refreshFromDb()
         return { success: true, invoiceId: result.data.invoiceId, invoiceNumber: result.data.invoiceNumber }
       }
-      // Browser fallback (non-atomic, same as before)
-      const today = new Date().toISOString().split("T")[0]
-      const weaponsToSell = input.weaponIds.map((id) => state.weapons.find((w) => w.id === id)).filter((w): w is Weapon => w !== undefined)
-      if (weaponsToSell.length === 0 && input.lineItems.length === 0) return { success: false, error: "No items selected" }
-      const unavailable = weaponsToSell.find((w) => w.status === "Sold")
-      if (unavailable) return { success: false, error: `Weapon ${unavailable.serialNumber} is already sold` }
-      const invoiceId = generateId("INV", state.invoices)
-      const perWeaponFinal = weaponsToSell.length > 0 ? input.totalNegotiated / weaponsToSell.length : 0
-      const paid = input.paidAmount ?? 0
-      const balance = input.balance ?? (input.totalNegotiated - paid)
-      const actualBalance = Math.max(0, balance)
-      const saleCurrency = input.currency || "USD"
-      const totalValuation = currencyService.createValuation(input.totalNegotiated, saleCurrency)
-      let status: InvoiceStatus = "Pending"
-      if (actualBalance <= 0) status = "Paid"
-      else if (new Date(input.dueDate) < new Date()) status = "Overdue"
-
-      set({
-        weapons: state.weapons.map((w) => input.weaponIds.includes(w.id) ? { ...w, status: "Sold" as WeaponStatus, actualFinalPrice: Math.round(perWeaponFinal) } : w),
-        invoices: [{ id: invoiceId, invoiceNumber: input.invoiceNumber, type: "Sale", customerId: input.customerId, supplierId: null, customerName: input.customerName, date: input.date ?? today, dueDate: input.dueDate, totalOriginal: input.totalOriginal, totalNegotiated: input.totalNegotiated, totalPaid: paid, balance: actualBalance, status, weaponIds: input.weaponIds, lineItems: input.lineItems, saleMode: input.mode, employeeId: currentUser.id, employeeName: currentUser.name, attachments: input.attachments, shipmentId: null, notes: input.notes, voided: false, taxAmount: input.taxAmount, totalValuation }, ...state.invoices],
-        payments: paid > 0 ? [{ id: generateId("PAY", state.payments), invoiceId, invoiceNumber: input.invoiceNumber, date: today, amount: paid, method: input.paymentMethod ?? "Cash", employee: currentUser.name, notes: input.notes || "Partial payment" }, ...state.payments] : state.payments,
-      })
-      return { success: true, invoiceId, invoiceNumber: input.invoiceNumber }
+      return { success: false, error: "The authoritative backend is required to complete a sale" }
     },
 
     returnWeapon: async (weaponId) => {
@@ -666,18 +599,7 @@ export const useStore = create<StoreState>()(
         await get().refreshFromDb()
         return { success: true, shipmentId: result.data.shipmentId }
       }
-      if (state.shipments.find((s) => s.shipmentNumber === input.shipmentNumber)) return { success: false, error: "Shipment number already exists" }
-      const shipmentId = generateId("SHP", state.shipments)
-      const newShipment: Shipment = {
-        id: shipmentId, shipmentNumber: input.shipmentNumber, supplierId: input.supplierId,
-        shipmentDate: input.shipmentDate, expectedArrivalDate: input.expectedArrivalDate,
-        totalExpectedItems: input.totalExpectedItems, attachments: input.attachments, notes: input.notes,
-        status: "Pending", timeline: [{ id: `STL${pad(state.shipments.length + 1, 4)}`, timestamp: new Date().toISOString(), status: "Pending", userId: currentUser.id, userName: currentUser.name, notes: "Shipment created", eventType: "ShipmentCreated" }],
-        purchaseOrderNumber: input.purchaseOrderNumber, invoiceNumber: input.invoiceNumber, shippingCarrier: input.shippingCarrier, containerNumber: input.containerNumber, currency: input.currency, purchaseDate: input.purchaseDate, actualArrivalDate: input.actualArrivalDate, lineItems: [], documents: [],
-      }
-      set({ shipments: [newShipment, ...state.shipments] })
-      try { await db.dbInsertShipment(newShipment) } catch (e) { console.error("DB persist failed:", e) }
-      return { success: true, shipmentId }
+      return { success: false, error: "The authoritative backend is required to create a shipment" }
     },
 
     bindWeaponToShipment: async (weaponId, shipmentId) => {
@@ -794,19 +716,7 @@ export const useStore = create<StoreState>()(
         await get().refreshFromDb()
         return { success: true, newBalance: result.data.newBalance }
       }
-      const invoice = state.invoices.find((i) => i.id === input.invoiceId)
-      if (!invoice) return { success: false, error: "Invoice not found" }
-      if (invoice.voided) return { success: false, error: "Cannot pay a voided invoice" }
-      if (input.amount > invoice.balance) return { success: false, error: "Amount paid cannot exceed the remaining balance" }
-      const newBalance = invoice.balance - input.amount
-      let newStatus: InvoiceStatus = "Pending"
-      if (newBalance <= 0) newStatus = "Paid"
-      else if (new Date(invoice.dueDate) < new Date()) newStatus = "Overdue"
-      const newPayment: PaymentRecord = { id: generateId("PAY", state.payments), invoiceId: input.invoiceId, invoiceNumber: invoice.invoiceNumber, date: new Date().toISOString().split("T")[0], amount: input.amount, method: input.method, employee: currentUser.name, notes: input.notes }
-      const updatedInvoice = { ...invoice, totalPaid: invoice.totalPaid + input.amount, balance: newBalance, status: newStatus }
-      set({ invoices: state.invoices.map((i) => i.id === input.invoiceId ? updatedInvoice : i), payments: [newPayment, ...state.payments] })
-      try { await db.dbInsertPayment(newPayment); await db.dbUpdateInvoice(updatedInvoice) } catch (e) { console.error("DB persist failed:", e) }
-      return { success: true, newBalance }
+      return { success: false, error: "The authoritative backend is required to register a payment" }
     },
 
     extendDueDate: async (input) => {
@@ -856,8 +766,18 @@ export const useStore = create<StoreState>()(
       const newCustomer: Customer = { ...customer, id: generateId("CUST", get().customers), dateAdded: new Date().toISOString().split("T")[0] }
       set((state) => ({ customers: [newCustomer, ...state.customers] }))
       const api = getElectronAPI()
-      if (api) { const result = await api.customer.insert(newCustomer); if (!result.success) return { success: false, error: result.error } }
-      else { try { await db.dbInsertCustomer(newCustomer) } catch (e) { console.error("DB persist failed:", e) } }
+      if (api) {
+        const result = await api.customer.insert(newCustomer)
+        if (!result.success) {
+          set((state) => ({ customers: state.customers.filter((c) => c.id !== newCustomer.id) }))
+          return { success: false, error: result.error }
+        }
+      } else {
+        try { await db.dbInsertCustomer(newCustomer) } catch (e) {
+          set((state) => ({ customers: state.customers.filter((c) => c.id !== newCustomer.id) }))
+          return { success: false, error: String(e) }
+        }
+      }
       return { success: true, customer: newCustomer }
     },
 
@@ -865,8 +785,18 @@ export const useStore = create<StoreState>()(
       const newSupplier: Supplier = { ...supplier, id: generateId("SUP", get().suppliers), dateAdded: new Date().toISOString().split("T")[0] }
       set((state) => ({ suppliers: [newSupplier, ...state.suppliers] }))
       const api = getElectronAPI()
-      if (api) { const result = await api.supplier.insert(newSupplier); if (!result.success) return { success: false, error: result.error } }
-      else { try { await db.dbInsertSupplier(newSupplier) } catch (e) { console.error("DB persist failed:", e) } }
+      if (api) {
+        const result = await api.supplier.insert(newSupplier)
+        if (!result.success) {
+          set((state) => ({ suppliers: state.suppliers.filter((s) => s.id !== newSupplier.id) }))
+          return { success: false, error: result.error }
+        }
+      } else {
+        try { await db.dbInsertSupplier(newSupplier) } catch (e) {
+          set((state) => ({ suppliers: state.suppliers.filter((s) => s.id !== newSupplier.id) }))
+          return { success: false, error: String(e) }
+        }
+      }
       return { success: true, supplier: newSupplier }
     },
 
@@ -889,21 +819,39 @@ export const useStore = create<StoreState>()(
     },
 
     addAccessory: async (accessory) => {
-      const newAccessory: Accessory = { ...accessory, id: generateId("ACC", get().accessories), dateAdded: new Date().toISOString().split("T")[0] }
-      set((state) => ({ accessories: [newAccessory, ...state.accessories] }))
+      const newAccessory: Accessory = {
+        ...accessory,
+        id: generateId("ACC", get().accessories),
+        dateAdded: new Date().toISOString().split("T")[0],
+      }
+
       const api = getElectronAPI()
-      if (api) { const result = await api.accessory.insert(newAccessory); if (!result.success) return { success: false, error: result.error } }
-      else { try { await db.dbInsertAccessory(newAccessory) } catch (e) { console.error("DB persist failed:", e) } }
-      return { success: true }
+      if (api) {
+        const result = await api.accessory.insert(newAccessory)
+        if (!result.success) return { success: false, error: result.error }
+        await get().refreshFromDb()
+        return { success: true }
+      }
+
+      return { success: false, error: "The authoritative backend is required to create priced inventory" }
     },
 
     addAmmunition: async (ammo) => {
-      const newAmmo: Ammunition = { ...ammo, id: generateId("AMM", get().ammunition), dateAdded: new Date().toISOString().split("T")[0] }
-      set((state) => ({ ammunition: [newAmmo, ...state.ammunition] }))
+      const newAmmo: Ammunition = {
+        ...ammo,
+        id: generateId("AMM", get().ammunition),
+        dateAdded: new Date().toISOString().split("T")[0],
+      }
+
       const api = getElectronAPI()
-      if (api) { const result = await api.ammunition.insert(newAmmo); if (!result.success) return { success: false, error: result.error } }
-      else { try { await db.dbInsertAmmunition(newAmmo) } catch (e) { console.error("DB persist failed:", e) } }
-      return { success: true }
+      if (api) {
+        const result = await api.ammunition.insert(newAmmo)
+        if (!result.success) return { success: false, error: result.error }
+        await get().refreshFromDb()
+        return { success: true }
+      }
+
+      return { success: false, error: "The authoritative backend is required to create priced inventory" }
     },
 
     addStock: async (input) => {
@@ -916,18 +864,7 @@ export const useStore = create<StoreState>()(
         await get().refreshFromDb()
         return { success: true }
       }
-      if (input.itemType === "accessory") {
-        const item = state.accessories.find((a) => a.id === input.itemId)
-        if (!item) return { success: false, error: "Accessory not found" }
-        set({ accessories: state.accessories.map((a) => a.id === input.itemId ? { ...a, quantity: a.quantity + input.quantity, location: input.location ?? a.location } : a) })
-      } else {
-        const item = state.ammunition.find((a) => a.id === input.itemId)
-        if (!item) return { success: false, error: "Ammunition not found" }
-        const newPackages = Math.floor(input.quantity / item.unitsPerPackage)
-        const newLoose = input.quantity % item.unitsPerPackage
-        set({ ammunition: state.ammunition.map((a) => a.id === input.itemId ? { ...a, fullPackages: a.fullPackages + newPackages, looseRounds: a.looseRounds + newLoose, location: input.location ?? a.location } : a) })
-      }
-      return { success: true }
+      return { success: false, error: "The authoritative backend is required for inventory changes" }
     },
 
     receiveAmmoByPackages: async (input) => {
@@ -940,18 +877,7 @@ export const useStore = create<StoreState>()(
         await get().refreshFromDb()
         return { success: true }
       }
-      const item = state.ammunition.find((a) => a.id === input.itemId)
-      if (!item) return { success: false, error: "Ammunition not found" }
-      if (input.numberOfPackages <= 0) return { success: false, error: "Number of packages must be greater than 0" }
-      if (input.unitsPerPackage <= 0) return { success: false, error: "Units per package must be greater than 0" }
-      const totalRounds = input.numberOfPackages * input.unitsPerPackage
-      if (input.unitsPerPackage === item.unitsPerPackage) {
-        set({ ammunition: state.ammunition.map((a) => a.id === input.itemId ? { ...a, fullPackages: a.fullPackages + input.numberOfPackages, location: input.location ?? a.location } : a) })
-      } else {
-        const allRounds = ammoTotalRounds(item) + totalRounds
-        set({ ammunition: state.ammunition.map((a) => a.id === input.itemId ? { ...a, unitsPerPackage: input.unitsPerPackage, fullPackages: Math.floor(allRounds / input.unitsPerPackage), looseRounds: allRounds % input.unitsPerPackage, location: input.location ?? a.location } : a) })
-      }
-      return { success: true }
+      return { success: false, error: "The authoritative backend is required for ammunition receipts" }
     },
 
     receiveAmmoByRounds: async (input) => {
@@ -964,31 +890,20 @@ export const useStore = create<StoreState>()(
         await get().refreshFromDb()
         return { success: true }
       }
-      const item = state.ammunition.find((a) => a.id === input.itemId)
-      if (!item) return { success: false, error: "Ammunition not found" }
-      if (input.totalRounds <= 0) return { success: false, error: "Total rounds must be greater than 0" }
-      const allRounds = ammoTotalRounds(item) + input.totalRounds
-      set({ ammunition: state.ammunition.map((a) => a.id === input.itemId ? { ...a, fullPackages: Math.floor(allRounds / a.unitsPerPackage), looseRounds: allRounds % a.unitsPerPackage, location: input.location ?? a.location } : a) })
-      return { success: true }
+      return { success: false, error: "The authoritative backend is required for ammunition receipts" }
     },
 
     sellAmmo: async (input) => {
       const api = getElectronAPI()
       const state = get()
+      const currentUser = state.getCurrentUser()
       if (api) {
-        const result = await api.inventory.sellAmmo(input)
+        const result = await api.inventory.sellAmmo(input, { id: currentUser.id, name: currentUser.name })
         if (!result.success) return { success: false, error: result.error }
         await get().refreshFromDb()
         return { success: true }
       }
-      const item = state.ammunition.find((a) => a.id === input.itemId)
-      if (!item) return { success: false, error: "Ammunition not found" }
-      if (input.rounds <= 0) return { success: false, error: "Rounds to sell must be greater than 0" }
-      const currentTotal = ammoTotalRounds(item)
-      if (input.rounds > currentTotal) return { success: false, error: `Insufficient stock: only ${currentTotal} rounds available` }
-      const remaining = currentTotal - input.rounds
-      set({ ammunition: state.ammunition.map((a) => a.id === input.itemId ? { ...a, fullPackages: Math.floor(remaining / a.unitsPerPackage), looseRounds: remaining % a.unitsPerPackage } : a) })
-      return { success: true }
+      return { success: false, error: "The authoritative backend is required for ammunition sales" }
     },
 
     updateAmmoPackage: async (input) => {
@@ -1001,31 +916,46 @@ export const useStore = create<StoreState>()(
         await get().refreshFromDb()
         return { success: true }
       }
-      const item = state.ammunition.find((a) => a.id === input.itemId)
-      if (!item) return { success: false, error: "Ammunition not found" }
-      if (input.unitsPerPackage <= 0) return { success: false, error: "Units per package must be greater than 0" }
-      const currentTotal = ammoTotalRounds(item)
-      set({ ammunition: state.ammunition.map((a) => a.id === input.itemId ? { ...a, packageType: input.packageType, unitsPerPackage: input.unitsPerPackage, fullPackages: Math.floor(currentTotal / input.unitsPerPackage), looseRounds: currentTotal % input.unitsPerPackage } : a) })
-      return { success: true }
+      return { success: false, error: "The authoritative backend is required for inventory changes" }
     },
 
     updateSettings: async (updates) => {
-      set((state) => ({ settings: { ...state.settings, ...updates } }))
+      const previous = get().settings
+      const requested = { ...previous, ...updates }
       const api = getElectronAPI()
-      if (api) { const result = await api.settings.update(get().settings); if (!result.success) return { success: false, error: result.error } }
-      else { try { await db.dbUpdateSettings(get().settings) } catch (e) { console.error("DB persist failed:", e) } }
+      if (!api) return { success: false, error: "The authoritative backend is required to update currency settings" }
+      const result = await api.settings.update(requested)
+      if (!result.success) {
+        set({ settings: previous })
+        return { success: false, error: result.error }
+      }
+      set({ settings: result.data as SystemSettings })
       return { success: true }
     },
 
     updateUserPreferences: async (updates) => {
       const state = get()
-      const current = state.userPreferences ?? { userId: state.currentUserId, reportViewMode: "accounting" as const }
+      const previous = state.userPreferences
+      const current = previous ?? {
+        userId: state.currentUserId,
+        displayCurrency: state.settings.preferredDisplayCurrency ?? state.settings.currencyCode,
+        reportViewMode: "display" as const,
+      }
       const merged = { ...current, ...updates }
       set({ userPreferences: merged })
       const api = getElectronAPI()
-      if (api) { const result = await api.userPreferences.upsert(merged); if (!result.success) return { success: false, error: result.error } }
-      else { try { await db.dbUpsertUserPreferences(merged) } catch (e) { console.error("DB persist failed:", e) } }
-      return { success: true }
+      try {
+        if (api) {
+          const result = await api.userPreferences.upsert(merged)
+          if (!result.success) throw new Error(result.error ?? "Failed to save user preferences")
+        } else {
+          await db.dbUpsertUserPreferences(merged)
+        }
+        return { success: true }
+      } catch (error) {
+        set({ userPreferences: previous })
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
     },
 
     trackCurrencyUsage: (code) => {
@@ -1046,8 +976,15 @@ export const useStore = create<StoreState>()(
       const u = get().users.find((u) => u.id === id)
       if (u) {
         const api = getElectronAPI()
-        if (api) { await api.user.update(u) }
-        else { try { await db.dbUpdateUser(u) } catch (e) { console.error("DB persist failed:", e) } }
+        if (api) {
+          const result = await api.user.update(u)
+          if (!result?.success) return { success: false, error: result?.error ?? "Failed to update user" }
+        } else {
+          try { await db.dbUpdateUser(u) } catch (e) {
+            console.error("DB persist failed:", e)
+            return { success: false, error: String(e) }
+          }
+        }
       }
       return { success: true }
     },
@@ -1067,8 +1004,15 @@ export const useStore = create<StoreState>()(
       const n = get().notifications.find((n) => n.id === id)
       if (n) {
         const api = getElectronAPI()
-        if (api) { await api.notification.update(n) }
-        else { try { await db.dbUpdateNotification(n) } catch (e) { console.error("DB persist failed:", e) } }
+        if (api) {
+          const result = await api.notification.update(n)
+          if (!result?.success) return { success: false, error: result?.error ?? "Failed to update notification" }
+        } else {
+          try { await db.dbUpdateNotification(n) } catch (e) {
+            console.error("DB persist failed:", e)
+            return { success: false, error: String(e) }
+          }
+        }
       }
       return { success: true }
     },

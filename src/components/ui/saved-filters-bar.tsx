@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useStore } from "@/lib/store"
 import type { SavedFilter } from "@/lib/types"
+import { useI18n } from "@/lib/i18n"
 
 interface SavedFiltersBarProps {
   entityType: string
@@ -13,6 +14,7 @@ interface SavedFiltersBarProps {
 }
 
 export function SavedFiltersBar({ entityType, currentFilterState, onLoadFilter }: SavedFiltersBarProps) {
+  const { t } = useI18n()
   const savedFilters = useStore((s) => s.savedFilters)
   const saveFilter = useStore((s) => s.saveFilter)
   const deleteFilter = useStore((s) => s.deleteFilter)
@@ -33,19 +35,19 @@ export function SavedFiltersBar({ entityType, currentFilterState, onLoadFilter }
       <Popover open={saveOpen} onOpenChange={setSaveOpen}>
         <PopoverTrigger asChild>
           <Button size="xs" variant="ghost" className="h-5 text-[10px]">
-            <Save className="size-3" /> Save Filter
+            <Save className="size-3" /> {t("common.saveFilter")}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-48 p-2" align="start">
           <Input
-            placeholder="Filter name..."
+            placeholder={t("common.filterName")}
             value={filterName}
             onChange={(e) => setFilterName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSave()}
             className="h-7 text-xs"
             autoFocus
           />
-          <Button size="xs" className="mt-1.5 w-full" onClick={handleSave}>Save</Button>
+          <Button size="xs" className="mt-1.5 w-full" onClick={handleSave}>{t("common.save")}</Button>
         </PopoverContent>
       </Popover>
 

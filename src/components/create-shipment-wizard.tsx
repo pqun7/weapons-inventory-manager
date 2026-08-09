@@ -14,12 +14,14 @@ import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useStore, type ShipmentLineItemInput } from "@/lib/store"
 import { useI18n } from "@/lib/i18n"
-import { generateShipmentNumber, formatCurrency, formatDate } from "@/lib/format"
+import { generateShipmentNumber, formatDate } from "@/lib/format"
 import type { ShipmentStatus } from "@/lib/types"
 import { toast } from "sonner"
 import { BulkSerialParserDialog } from "./bulk-serial-parser-dialog"
 import { SearchableCombobox } from "@/components/ui/searchable-combobox"
 import { useDynamicMasterData } from "@/hooks/use-dynamic-master-data"
+import { useCurrency } from "@/lib/currency-context"
+import { multiplyMoney, sumMoney } from "@/lib/money-ui"
 
 const SHIPMENT_STATUSES: ShipmentStatus[] = ["Pending", "In Transit", "Delayed", "Arrived", "Cancelled", "Partial"]
 const PRODUCT_TYPES = ["weapon", "ammunition", "accessory"] as const
@@ -41,7 +43,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
   const shipments = useStore((s) => s.shipments)
   const suppliers = useStore((s) => s.suppliers)
   const md = useDynamicMasterData()
-  const settings = useStore((s) => s.settings)
+  const { currencies, transactionCurrency, formatOriginal } = useCurrency()
   const addSupplier = useStore((s) => s.addSupplier)
   const bulkCreate = useStore((s) => s.bulkCreateShipmentWithItems)
 
@@ -52,7 +54,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
   const [invoiceNumber, setInvoiceNumber] = useState("")
   const [shippingCarrier, setShippingCarrier] = useState("")
   const [containerNumber, setContainerNumber] = useState("")
-  const [currency, setCurrency] = useState("USD")
+  const [currency, setCurrency] = useState(transactionCurrency)
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split("T")[0])
   const [shipmentDate, setShipmentDate] = useState(new Date().toISOString().split("T")[0])
   const [expectedArrivalDate, setExpectedArrivalDate] = useState(() => {
@@ -78,7 +80,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
     setInvoiceNumber("")
     setShippingCarrier("")
     setContainerNumber("")
-    setCurrency("USD")
+    setCurrency(transactionCurrency)
     setPurchaseDate(new Date().toISOString().split("T")[0])
     setShipmentDate(new Date().toISOString().split("T")[0])
     setExpectedArrivalDate(() => { const d = new Date(); d.setDate(d.getDate() + 14); return d.toISOString().split("T")[0] })
@@ -86,7 +88,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
     setInitialStatus("Pending")
     setNotes("")
     setLineItems([])
-  }, [])
+  }, [transactionCurrency])
 
   useEffect(() => {
     if (open && prefillLineItems && prefillLineItems.length > 0) {
@@ -181,6 +183,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
       if (!shipmentNumber.trim()) return false
       if (!supplierId) return false
       if (!expectedArrivalDate) return false
+      if (!currencies.some((item) => item.isoCode === currency)) return false
       return true
     }
     if (step === 1) {
@@ -196,21 +199,20 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
       return lineItems.filter((i) => i.productType === "weapon").every((i) => i.serialNumbers.length === i.quantity)
     }
     return true
-  }, [step, shipmentNumber, supplierId, expectedArrivalDate, lineItems])
+  }, [step, shipmentNumber, supplierId, expectedArrivalDate, lineItems, currencies, currency])
 
   const totals = useMemo(() => {
     let weapons = 0, ammo = 0, accessories = 0
-    let totalCost = 0, totalRetail = 0
+    const costs: number[] = []
+    const retailValues: number[] = []
     for (const item of lineItems) {
-      const cost = item.purchasePrice * item.quantity
-      const retail = item.retailPrice * item.quantity
-      totalCost += cost
-      totalRetail += retail
+      costs.push(multiplyMoney(item.purchasePrice, item.quantity))
+      retailValues.push(multiplyMoney(item.retailPrice, item.quantity))
       if (item.productType === "weapon") weapons += item.quantity
       else if (item.productType === "ammunition") ammo += item.quantity
       else accessories += item.quantity
     }
-    return { weapons, ammo, accessories, totalItems: weapons + ammo + accessories, totalCost, totalRetail }
+    return { weapons, ammo, accessories, totalItems: weapons + ammo + accessories, totalCost: sumMoney(costs), totalRetail: sumMoney(retailValues) }
   }, [lineItems])
 
   const handleFinalSubmit = async () => {
@@ -322,7 +324,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
                       <Label className="text-xs">{t("ship.shipmentNumber")}</Label>
                       <div className="flex items-end gap-2">
                         <Input value={shipmentNumber} onChange={(e) => setShipmentNumber(e.target.value)} placeholder="Auto or manual" className="h-8 text-xs font-mono" />
-                        <Button size="sm" variant="outline" className="h-8 shrink-0" onClick={() => setShipmentNumber(generateShipmentNumber(shipments))}>Auto</Button>
+                        <Button size="sm" variant="outline" className="h-8 shrink-0" onClick={() => setShipmentNumber(generateShipmentNumber(shipments))}>{t("common.auto")}</Button>
                       </div>
                     </div>
                     <div>
@@ -366,7 +368,14 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <Label className="text-xs">{t("ship.currency")}</Label>
-                      <Input value={currency} onChange={(e) => setCurrency(e.target.value)} className="h-8 text-xs" />
+                      <Select value={currency} onValueChange={setCurrency}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {currencies.map((item) => (
+                            <SelectItem key={item.isoCode} value={item.isoCode}>{item.isoCode} — {item.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div>
                       <Label className="text-xs">{t("ship.purchaseDate")}</Label>
@@ -475,15 +484,15 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
                       </div>
                       <div className="mt-2 grid grid-cols-3 gap-2">
                         <div>
-                          <Label className="text-[10px]">{t("common.purchasePrice")}</Label>
+                          <Label className="text-[10px]">{t("common.purchasePrice")} ({currency})</Label>
                           <Input type="number" step="0.01" value={item.purchasePrice} onChange={(e) => updateLineItem(item.id, { purchasePrice: Number(e.target.value) })} className="mt-0.5 h-7 text-[11px]" />
                         </div>
                         <div>
-                          <Label className="text-[10px]">{t("common.sellingPrice")}</Label>
+                          <Label className="text-[10px]">{t("common.sellingPrice")} ({currency})</Label>
                           <Input type="number" step="0.01" value={item.retailPrice} onChange={(e) => updateLineItem(item.id, { retailPrice: Number(e.target.value) })} className="mt-0.5 h-7 text-[11px]" />
                         </div>
                         <div>
-                          <Label className="text-[10px]">{t("ship.wholesalePrice")}</Label>
+                          <Label className="text-[10px]">{t("ship.wholesalePrice")} ({currency})</Label>
                           <Input type="number" step="0.01" value={item.wholesalePrice} onChange={(e) => updateLineItem(item.id, { wholesalePrice: Number(e.target.value) })} className="mt-0.5 h-7 text-[11px]" />
                         </div>
                       </div>
@@ -595,9 +604,9 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
                       <DollarSign className="size-3.5" /> {t("ship.financialBreakdown")}
                     </h4>
                     <div className="grid grid-cols-2 gap-2 text-[11px]">
-                      <div><span className="text-muted-foreground">{t("ship.totalCost")}:</span> <span className="font-bold tabular-nums">{formatCurrency(totals.totalCost, settings.currencySymbol)}</span></div>
-                      <div><span className="text-muted-foreground">{t("ship.totalRetail")}:</span> <span className="font-bold tabular-nums">{formatCurrency(totals.totalRetail, settings.currencySymbol)}</span></div>
-                      <div className="col-span-2"><span className="text-muted-foreground">{t("ship.projectedProfit")}:</span> <span className="font-bold tabular-nums text-status-returned-fg">{formatCurrency(totals.totalRetail - totals.totalCost, settings.currencySymbol)}</span></div>
+                      <div><span className="text-muted-foreground">{t("ship.totalCost")}:</span> <span className="font-bold tabular-nums">{formatOriginal(totals.totalCost, currency)}</span></div>
+                      <div><span className="text-muted-foreground">{t("ship.totalRetail")}:</span> <span className="font-bold tabular-nums">{formatOriginal(totals.totalRetail, currency)}</span></div>
+                      <div className="col-span-2"><span className="text-muted-foreground">{t("ship.projectedProfit")}:</span> <span className="font-bold tabular-nums text-status-returned-fg">{formatOriginal(sumMoney([totals.totalRetail, -totals.totalCost]), currency)}</span></div>
                     </div>
                   </div>
 
@@ -650,8 +659,8 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
           <DialogHeader><DialogTitle className="text-sm">{t("ship.supplier")}</DialogTitle></DialogHeader>
           <div className="grid gap-2">
             <div><Label className="text-xs">{t("common.name")}</Label><Input value={newSupName} onChange={(e) => setNewSupName(e.target.value)} className="h-8 text-xs" /></div>
-            <div><Label className="text-xs">Contact</Label><Input value={newSupContact} onChange={(e) => setNewSupContact(e.target.value)} className="h-8 text-xs" /></div>
-            <div><Label className="text-xs">Phone</Label><Input value={newSupPhone} onChange={(e) => setNewSupPhone(e.target.value)} className="h-8 text-xs" /></div>
+            <div><Label className="text-xs">{t("common.contact")}</Label><Input value={newSupContact} onChange={(e) => setNewSupContact(e.target.value)} className="h-8 text-xs" /></div>
+            <div><Label className="text-xs">{t("common.phone")}</Label><Input value={newSupPhone} onChange={(e) => setNewSupPhone(e.target.value)} className="h-8 text-xs" /></div>
           </div>
           <DialogFooter><Button size="sm" onClick={handleQuickAddSupplier}>{t("common.add")}</Button></DialogFooter>
         </DialogContent>

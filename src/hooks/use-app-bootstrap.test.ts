@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { renderHook, waitFor } from "@testing-library/react"
 
 vi.mock("@/lib/db", () => ({
+  isDbReady: vi.fn().mockReturnValue(true),
+  dbGetUserPreferences: vi.fn().mockResolvedValue(null),
   initDb: vi.fn().mockResolvedValue(undefined),
   seedDemoDataIfNeeded: vi.fn().mockResolvedValue(undefined),
   dbGetAll: vi.fn().mockResolvedValue({

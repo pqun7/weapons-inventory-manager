@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/table"
 import { useStore } from "@/lib/store"
 import { useI18n } from "@/lib/i18n"
+import { useCurrency } from "@/lib/currency-context"
 import type { UserRole, UserPermissions } from "@/lib/types"
 import { CurrencyManagementPanel } from "@/components/currency-management-panel"
 import { MasterDataPanel } from "@/components/master-data-panel"
@@ -63,6 +64,7 @@ const ROLE_VALUES: UserRole[] = ["Admin", "Manager"]
 
 export function SettingsPage() {
   const { t } = useI18n()
+  const { currencies, accountingCurrency, transactionCurrency, displayCurrency, setDisplayCurrency, currencyPresentation } = useCurrency()
   const store = useStore()
   const settings = store.settings
   const users = store.users
@@ -102,8 +104,8 @@ export function SettingsPage() {
   }
 
   useEffect(() => {
-    loadBackups()
-  }, [])
+    void refreshFromDb().then(() => loadBackups())
+  }, [refreshFromDb])
 
   const roleLabel = (role: UserRole): string => {
     const map: Record<UserRole, string> = {
@@ -243,9 +245,17 @@ export function SettingsPage() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">
-                      {t("settings.currency")}
+                      {t("report.accountingCurrency")}
                     </span>
-                    <span>{settings.preferredDisplayCurrency ?? settings.currencyCode}</span>
+                    <span>{accountingCurrency}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">{t("settings.currency")}</span>
+                    <span>{transactionCurrency}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">{t("report.displayCurrency")}</span>
+                    <span>{displayCurrency}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">
@@ -287,15 +297,17 @@ export function SettingsPage() {
                   <div>
                     <Label className="text-xs">{t("settings.preferredDisplayCurrency")}</Label>
                     <Select
-                      value={settings.preferredDisplayCurrency ?? settings.currencyCode}
-                      onValueChange={(value) => updateSettings({ preferredDisplayCurrency: value })}
+                      value={displayCurrency}
+                      onValueChange={setDisplayCurrency}
                     >
                       <SelectTrigger className="h-8 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {(settings.supportedCurrencies.length > 0 ? settings.supportedCurrencies : [settings.currencyCode]).map((code) => (
-                          <SelectItem key={code} value={code}>{code}</SelectItem>
+                        {currencies.map((currency) => (
+                          <SelectItem key={currency.isoCode} value={currency.isoCode}>
+                            {currency.isoCode} — {currencyPresentation(currency.isoCode).name}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -404,39 +416,35 @@ export function SettingsPage() {
                       </Button>
                       <Button
                         size="sm"
-                        onClick={() => {
+                        onClick={async () => {
                           if (!newUsername.trim() || !newName.trim()) {
                             toast.error(t("settings.usernameNameRequired"))
                             return
                           }
                           const defaultPerms: UserPermissions = {
-                            canImportExcel:
-                              newRole === "Admin" || newRole === "Manager",
+                            canImportExcel: newRole === "Admin" || newRole === "Manager",
                             canExportData:
-                              newRole === "Admin" ||
-                              newRole === "Manager" ||
-                              newRole === "Accountant",
+                              newRole === "Admin" || newRole === "Manager" || newRole === "Accountant",
                             canViewReports:
-                              newRole === "Admin" ||
-                              newRole === "Manager" ||
-                              newRole === "Accountant",
+                              newRole === "Admin" || newRole === "Manager" || newRole === "Accountant",
                             canManageUsers: newRole === "Admin",
                             canRegisterPayments:
-                              newRole === "Admin" ||
-                              newRole === "Manager" ||
-                              newRole === "Accountant",
-                            canVoidInvoices:
-                              newRole === "Admin" || newRole === "Manager",
-                            canExtendDueDates:
-                              newRole === "Admin" || newRole === "Manager",
+                              newRole === "Admin" || newRole === "Manager" || newRole === "Accountant",
+                            canVoidInvoices: newRole === "Admin" || newRole === "Manager",
+                            canExtendDueDates: newRole === "Admin" || newRole === "Manager",
                             canDeleteRecords: newRole === "Admin",
                           }
-                          addUser({
+                          const result = await addUser({
                             username: newUsername.trim(),
                             name: newName.trim(),
                             role: newRole,
                             permissions: defaultPerms,
                           })
+                          if (!result.success) {
+                            toast.error(result.error ?? "Failed to add user")
+                            return
+                          }
+                          await refreshFromDb()
                           toast.success(t("settings.userAdded"))
                           setAddUserOpen(false)
                           setNewUsername("")
@@ -482,9 +490,11 @@ export function SettingsPage() {
                         <TableCell className="py-1.5">
                           <Select
                             value={u.role}
-                            onValueChange={(v) =>
-                              updateUser(u.id, { role: v as UserRole })
-                            }
+                            onValueChange={async (v) => {
+                              const result = await updateUser(u.id, { role: v as UserRole })
+                              if (!result.success) toast.error(result.error ?? "Failed to update user")
+                              else await refreshFromDb()
+                            }}
                           >
                             <SelectTrigger
                               size="sm"

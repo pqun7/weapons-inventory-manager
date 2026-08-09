@@ -82,6 +82,7 @@ export interface AuditLogEntry {
   changedBy: string | null
   changedAt: string
   reason: string | null
+  source?: "manual" | "api" | "cache" | "default"
 }
 
 export interface DatabaseBackupInfo {
@@ -118,6 +119,8 @@ interface WeaponRow {
   actual_final_price: number | null
   purchase_price_valuation: string | null
   retail_price_valuation: string | null
+  wholesale_price_valuation: string | null
+  actual_final_price_valuation: string | null
   sale_price_valuation: string | null
   deleted_at: string | null
   // aliased labels from the LEFT JOIN (still snake_case as they appear in the query)
@@ -179,6 +182,16 @@ interface InvoiceRow {
   voided: number
   tax_amount: number
   total_valuation: string | null
+  currency: string | null
+  accounting_currency: string | null
+  exchange_rate: string | number | null
+  exchange_rate_date: string | null
+  rate_source: string | null
+  total_original_accounting: string | number | null
+  total_negotiated_accounting: string | number | null
+  total_paid_accounting: string | number | null
+  balance_accounting: string | number | null
+  tax_amount_accounting: string | number | null
 }
 
 interface PaymentRow {
@@ -187,6 +200,13 @@ interface PaymentRow {
   invoice_number: string
   date: string
   amount: number
+  currency: string | null
+  accounting_amount: string | number | null
+  accounting_currency: string | null
+  exchange_rate: string | number | null
+  exchange_rate_date: string | null
+  rate_source: string | null
+  rate_id: string | null
   method: string
   employee: string
   notes: string
@@ -199,6 +219,8 @@ interface AccessoryRow {
   quantity: number
   safety_threshold: number
   price: number
+  price_currency: string | null
+  price_valuation: string | null
   date_added: string
   warehouse: string
   shelf: string
@@ -214,6 +236,8 @@ interface AmmoRow {
   loose_rounds: number
   safety_threshold: number
   price: number
+  price_currency: string | null
+  price_valuation: string | null
   date_added: string
   warehouse: string
   shelf: string
@@ -275,6 +299,8 @@ interface SettingsRow {
   id: number
   currency_symbol: string
   currency_code: string
+  accounting_currency_code: string
+  rate_base_currency_code: string
   supported_currencies: string
   currency_frequency: string
   tax_percent: number
@@ -326,7 +352,31 @@ function parseJSON<T>(value: string | null, fallback: T): T {
 
 function parseValuation(value: string | null): MoneyValuation | undefined {
   if (!value) return undefined
-  return parseJSON<MoneyValuation>(value, undefined as unknown as MoneyValuation) ?? undefined
+  const parsed = parseJSON<Partial<MoneyValuation>>(value, {})
+  if (!parsed.originalCurrency || parsed.originalAmount == null || parsed.exchangeRate == null || !parsed.exchangeRateDate) {
+    return undefined
+  }
+  const accountingCurrency = parsed.accountingCurrency ?? (parsed.accountingAmountUSD != null ? "USD" : undefined)
+  const accountingAmount = parsed.accountingAmount ?? parsed.accountingAmountUSD
+  const validSources = new Set<MoneyValuation["rateSource"]>(["manual", "api", "cache", "default"])
+  if (!accountingCurrency || accountingAmount == null || !parsed.rateSource || !validSources.has(parsed.rateSource)) return undefined
+  const originalAmount = Number(parsed.originalAmount)
+  const normalizedAccountingAmount = Number(accountingAmount)
+  const exchangeRate = Number(parsed.exchangeRate)
+  if (![originalAmount, normalizedAccountingAmount, exchangeRate].every(Number.isFinite) || originalAmount < 0 || normalizedAccountingAmount < 0 || exchangeRate <= 0) {
+    return undefined
+  }
+  return {
+    originalAmount,
+    originalCurrency: parsed.originalCurrency,
+    accountingAmount: normalizedAccountingAmount,
+    accountingCurrency,
+    accountingAmountUSD: accountingCurrency === "USD" ? Number(accountingAmount) : undefined,
+    exchangeRate,
+    exchangeRateDate: parsed.exchangeRateDate,
+    rateSource: parsed.rateSource,
+    rateId: parsed.rateId,
+  }
 }
 
 function parseLocation(warehouse: string, shelf: string, bin: string): StorageLocation {
@@ -371,6 +421,8 @@ function rowToWeapon(r: WeaponRow): Weapon {
     movementHistory: parseJSON(r.movement_history, []),
     purchasePriceValuation: parseValuation(r.purchase_price_valuation),
     retailPriceValuation: parseValuation(r.retail_price_valuation),
+    wholesalePriceValuation: parseValuation(r.wholesale_price_valuation),
+    actualFinalPriceValuation: parseValuation(r.actual_final_price_valuation),
     salePriceValuation: parseValuation(r.sale_price_valuation),
   }
 }
@@ -401,6 +453,8 @@ function weaponToRow(w: Weapon): Record<string, unknown> {
     movement_history: JSON.stringify(w.movementHistory),
     purchase_price_valuation: w.purchasePriceValuation ? JSON.stringify(w.purchasePriceValuation) : null,
     retail_price_valuation: w.retailPriceValuation ? JSON.stringify(w.retailPriceValuation) : null,
+    wholesale_price_valuation: w.wholesalePriceValuation ? JSON.stringify(w.wholesalePriceValuation) : null,
+    actual_final_price_valuation: w.actualFinalPriceValuation ? JSON.stringify(w.actualFinalPriceValuation) : null,
     sale_price_valuation: w.salePriceValuation ? JSON.stringify(w.salePriceValuation) : null,
     deleted_at: null,
   }
@@ -481,6 +535,16 @@ function rowToInvoice(r: InvoiceRow): Invoice {
     notes: r.notes,
     voided: r.voided === 1,
     taxAmount: r.tax_amount,
+    currency: r.currency ?? undefined,
+    accountingCurrency: r.accounting_currency ?? undefined,
+    exchangeRate: r.exchange_rate == null ? undefined : Number(r.exchange_rate),
+    exchangeRateDate: r.exchange_rate_date ?? undefined,
+    rateSource: (r.rate_source as Invoice["rateSource"]) ?? undefined,
+    totalOriginalAccounting: r.total_original_accounting == null ? undefined : Number(r.total_original_accounting),
+    totalNegotiatedAccounting: r.total_negotiated_accounting == null ? undefined : Number(r.total_negotiated_accounting),
+    totalPaidAccounting: r.total_paid_accounting == null ? undefined : Number(r.total_paid_accounting),
+    balanceAccounting: r.balance_accounting == null ? undefined : Number(r.balance_accounting),
+    taxAmountAccounting: r.tax_amount_accounting == null ? undefined : Number(r.tax_amount_accounting),
     totalValuation: parseValuation(r.total_valuation),
   }
 }
@@ -510,6 +574,16 @@ function invoiceToRow(inv: Invoice): Record<string, unknown> {
     notes: inv.notes,
     voided: inv.voided ? 1 : 0,
     tax_amount: inv.taxAmount,
+    currency: inv.currency ?? null,
+    accounting_currency: inv.accountingCurrency ?? null,
+    exchange_rate: inv.exchangeRate == null ? null : String(inv.exchangeRate),
+    exchange_rate_date: inv.exchangeRateDate ?? null,
+    rate_source: inv.rateSource ?? null,
+    total_original_accounting: inv.totalOriginalAccounting == null ? null : String(inv.totalOriginalAccounting),
+    total_negotiated_accounting: inv.totalNegotiatedAccounting == null ? null : String(inv.totalNegotiatedAccounting),
+    total_paid_accounting: inv.totalPaidAccounting == null ? null : String(inv.totalPaidAccounting),
+    balance_accounting: inv.balanceAccounting == null ? null : String(inv.balanceAccounting),
+    tax_amount_accounting: inv.taxAmountAccounting == null ? null : String(inv.taxAmountAccounting),
     total_valuation: inv.totalValuation ? JSON.stringify(inv.totalValuation) : null,
   }
 }
@@ -521,6 +595,13 @@ function rowToPayment(r: PaymentRow): PaymentRecord {
     invoiceNumber: r.invoice_number,
     date: r.date,
     amount: r.amount,
+    currency: r.currency ?? undefined,
+    accountingAmount: r.accounting_amount == null ? undefined : Number(r.accounting_amount),
+    accountingCurrency: r.accounting_currency ?? undefined,
+    exchangeRate: r.exchange_rate == null ? undefined : Number(r.exchange_rate),
+    exchangeRateDate: r.exchange_rate_date ?? undefined,
+    rateSource: (r.rate_source as PaymentRecord["rateSource"]) ?? undefined,
+    rateId: r.rate_id ?? undefined,
     method: r.method as PaymentRecord["method"],
     employee: r.employee,
     notes: r.notes,
@@ -534,6 +615,13 @@ function paymentToRow(p: PaymentRecord): Record<string, unknown> {
     invoice_number: p.invoiceNumber,
     date: p.date,
     amount: p.amount,
+    currency: p.currency ?? null,
+    accounting_amount: p.accountingAmount == null ? null : String(p.accountingAmount),
+    accounting_currency: p.accountingCurrency ?? null,
+    exchange_rate: p.exchangeRate == null ? null : String(p.exchangeRate),
+    exchange_rate_date: p.exchangeRateDate ?? null,
+    rate_source: p.rateSource ?? null,
+    rate_id: p.rateId ?? null,
     method: p.method,
     employee: p.employee,
     notes: p.notes,
@@ -548,6 +636,8 @@ function rowToAccessory(r: AccessoryRow): Accessory {
     quantity: r.quantity,
     safetyThreshold: r.safety_threshold,
     price: r.price,
+    priceCurrency: r.price_currency ?? undefined,
+    priceValuation: parseValuation(r.price_valuation),
     dateAdded: r.date_added,
     location: parseLocation(r.warehouse, r.shelf, r.bin),
   }
@@ -562,6 +652,8 @@ function accessoryToRow(a: Accessory): Record<string, unknown> {
     quantity: a.quantity,
     safety_threshold: a.safetyThreshold,
     price: a.price,
+    price_currency: a.priceCurrency ?? null,
+    price_valuation: a.priceValuation ? JSON.stringify(a.priceValuation) : null,
     date_added: a.dateAdded,
     warehouse: loc.warehouse,
     shelf: loc.shelf,
@@ -579,6 +671,8 @@ function rowToAmmo(r: AmmoRow): Ammunition {
     looseRounds: r.loose_rounds,
     safetyThreshold: r.safety_threshold,
     price: r.price,
+    priceCurrency: r.price_currency ?? undefined,
+    priceValuation: parseValuation(r.price_valuation),
     dateAdded: r.date_added,
     location: parseLocation(r.warehouse, r.shelf, r.bin),
   }
@@ -595,6 +689,8 @@ function ammoToRow(a: Ammunition): Record<string, unknown> {
     loose_rounds: a.looseRounds,
     safety_threshold: a.safetyThreshold,
     price: a.price,
+    price_currency: a.priceCurrency ?? null,
+    price_valuation: a.priceValuation ? JSON.stringify(a.priceValuation) : null,
     date_added: a.dateAdded,
     warehouse: loc.warehouse,
     shelf: loc.shelf,
@@ -728,7 +824,9 @@ function rowToSettings(r: SettingsRow): SystemSettings {
   return {
     currencySymbol: r.currency_symbol,
     currencyCode: r.currency_code,
-    supportedCurrencies: parseJSON(r.supported_currencies, ["USD", "SAR", "EUR"]),
+    accountingCurrencyCode: r.accounting_currency_code,
+    rateBaseCurrencyCode: r.rate_base_currency_code,
+    supportedCurrencies: parseJSON(r.supported_currencies, ["USD", "SAR", "SDG", "EGP"]),
     currencyFrequency: parseJSON(r.currency_frequency, {}),
     taxPercent: r.tax_percent,
     invoiceHeader: r.invoice_header,
@@ -758,6 +856,8 @@ function settingsToRow(s: SystemSettings): Record<string, unknown> {
     id: 1,
     currency_symbol: s.currencySymbol,
     currency_code: s.currencyCode,
+    accounting_currency_code: s.accountingCurrencyCode,
+    rate_base_currency_code: s.rateBaseCurrencyCode,
     supported_currencies: JSON.stringify(s.supportedCurrencies),
     currency_frequency: JSON.stringify(s.currencyFrequency),
     tax_percent: s.taxPercent,

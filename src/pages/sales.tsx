@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, Fragment } from "react"
+import { useState, useMemo, useCallback, useRef, Fragment, useEffect } from "react"
 import {
   Search, ShoppingCart, UserPlus, Check, Receipt, TrendingUp, Package,
   X, Shield, Plus, ChevronRight, ChevronLeft, ChevronDown, Trash2, AlertTriangle,
@@ -16,17 +16,19 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog"
 import { SearchableCombobox } from "@/components/ui/searchable-combobox"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SmartCurrencyInput } from "@/components/ui/smart-currency-input"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useStore } from "@/lib/store"
-import { SaleService } from "@/lib/services"
-import { formatCurrency, generateInvoiceNumber, statusBadgeClass, statusDotClass } from "@/lib/format"
+import { generateInvoiceNumber, statusBadgeClass, statusDotClass } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { ammoTotalRounds } from "@/lib/types"
-import type { SaleMode, Weapon, Ammunition, Accessory } from "@/lib/types"
+import type { SaleMode, Weapon, Ammunition, Accessory, PaymentMethod } from "@/lib/types"
 import { toast } from "sonner"
 import { useI18n } from "@/lib/i18n"
 import { Textarea } from "@/components/ui/textarea";
+import { useCurrency } from "@/lib/currency-context"
+import { convertValuationToCurrency, multiplyMoney, sumMoney } from "@/lib/money-ui"
 
 
 type WizardStep = 1 | 2 | 3 | 4 | 5
@@ -48,8 +50,6 @@ const STEP_LABELS: { id: WizardStep; labelKey: string; icon: React.ElementType }
   { id: 5, labelKey: "sales.step.review", icon: Receipt },
 ]
 
-type PaymentMethod = "cash" | "card" | "bank_transfer"
-
 function todayDate(): string {
   return new Date().toISOString().split("T")[0]
 }
@@ -64,12 +64,14 @@ export function SalesPage() {
   const settings = useStore((s) => s.settings)
   const getWeaponBySerial = useStore((s) => s.getWeaponBySerial)
   const addCustomer = useStore((s) => s.addCustomer)
-  const sellAmmo = useStore((s) => s.sellAmmo)
+  const completeSale = useStore((s) => s.completeSale)
+  const { currencies, transactionCurrency, formatOriginal, formatInvoice, formatValuation } = useCurrency()
 
   // Wizard state
   const [open, setOpen] = useState(false)
   const [step, setStep] = useState<WizardStep>(1)
   const [mode, setMode] = useState<SaleMode>("Retail")
+  const [saleCurrency, setSaleCurrency] = useState(transactionCurrency)
 
   // Customer
   const [buyerType, setBuyerType] = useState<"existing" | "new">("existing")
@@ -189,43 +191,79 @@ export function SalesPage() {
     [invoices]
   )
 
+  const valuationPrice = useCallback((
+    valuation: Weapon["retailPriceValuation"],
+    legacyAccountingAmount?: number | null,
+  ): number => {
+    return convertValuationToCurrency(valuation, saleCurrency, legacyAccountingAmount) ?? Number.NaN
+  }, [saleCurrency])
+
+  const modePrice = useCallback((weapon: Weapon): number => {
+    return mode === "Wholesale"
+      ? valuationPrice(weapon.wholesalePriceValuation, weapon.wholesalePrice)
+      : valuationPrice(weapon.retailPriceValuation, weapon.retailPrice)
+  }, [mode, valuationPrice])
+
+  const formatTransaction = useCallback(
+    (amount: number) => Number.isFinite(amount) ? formatOriginal(amount, saleCurrency) : "—",
+    [formatOriginal, saleCurrency],
+  )
+  const formatTransactionMoney = useCallback(
+    (amount: number, _legacySymbol?: string) => formatTransaction(amount),
+    [formatTransaction],
+  )
+
+  useEffect(() => {
+    setCustomPrices({})
+    setBargainDiscount("")
+    setPaidAmount("")
+    setAmmoLines((lines) => lines.map((line) => ({
+      ...line,
+      unitPrice: valuationPrice(line.ammo.priceValuation, line.ammo.price),
+    })))
+    setAccessoryLines((lines) => lines.map((line) => ({
+      ...line,
+      unitPrice: valuationPrice(line.accessory.priceValuation, line.accessory.price),
+    })))
+  }, [saleCurrency, valuationPrice])
+
   // ---------- Pricing ----------
   const weaponsSubtotal = useMemo(
-    () => selectedWeapons.reduce((s, w) => {
+    () => sumMoney(selectedWeapons.map((w) => {
       const custom = customPrices[w.id]
-      return s + (custom ? Number(custom) || 0 : mode === "Wholesale" ? w.wholesalePrice : w.retailPrice)
-    }, 0),
-    [selectedWeapons, customPrices, mode]
+      return custom ? Number(custom) : modePrice(w)
+    })),
+    [selectedWeapons, customPrices, modePrice]
   )
   const weaponsOriginal = useMemo(
-    () => selectedWeapons.reduce((s, w) => s + (mode === "Wholesale" ? w.wholesalePrice : w.retailPrice), 0),
-    [selectedWeapons, mode]
+    () => sumMoney(selectedWeapons.map((w) => modePrice(w))),
+    [selectedWeapons, modePrice]
   )
   const ammoSubtotal = useMemo(
-    () => ammoLines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0), 0),
+    () => sumMoney(ammoLines.map((line) => multiplyMoney(Number(line.unitPrice), Number(line.quantity)))),
     [ammoLines]
   )
   const accessorySubtotal = useMemo(
-    () => accessoryLines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0), 0),
+    () => sumMoney(accessoryLines.map((line) => multiplyMoney(Number(line.unitPrice), Number(line.quantity)))),
     [accessoryLines]
   )
 
-  const totalOriginal = weaponsOriginal + ammoSubtotal + accessorySubtotal
-  const totalNegotiated = weaponsSubtotal + ammoSubtotal + accessorySubtotal
-  const discountAmount = totalOriginal - totalNegotiated
+  const totalOriginal = sumMoney([weaponsOriginal, ammoSubtotal, accessorySubtotal])
+  const totalNegotiated = sumMoney([weaponsSubtotal, ammoSubtotal, accessorySubtotal])
+  const discountAmount = sumMoney([totalOriginal, -totalNegotiated])
 
   // الخصم الإضافي
   const bargainDiscountAmount = bargainDiscount.trim() ? Number(bargainDiscount) || 0 : 0
   const bargainDiscountValid = bargainDiscountAmount >= 0 && bargainDiscountAmount <= totalNegotiated
-  const finalSubtotal = bargainDiscountValid ? totalNegotiated - bargainDiscountAmount : totalNegotiated
-  const finalTax = finalSubtotal * (settings.taxPercent / 100)
-  const finalGrandTotal = finalSubtotal + finalTax
+  const finalSubtotal = bargainDiscountValid ? sumMoney([totalNegotiated, -bargainDiscountAmount]) : totalNegotiated
+  const finalTax = multiplyMoney(finalSubtotal, settings.taxPercent / 100)
+  const finalGrandTotal = sumMoney([finalSubtotal, finalTax])
 
   const totalCost = useMemo(
-    () => selectedWeapons.reduce((s, w) => s + w.purchasePrice, 0),
-    [selectedWeapons]
+    () => sumMoney(selectedWeapons.map((weapon) => valuationPrice(weapon.purchasePriceValuation, weapon.purchasePrice))),
+    [selectedWeapons, valuationPrice]
   )
-  const netProfit = finalSubtotal - totalCost
+  const netProfit = sumMoney([finalSubtotal, -totalCost])
   const marginPercent = totalCost > 0 ? (netProfit / totalCost) * 100 : 100
   const marginViolation = marginPercent < settings.minProfitMarginPercent
 
@@ -235,21 +273,31 @@ export function SalesPage() {
   const ammoStockIssues = ammoLines.filter((l) => (Number(l.quantity) || 0) > ammoTotalRounds(l.ammo))
   const accessoryStockIssues = accessoryLines.filter((l) => (Number(l.quantity) || 0) > l.accessory.quantity)
   const hasStockIssues = ammoStockIssues.length > 0 || accessoryStockIssues.length > 0
+  const hasPricingIssues = selectedWeapons.some((weapon) => !Number.isFinite(modePrice(weapon)) || !Number.isFinite(valuationPrice(weapon.purchasePriceValuation, weapon.purchasePrice)))
+    || ammoLines.some((line) => !Number.isFinite(line.unitPrice))
+    || accessoryLines.some((line) => !Number.isFinite(line.unitPrice))
 
   const canProceedStep1 = buyerType === "new" ? newName.trim().length > 0 : buyerOptions.some((b) => b.id === selectedCustomerId)
-  const canProceedStep2 = selectedWeapons.length > 0
-  const canComplete = !hasStockIssues && (!marginViolation || approved)
+  const hasSaleItems = selectedWeapons.length > 0 || ammoLines.some((l) => Number(l.quantity) > 0) || accessoryLines.some((l) => Number(l.quantity) > 0)
+  const canProceedStep2 = true
+  const canProceedStep3 = ammoStockIssues.length === 0 && ammoLines.every(l => Number(l.quantity) > 0)
+  const canProceedStep4 = accessoryStockIssues.length === 0 && accessoryLines.every(l => Number(l.quantity) > 0)
+  const canComplete = hasSaleItems && !hasStockIssues && !hasPricingIssues && (!marginViolation || approved)
 
   const previewInvoiceNumber = invoiceNumber.trim() || generateInvoiceNumber(invoices)
   const selectedBuyerName = buyerType === "new" ? newName.trim() : buyerOptions.find((b) => b.id === selectedCustomerId)?.name ?? ""
 
   const paid = paidAmount.trim() ? Number(paidAmount) || 0 : grandTotal
-  const balanceDue = Math.max(0, grandTotal - paid)
+  const balanceDue = Math.max(0, sumMoney([grandTotal, -paid]))
 
   // ---------- Handlers ----------
   const handleAddWeapon = useCallback((weapon: Weapon) => {
+    if (!Number.isFinite(modePrice(weapon)) || !Number.isFinite(valuationPrice(weapon.purchasePriceValuation, weapon.purchasePrice))) {
+      toast.error("This item has no authoritative currency valuation")
+      return
+    }
     setSelectedWeapons((prev) => (prev.find((w) => w.id === weapon.id) ? prev : [...prev, weapon]))
-  }, [])
+  }, [modePrice, valuationPrice])
 
   const handleSerialAdd = useCallback(() => {
     const trimmed = serialInput.trim()
@@ -273,7 +321,9 @@ export function SalesPage() {
     const ammo = ammunition.find((a) => a.caliber === caliber)
     if (!ammo) return
     if (ammoLines.find((l) => l.ammo.id === ammo.id)) { toast.error(t('sales.caliberAlreadyAdded', { caliber })); return }
-    setAmmoLines((prev) => [...prev, { ammo, quantity: "1", unitPrice: ammo.price, sellMode: "round", packageInput: "" }])
+    const unitPrice = valuationPrice(ammo.priceValuation, ammo.price)
+    if (!Number.isFinite(unitPrice)) { toast.error("This item has no authoritative currency valuation"); return }
+    setAmmoLines((prev) => [...prev, { ammo, quantity: "1", unitPrice, sellMode: "round", packageInput: "" }])
 
     setAmmoPicker("")
   }
@@ -285,7 +335,9 @@ export function SalesPage() {
     const accessory = accessories.find((a) => `${a.name} — ${a.type}` === label)
     if (!accessory) return
     if (accessoryLines.find((l) => l.accessory.id === accessory.id)) { toast.error(t('sales.accessoryAlreadyAdded', { name: accessory.name })); return }
-    setAccessoryLines((prev) => [...prev, { accessory, quantity: "1", unitPrice: accessory.price }])
+    const unitPrice = valuationPrice(accessory.priceValuation, accessory.price)
+    if (!Number.isFinite(unitPrice)) { toast.error("This item has no authoritative currency valuation"); return }
+    setAccessoryLines((prev) => [...prev, { accessory, quantity: "1", unitPrice }])
     setAccessoryPicker("")
   }
 
@@ -322,6 +374,7 @@ export function SalesPage() {
   const resetForm = useCallback(() => {
     setStep(1)
     setMode("Retail")
+    setSaleCurrency(transactionCurrency)
     setBuyerType("existing")
     setSelectedCustomerId("")
     setNewName(""); setNewPhone(""); setNewEmail("")
@@ -339,13 +392,14 @@ export function SalesPage() {
     setExpandedIds(new Set());
     setExpandedAmmoIds(new Set());
     setExpandedAccessoryIds(new Set());
-  }, [])
+  }, [transactionCurrency])
 
   const openWizard = () => { resetForm(); setOpen(true) }
 
   const handleConfirmSale = async () => {
     setConfirmOpen(false)
     if (hasStockIssues) { toast.error(t('sales.stockExceedsAvailable')); return }
+    if (hasPricingIssues) { toast.error("One or more items have no authoritative currency valuation"); return }
     if (marginViolation && !approved) { toast.error(t('sales.managerApprovalReq')); return }
 
     let customerId = selectedCustomerId
@@ -368,25 +422,25 @@ export function SalesPage() {
 
     const lineItems = [
       ...selectedWeapons.map((w) => {
-        const unit = customPrices[w.id] ? Number(customPrices[w.id]) || 0 : (mode === "Wholesale" ? w.wholesalePrice : w.retailPrice)
+        const unit = customPrices[w.id] ? Number(customPrices[w.id]) || 0 : modePrice(w)
         return { itemType: "weapon" as const, itemId: w.id, name: `${w.brand} ${w.model}`, quantity: 1, unitPrice: unit, total: unit }
       }),
       ...ammoLines.map((l) => {
         const qty = Number(l.quantity) || 0
         const unit = Number(l.unitPrice) || 0
-        return { itemType: "ammunition" as const, itemId: l.ammo.id, name: l.ammo.caliber, quantity: qty, unitPrice: unit, total: qty * unit }
+        return { itemType: "ammunition" as const, itemId: l.ammo.id, name: l.ammo.caliber, quantity: qty, unitPrice: unit, total: multiplyMoney(unit, qty) }
       }),
       ...accessoryLines.map((l) => {
         const qty = Number(l.quantity) || 0
         const unit = Number(l.unitPrice) || 0
-        return { itemType: "accessory" as const, itemId: l.accessory.id, name: l.accessory.name, quantity: qty, unitPrice: unit, total: qty * unit }
+        return { itemType: "accessory" as const, itemId: l.accessory.id, name: l.accessory.name, quantity: qty, unitPrice: unit, total: multiplyMoney(unit, qty) }
       }),
     ]
 
     const attachments = documents.map(d => JSON.stringify(d))
     const dueDate = isDebt && balanceDue > 0 ? debtDueDate : invoiceDate
 
-    const result = await SaleService.execute({
+    const result = await completeSale({
       weaponIds: selectedWeapons.map((w) => w.id),
       lineItems,
       customerId,
@@ -397,21 +451,18 @@ export function SalesPage() {
       totalOriginal,
       dueDate,
       attachments,
-      notes: notes.trim() + (bargainDiscountAmount > 0 ? ` | ${t('sales.bargainDiscountApplied', { amount: formatCurrency(bargainDiscountAmount, settings.currencySymbol) })}` : ""),
+      notes: notes.trim() + (bargainDiscountAmount > 0 ? ` | ${t('sales.bargainDiscountApplied', { amount: formatTransaction(bargainDiscountAmount) })}` : ""),
       taxAmount: finalTax,
       date: invoiceDate,
       paidAmount: isDebt ? paid : grandTotal,
       balance: isDebt ? balanceDue : 0,
       paymentMethod,
-    } as any)
+      currency: saleCurrency,
+    })
 
     if (result.success) {
-      for (const l of ammoLines) {
-        const rounds = Number(l.quantity) || 0
-        if (rounds > 0) await sellAmmo({ itemId: l.ammo.id, rounds })
-      }
       toast.success(t('sales.saleCompletedInvoice', { invoice: result.invoiceNumber ?? "" }), {
-        description: t('sales.saleCompletedDesc', { count: lineItems.length, buyer: customerName, amount: formatCurrency(grandTotal, settings.currencySymbol) }),
+        description: t('sales.saleCompletedDesc', { count: lineItems.length, buyer: customerName, amount: formatTransaction(grandTotal) }),
       })
       setOpen(false)
       resetForm()
@@ -420,10 +471,29 @@ export function SalesPage() {
     }
   }
 
-  const goNext = () => setStep((s) => Math.min(5, s + 1) as WizardStep)
-  const goBack = () => setStep((s) => Math.max(1, s - 1) as WizardStep)
+  const goNext = () => {
+    if (step === 3 && !canProceedStep3) {
+      if (ammoLines.some(l => Number(l.quantity) <= 0)) {
+        toast.error(t("sales.invalidQuantity") || "الرجاء إدخال كمية صحيحة")
+      } else {
+        toast.error(t("sales.stockExceedsAvailable"))
+      }
+      return
+    }
 
-  const modePrice = (w: Weapon) => (mode === "Wholesale" ? w.wholesalePrice : w.retailPrice)
+    if (step === 4 && !canProceedStep4) {
+      if (accessoryLines.some(l => Number(l.quantity) <= 0)) {
+        toast.error(t("sales.invalidQuantity") || "الرجاء إدخال كمية صحيحة")
+      } else {
+        toast.error(t("sales.stockExceedsAvailable"))
+      }
+      return
+    }
+
+    setStep((s) => Math.min(5, s + 1) as WizardStep)
+  }
+
+  const goBack = () => setStep((s) => Math.max(1, s - 1) as WizardStep)
 
   // ---------- Render ----------
   return (
@@ -477,9 +547,9 @@ export function SalesPage() {
                       <td className="py-1.5 pr-3 font-mono text-[11px]">{inv.invoiceNumber}</td>
                       <td className="py-1.5 pr-3">{inv.customerName}</td>
                       <td className="py-1.5 pr-3 text-muted-foreground">{inv.date}</td>
-                      <td className="py-1.5 pr-3 text-right tabular-nums">{formatCurrency(inv.totalNegotiated + inv.taxAmount, settings.currencySymbol)}</td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums">{formatValuation(inv.totalValuation, "display", sumMoney([inv.totalNegotiated, inv.taxAmount]), inv.currency)}</td>
                       <td className="py-1.5 text-right tabular-nums">
-                        <Badge variant={inv.balance > 0 ? "secondary" : "outline"} className="text-[9px]">{formatCurrency(inv.balance, settings.currencySymbol)}</Badge>
+                        <Badge variant={inv.balance > 0 ? "secondary" : "outline"} className="text-[9px]">{formatInvoice(inv, "balance", "display")}</Badge>
                       </td>
                     </tr>
                   ))}
@@ -579,6 +649,21 @@ export function SalesPage() {
                       </div>
                     </button>
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">{t("ship.currency")}</Label>
+                  <Select value={saleCurrency} onValueChange={setSaleCurrency}>
+                    <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {currencies.map((item) => (
+                        <SelectItem key={item.isoCode} value={item.isoCode}>{item.isoCode} — {item.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-muted-foreground">
+                    {saleCurrency} · {t("report.accountingCurrency")}: {settings.accountingCurrencyCode}
+                  </p>
                 </div>
 
                 {/* Customer Section */}
@@ -778,7 +863,7 @@ export function SalesPage() {
                                   {w.weaponType}
                                 </td>
                                 <td className="px-3 py-2 text-right font-mono text-[11px] tabular-nums">
-                                  {formatCurrency(modePrice(w), settings.currencySymbol)}
+                                  {formatTransactionMoney(modePrice(w))}
                                 </td>
                                 <td className="px-3 py-2 text-right">
                                   <Button
@@ -841,7 +926,8 @@ export function SalesPage() {
                             selectedWeapons.map((w) => {
                               const custom = customPrices[w.id];
                               const finalPrice = custom ? Number(custom) || 0 : modePrice(w);
-                              const profit = finalPrice - w.purchasePrice;
+                              const cost = valuationPrice(w.purchasePriceValuation, w.purchasePrice)
+                              const profit = sumMoney([finalPrice, -cost]);
                               const isExpanded = expandedIds.has(w.id);
 
                               return (
@@ -874,7 +960,7 @@ export function SalesPage() {
                                     <td className="px-3 py-2">
                                       <Input
                                         type="number"
-                                        placeholder={formatCurrency(modePrice(w), settings.currencySymbol)}
+                                        placeholder={formatTransactionMoney(modePrice(w))}
                                         value={custom ?? ""}
                                         onChange={(e) =>
                                           setCustomPrices((prev) => ({ ...prev, [w.id]: e.target.value }))
@@ -886,10 +972,10 @@ export function SalesPage() {
                                       "px-3 py-2 text-right font-mono text-[11px] tabular-nums font-medium",
                                       profit >= 0 ? "text-emerald-600" : "text-red-500"
                                     )}>
-                                      {formatCurrency(profit, settings.currencySymbol)}
+                                      {formatTransactionMoney(profit)}
                                     </td>
                                     <td className="px-3 py-2 text-right font-mono text-[11px] font-bold tabular-nums text-primary">
-                                      {formatCurrency(finalPrice, settings.currencySymbol)}
+                                      {formatTransactionMoney(finalPrice)}
                                     </td>
                                     <td className="px-3 py-2 text-center">
                                       <Button
@@ -910,25 +996,25 @@ export function SalesPage() {
                                           <div>
                                             <span className="text-muted-foreground">{t('sales.cost')}</span>
                                             <div className="font-medium tabular-nums">
-                                              {formatCurrency(w.purchasePrice, settings.currencySymbol)}
+                                              {formatTransactionMoney(cost)}
                                             </div>
                                           </div>
                                           <div>
                                             <span className="text-muted-foreground">{t('sales.retailPrice')}</span>
                                             <div className="font-medium tabular-nums">
-                                              {formatCurrency(w.retailPrice, settings.currencySymbol)}
+                                              {formatTransactionMoney(valuationPrice(w.retailPriceValuation, w.retailPrice))}
                                             </div>
                                           </div>
                                           <div>
                                             <span className="text-muted-foreground">{t('sales.wholesalePrice')}</span>
                                             <div className="font-medium tabular-nums">
-                                              {formatCurrency(w.wholesalePrice, settings.currencySymbol)}
+                                              {formatTransactionMoney(valuationPrice(w.wholesalePriceValuation, w.wholesalePrice))}
                                             </div>
                                           </div>
                                           <div>
                                             <span className="text-muted-foreground">{t('sales.profitMargin')}</span>
                                             <div className={cn("font-medium tabular-nums", profit >= 0 ? "text-emerald-600" : "text-red-500")}>
-                                              {((profit / (w.purchasePrice || 1)) * 100).toFixed(1)}%
+                                              {cost > 0 ? ((profit / cost) * 100).toFixed(1) : "—"}%
                                             </div>
                                           </div>
                                         </div>
@@ -951,7 +1037,7 @@ export function SalesPage() {
                         <div className="text-right">
                           <div className="text-[10px] text-muted-foreground">{t('sales.subtotal')}</div>
                           <div className="text-sm font-bold tabular-nums">
-                            {formatCurrency(weaponsSubtotal, settings.currencySymbol)}
+                            {formatTransactionMoney(weaponsSubtotal)}
                           </div>
                         </div>
                       </div>
@@ -1071,6 +1157,7 @@ export function SalesPage() {
                                       type="text"
                                       inputMode="numeric"
                                       dir="ltr"
+                                      aria-invalid={over}
                                       value={
                                         l.sellMode === "package"
                                           ? l.packageInput
@@ -1103,35 +1190,40 @@ export function SalesPage() {
                                           )
                                         }
                                       }}
-                                      className="h-7 w-16 text-[10px] text-left font-mono"
+                                      className={cn(
+                                        "h-7 w-16 text-[10px] text-left font-mono",
+                                        over && "border-destructive text-destructive ring-1 ring-destructive/20 focus-visible:ring-destructive/30"
+                                      )}
                                     />
                                   </div>
                                 </td>
                                 <td className="px-3 py-2">
                                   <div className="flex items-center justify-end gap-1">
                                     <span className="text-[10px] text-muted-foreground">
-                                      {settings.currencySymbol}
+                                      {saleCurrency}
                                     </span>
                                     <Input
-                                      type="text"
+                                      type="number"
+                                      step="any"
                                       inputMode="decimal"
                                       dir="ltr"
-                                      value={l.unitPrice}
-                                      onChange={(e) =>
+                                      value={l.unitPrice === 0 ? "" : l.unitPrice}
+                                      onChange={(e) => {
+                                        const val = parseFloat(e.target.value);
                                         setAmmoLines((prev) =>
                                           prev.map((x) =>
                                             x.ammo.id === l.ammo.id
-                                              ? { ...x, unitPrice: Number(e.target.value) || 0 }
+                                              ? { ...x, unitPrice: isNaN(val) ? 0 : val }
                                               : x
                                           )
                                         )
-                                      }
+                                      }}
                                       className="h-7 w-20 text-[10px] text-left font-mono"
                                     />
                                   </div>
                                 </td>
                                 <td className="px-3 py-2 text-right font-mono text-[11px] font-medium tabular-nums">
-                                  {formatCurrency(lineTotal, settings.currencySymbol)}
+                                  {formatTransactionMoney(lineTotal)}
                                 </td>
                                 <td className="px-3 py-2 text-center">
                                   <Button
@@ -1175,9 +1267,8 @@ export function SalesPage() {
                                           {t('sales.pricePerRound')}:
                                         </span>
                                         <span className="ml-1 font-medium">
-                                          {formatCurrency(
-                                            l.ammo.price,
-                                            settings.currencySymbol
+                                          {formatTransactionMoney(
+                                            valuationPrice(l.ammo.priceValuation, l.ammo.price)
                                           )}
                                         </span>
                                       </div>
@@ -1196,8 +1287,43 @@ export function SalesPage() {
                           {t('sales.ammoSubtotal')}
                         </span>
                         <span className="font-bold tabular-nums">
-                          {formatCurrency(ammoSubtotal, settings.currencySymbol)}
+                          {formatTransactionMoney(ammoSubtotal)}
                         </span>
+                      </div>
+                    )}
+
+
+                    {ammoStockIssues.length > 0 && (
+                      <div
+                        role="alert"
+                        className="border-t border-destructive/20 bg-destructive/5 px-3 py-2.5"
+                      >
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-destructive">
+                              {t('sales.stockExceedsAvailable')}
+                            </p>
+                            <div className="mt-1 space-y-1">
+                              {ammoStockIssues.map((l) => {
+                                const requested = Number(l.quantity) || 0
+                                const available = ammoTotalRounds(l.ammo)
+                                return (
+                                  <p key={l.ammo.id} className="text-[10px] text-muted-foreground">
+                                    <span className="font-medium text-foreground">{l.ammo.caliber}</span>
+                                    {" — "}
+                                    {requested} {t('sales.rounds')}
+                                    {" / "}
+                                    {available} {t('sales.available')}
+                                  </p>
+                                )
+                              })}
+                            </div>
+                            <p className="mt-1.5 text-[10px] text-muted-foreground">
+                              {t('sales.fixStockIssues')}
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1277,6 +1403,7 @@ export function SalesPage() {
                                       type="text"
                                       inputMode="numeric"
                                       dir="ltr"
+                                      aria-invalid={over}
                                       value={l.quantity}
                                       onChange={(e) =>
                                         setAccessoryLines((prev) =>
@@ -1287,35 +1414,40 @@ export function SalesPage() {
                                           )
                                         )
                                       }
-                                      className="h-7 w-16 text-[10px] text-left font-mono"
+                                      className={cn(
+                                        "h-7 w-16 text-[10px] text-left font-mono",
+                                        over && "border-destructive text-destructive ring-1 ring-destructive/20 focus-visible:ring-destructive/30"
+                                      )}
                                     />
                                   </div>
                                 </td>
                                 <td className="px-3 py-2">
                                   <div className="flex items-center justify-end gap-1">
                                     <span className="text-[10px] text-muted-foreground">
-                                      {settings.currencySymbol}
+                                      {saleCurrency}
                                     </span>
                                     <Input
-                                      type="text"
+                                      type="number"
+                                      step="any"
                                       inputMode="decimal"
                                       dir="ltr"
-                                      value={l.unitPrice}
-                                      onChange={(e) =>
+                                      value={l.unitPrice === 0 ? "" : l.unitPrice}
+                                      onChange={(e) => {
+                                        const val = parseFloat(e.target.value);
                                         setAccessoryLines((prev) =>
                                           prev.map((x) =>
                                             x.accessory.id === l.accessory.id
-                                              ? { ...x, unitPrice: Number(e.target.value) || 0 }
+                                              ? { ...x, unitPrice: isNaN(val) ? 0 : val }
                                               : x
                                           )
                                         )
-                                      }
+                                      }}
                                       className="h-7 w-20 text-[10px] text-left font-mono"
                                     />
                                   </div>
                                 </td>
                                 <td className="px-3 py-2 text-right font-mono text-[11px] font-medium tabular-nums">
-                                  {formatCurrency(lineTotal, settings.currencySymbol)}
+                                  {formatTransactionMoney(lineTotal)}
                                 </td>
                                 <td className="px-3 py-2 text-center">
                                   <Button
@@ -1352,9 +1484,8 @@ export function SalesPage() {
                                           {t('sales.costPrice')}:
                                         </span>
                                         <span className="ml-1 font-medium">
-                                          {formatCurrency(
-                                            l.accessory.price,
-                                            settings.currencySymbol
+                                          {formatTransactionMoney(
+                                            valuationPrice(l.accessory.priceValuation, l.accessory.price)
                                           )}
                                         </span>
                                       </div>
@@ -1373,8 +1504,41 @@ export function SalesPage() {
                           {t('sales.accessorySubtotal')}
                         </span>
                         <span className="font-bold tabular-nums">
-                          {formatCurrency(accessorySubtotal, settings.currencySymbol)}
+                          {formatTransactionMoney(accessorySubtotal)}
                         </span>
+                      </div>
+                    )}
+
+
+                    {accessoryStockIssues.length > 0 && (
+                      <div
+                        role="alert"
+                        className="border-t border-destructive/20 bg-destructive/5 px-3 py-2.5"
+                      >
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-destructive">
+                              {t('sales.stockExceedsAvailable')}
+                            </p>
+                            <div className="mt-1 space-y-1">
+                              {accessoryStockIssues.map((l) => {
+                                const requested = Number(l.quantity) || 0
+                                const available = l.accessory.quantity
+                                return (
+                                  <p key={l.accessory.id} className="text-[10px] text-muted-foreground">
+                                    <span className="font-medium text-foreground">{l.accessory.name}</span>
+                                    {" — "}
+                                    {requested} / {available} {t('sales.stock')}
+                                  </p>
+                                )
+                              })}
+                            </div>
+                            <p className="mt-1.5 text-[10px] text-muted-foreground">
+                              {t('sales.fixStockIssues')}
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1407,6 +1571,7 @@ export function SalesPage() {
                 </div>
 
                 {/* 2. Weapon Pricing Details (if any) */}
+                {/* Weapon Pricing Details */}
                 {selectedWeapons.length > 0 && (
                   <div className="rounded-lg border p-3">
                     <span className="text-xs font-semibold">{t('sales.weaponPricingDetails')}</span>
@@ -1415,8 +1580,11 @@ export function SalesPage() {
                         <thead>
                           <tr className="text-left text-muted-foreground">
                             <th className="pb-1 font-medium">{t('sales.weapon')}</th>
-                            <th className="pb-1 text-right font-medium">{t('sales.retailPrice')}</th>
-                            <th className="pb-1 text-right font-medium">{t('sales.wholesalePrice')}</th>
+                            {/* أعمدة السعر المُخفاة */}
+                            {/*
+            <th className="pb-1 text-right font-medium">{t('sales.retailPrice')}</th>
+            <th className="pb-1 text-right font-medium">{t('sales.wholesalePrice')}</th>
+            */}
                             <th className="pb-1 text-right font-medium">{t('sales.cost')}</th>
                             <th className="pb-1 text-right font-medium">{t('sales.selling')}</th>
                             <th className="pb-1 text-right font-medium">{t('common.profit')}</th>
@@ -1424,23 +1592,119 @@ export function SalesPage() {
                         </thead>
                         <tbody>
                           {selectedWeapons.map((w) => {
-                            const retail = w.retailPrice
-                            const wholesale = w.wholesalePrice
-                            const cost = w.purchasePrice
-                            const selling = customPrices[w.id] ? Number(customPrices[w.id]) || 0 : modePrice(w)
-                            const profit = selling - cost
+                            const cost = valuationPrice(w.purchasePriceValuation, w.purchasePrice)
+                            const selling = customPrices[w.id]
+                              ? Number(customPrices[w.id]) || 0
+                              : modePrice(w)
+                            const profit = sumMoney([selling, -cost])
+
+                            // const retail = w.retailPrice
+                            // const wholesale = w.wholesalePrice
+
                             return (
                               <tr key={w.id} className="border-t">
-                                <td className="py-1 pr-2">{w.brand} {w.model} <span className="text-muted-foreground">({w.serialNumber})</span></td>
-                                <td className="py-1 text-right tabular-nums">{formatCurrency(retail, settings.currencySymbol)}</td>
-                                <td className="py-1 text-right tabular-nums">{formatCurrency(wholesale, settings.currencySymbol)}</td>
-                                <td className="py-1 text-right tabular-nums">{formatCurrency(cost, settings.currencySymbol)}</td>
-                                <td className="py-1 text-right font-bold tabular-nums text-primary">{formatCurrency(selling, settings.currencySymbol)}</td>
-                                <td className={cn("py-1 text-right font-bold tabular-nums", profit >= 0 ? "text-status-returned" : "text-status-sold")}>
-                                  {formatCurrency(profit, settings.currencySymbol)}
+                                <td className="py-1 pr-2">
+                                  {w.brand} {w.model}{' '}
+                                  <span className="text-muted-foreground">
+                                    ({w.serialNumber})
+                                  </span>
+                                </td>
+                                {/* أسعار البيع الأساسية مخفية */}
+                                {/*
+                <td className="py-1 text-right tabular-nums">
+                  {formatTransactionMoney(retail)}
+                </td>
+                <td className="py-1 text-right tabular-nums">
+                  {formatTransactionMoney(wholesale)}
+                </td>
+                */}
+                                <td className="py-1 text-right tabular-nums">
+                                  {formatTransactionMoney(cost)}
+                                </td>
+                                <td className="py-1 text-right font-bold tabular-nums text-primary">
+                                  {formatTransactionMoney(selling)}
+                                </td>
+                                <td
+                                  className={cn(
+                                    'py-1 text-right font-bold tabular-nums',
+                                    profit >= 0 ? 'text-status-returned' : 'text-status-sold'
+                                  )}
+                                >
+                                  {formatTransactionMoney(profit)}
                                 </td>
                               </tr>
                             )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Ammunition Details */}
+                {ammoLines.length > 0 && (
+                  <div className="rounded-lg border p-3">
+                    <span className="text-xs font-semibold">{t('inv.ammunition')}</span>
+                    <div className="mt-2 overflow-x-auto custom-scrollbar">
+                      <table className="w-full text-[10px]">
+                        <thead>
+                          <tr className="text-left text-muted-foreground">
+                            <th className="pb-1 font-medium">{t('sales.caliber')}</th>
+                            <th className="pb-1 text-right font-medium">{t('sales.sellMode')}</th>
+                            <th className="pb-1 text-right font-medium">{t('sales.quantity')}</th>
+                            <th className="pb-1 text-right font-medium">{t('sales.unitPrice')}</th>
+                            <th className="pb-1 text-right font-medium">{t('sales.total')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ammoLines.map((l) => {
+                            const qty = Number(l.quantity) || 0;
+                            const unitPrice = Number(l.unitPrice) || 0;
+                            const lineTotal = qty * unitPrice;
+                            const sellModeLabel = l.sellMode === "package" ? t('sales.package') : t('sales.round');
+                            return (
+                              <tr key={l.ammo.id} className="border-t">
+                                <td className="py-1 pr-2">{l.ammo.caliber}</td>
+                                <td className="py-1 text-right">{sellModeLabel}</td>
+                                <td className="py-1 text-right tabular-nums">{qty}</td>
+                                <td className="py-1 text-right tabular-nums">{formatTransactionMoney(unitPrice)}</td>
+                                <td className="py-1 text-right font-bold tabular-nums text-primary">{formatTransactionMoney(lineTotal)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Accessory Details */}
+                {accessoryLines.length > 0 && (
+                  <div className="rounded-lg border p-3">
+                    <span className="text-xs font-semibold">{t('inv.accessories')}</span>
+                    <div className="mt-2 overflow-x-auto custom-scrollbar">
+                      <table className="w-full text-[10px]">
+                        <thead>
+                          <tr className="text-left text-muted-foreground">
+                            <th className="pb-1 font-medium">{t('sales.accessory')}</th>
+                            <th className="pb-1 text-right font-medium">{t('sales.quantity')}</th>
+                            <th className="pb-1 text-right font-medium">{t('sales.unitPrice')}</th>
+                            <th className="pb-1 text-right font-medium">{t('sales.total')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {accessoryLines.map((l) => {
+                            const qty = Number(l.quantity) || 0;
+                            const unitPrice = Number(l.unitPrice) || 0;
+                            const lineTotal = qty * unitPrice;
+                            return (
+                              <tr key={l.accessory.id} className="border-t">
+                                <td className="py-1 pr-2">{l.accessory.name} <span className="text-muted-foreground">({l.accessory.type})</span></td>
+                                <td className="py-1 text-right tabular-nums">{qty}</td>
+                                <td className="py-1 text-right tabular-nums">{formatTransactionMoney(unitPrice)}</td>
+                                <td className="py-1 text-right font-bold tabular-nums text-primary">{formatTransactionMoney(lineTotal)}</td>
+                              </tr>
+                            );
                           })}
                         </tbody>
                       </table>
@@ -1473,6 +1737,8 @@ export function SalesPage() {
                         <SmartCurrencyInput
                           value={bargainDiscount}
                           onValueChange={setBargainDiscount}
+                          currency={saleCurrency}
+                          onCurrencyChange={setSaleCurrency}
                           placeholder="0"
                           className="h-8 flex-1"
                         />
@@ -1489,11 +1755,11 @@ export function SalesPage() {
                       <>
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">{t("sales.discount")}</span>
-                          <span className="font-medium tabular-nums text-status-reserved-fg">-{formatCurrency(discountAmount, settings.currencySymbol)}</span>
+                          <span className="font-medium tabular-nums text-status-reserved-fg">-{formatTransactionMoney(discountAmount)}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="font-medium">{t("sales.negotiatedSubtotal")}</span>
-                          <span className="font-semibold tabular-nums">{formatCurrency(totalNegotiated, settings.currencySymbol)}</span>
+                          <span className="font-semibold tabular-nums">{formatTransactionMoney(totalNegotiated)}</span>
                         </div>
                       </>
                     )}
@@ -1502,7 +1768,7 @@ export function SalesPage() {
                     {bargainDiscountAmount > 0 && bargainDiscountValid && (
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">{t("sales.additionalDiscount")}</span>
-                        <span className="font-medium tabular-nums text-status-reserved-fg">-{formatCurrency(bargainDiscountAmount, settings.currencySymbol)}</span>
+                        <span className="font-medium tabular-nums text-status-reserved-fg">-{formatTransactionMoney(bargainDiscountAmount)}</span>
                       </div>
                     )}
                   </div>
@@ -1526,7 +1792,7 @@ export function SalesPage() {
                   {isDebt && (
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div>
-                        <Label className="text-[10px]">{t("sales.amountPaidNow")}</Label>
+                        <Label className="text-[10px]">{t("sales.amountPaidNow")} ({saleCurrency})</Label>
                         <Input
                           type="number"
                           value={paidAmount}
@@ -1536,7 +1802,7 @@ export function SalesPage() {
                         />
                         <p className="text-[10px] text-muted-foreground mt-0.5">
                           {t("sales.remaining")}{" "}
-                          <span className="font-medium tabular-nums">{formatCurrency(balanceDue, settings.currencySymbol)}</span>
+                          <span className="font-medium tabular-nums">{formatTransactionMoney(balanceDue)}</span>
                         </p>
                       </div>
                       <div>
@@ -1552,7 +1818,7 @@ export function SalesPage() {
                       <Separator />
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">{t("sales.tax")} ({settings.taxPercent}%)</span>
-                        <span className="font-medium tabular-nums">{formatCurrency(taxAmount, settings.currencySymbol)}</span>
+                        <span className="font-medium tabular-nums">{formatTransactionMoney(taxAmount)}</span>
                       </div>
                     </>
                   )}
@@ -1562,7 +1828,7 @@ export function SalesPage() {
                   {/* Grand Total */}
                   <div className="flex justify-between items-center">
                     <span className="text-base font-semibold">{t("sales.grandTotal")}</span>
-                    <span className="text-lg font-bold text-primary tabular-nums">{formatCurrency(grandTotal, settings.currencySymbol)}</span>
+                    <span className="text-lg font-bold text-primary tabular-nums">{formatTransactionMoney(grandTotal)}</span>
                   </div>
 
                   {/* Debt Info */}
@@ -1570,7 +1836,7 @@ export function SalesPage() {
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/40 rounded-md p-2">
                       <Info className="size-3.5 shrink-0" />
                       {t("sales.customerWillOwe", {
-                        amount: formatCurrency(balanceDue, settings.currencySymbol),
+                        amount: formatTransactionMoney(balanceDue),
                         date: debtDueDate,
                       })}
                     </div>
@@ -1583,12 +1849,12 @@ export function SalesPage() {
                   <div className="mt-2 grid gap-1.5 text-xs">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">{t('sales.costBasis')}</span>
-                      <span className="tabular-nums">{formatCurrency(totalCost, settings.currencySymbol)}</span>
+                      <span className="tabular-nums">{formatTransactionMoney(totalCost)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium">{t('sales.netProfit')}</span>
                       <span className={cn("font-bold tabular-nums", netProfit >= 0 ? "text-status-returned" : "text-status-sold")}>
-                        {formatCurrency(netProfit, settings.currencySymbol)}
+                        {formatTransactionMoney(netProfit)}
                       </span>
                     </div>
                     <div className="flex justify-between">
@@ -1681,19 +1947,34 @@ export function SalesPage() {
           {/* Footer navigation */}
           <DialogFooter className="shrink-0 gap-2 sm:justify-between pt-2 border-t">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              {step === 5 && hasStockIssues && <span className="text-status-sold flex items-center gap-1"><AlertTriangle className="size-3" /> {t('sales.fixStockIssues')}</span>}
+              {(step === 3 && ammoStockIssues.length > 0) ||
+                (step === 4 && accessoryStockIssues.length > 0) ||
+                (step === 5 && hasStockIssues) ? (
+                <span className="text-status-sold flex items-center gap-1">
+                  <AlertTriangle className="size-3" />
+                  {t('sales.fixStockIssues')}
+                </span>
+              ) : null}
             </div>
             <div className="flex gap-2">
               {step > 1 && <Button variant="outline" onClick={goBack}><ChevronLeft className="size-3.5" /> {t('sales.back')}</Button>}
               {step < 5 && (
-                <Button onClick={goNext} disabled={(step === 1 && !canProceedStep1) || (step === 2 && !canProceedStep2)}>
+                <Button
+                  onClick={goNext}
+                  disabled={
+                    (step === 1 && !canProceedStep1) ||
+                    (step === 2 && !canProceedStep2) ||
+                    (step === 3 && !canProceedStep3) ||
+                    (step === 4 && !canProceedStep4)
+                  }
+                >
                   {step === 1 ? t('sales.nextWeapons') : step === 2 ? t('sales.nextAmmunition') : step === 3 ? t('sales.nextAccessories') : t('sales.nextReview')}
                   <ChevronRight className="size-3.5" />
                 </Button>
               )}
               {step === 5 && (
                 <Button onClick={() => setConfirmOpen(true)} disabled={!canComplete}>
-                  <Check className="size-3.5" /> {t('sales.completeSaleAmount', { amount: formatCurrency(grandTotal, settings.currencySymbol) })}
+                  <Check className="size-3.5" /> {t('sales.completeSaleAmount', { amount: formatTransactionMoney(grandTotal) })}
                 </Button>
               )}
             </div>
@@ -1705,7 +1986,7 @@ export function SalesPage() {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title={t('sales.confirmSaleTitle')}
-        description={t('sales.confirmSaleDesc', { mode: t(mode === "Wholesale" ? 'sales.wholesale' : 'sales.retail'), buyer: selectedBuyerName || "the customer", amount: formatCurrency(grandTotal, settings.currencySymbol) })}
+        description={t('sales.confirmSaleDesc', { mode: t(mode === "Wholesale" ? 'sales.wholesale' : 'sales.retail'), buyer: selectedBuyerName || "the customer", amount: formatTransactionMoney(grandTotal) })}
         variant={marginViolation ? "warning" : "default"}
         confirmLabel={t('sales.completeSale')}
         onConfirm={handleConfirmSale}
@@ -1721,11 +2002,11 @@ export function SalesPage() {
             const after = Math.max(0, before - (Number(l.quantity) || 0))
             return t('sales.accessoryImpact', { name: l.accessory.name, qty: l.quantity, before, after })
           }),
-          t('sales.invoiceTax', { invoice: previewInvoiceNumber, tax: formatCurrency(taxAmount, settings.currencySymbol) }),
-          bargainDiscountAmount > 0 ? t('sales.bargainDiscountApplied', { amount: formatCurrency(bargainDiscountAmount, settings.currencySymbol) }) : "",
+          t('sales.invoiceTax', { invoice: previewInvoiceNumber, tax: formatTransactionMoney(taxAmount) }),
+          bargainDiscountAmount > 0 ? t('sales.bargainDiscountApplied', { amount: formatTransactionMoney(bargainDiscountAmount) }) : "",
           isDebt
-            ? t('sales.partialPayment', { paid: formatCurrency(paid, settings.currencySymbol), balance: formatCurrency(balanceDue, settings.currencySymbol), date: debtDueDate })
-            : t('sales.fullPaymentReceipt', { amount: formatCurrency(grandTotal, settings.currencySymbol) }),
+            ? t('sales.partialPayment', { paid: formatTransactionMoney(paid), balance: formatTransactionMoney(balanceDue), date: debtDueDate })
+            : t('sales.fullPaymentReceipt', { amount: formatTransactionMoney(grandTotal) }),
           marginViolation
             ? t('sales.marginBelow', { margin: marginPercent.toFixed(1), min: settings.minProfitMarginPercent, approved: approved ? t('sales.marginApproved') : '' })
             : t('sales.marginMeets', { margin: marginPercent.toFixed(1) }),

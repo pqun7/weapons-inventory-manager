@@ -73,7 +73,7 @@ export interface ElectronAPI {
     addStock: (input: unknown, currentUser: { id: string; name: string }) => Promise<IpcResult>
     receiveAmmoByPackages: (input: unknown, currentUser: { id: string; name: string }) => Promise<IpcResult>
     receiveAmmoByRounds: (input: unknown, currentUser: { id: string; name: string }) => Promise<IpcResult>
-    sellAmmo: (input: unknown) => Promise<IpcResult>
+    sellAmmo: (input: unknown, currentUser: { id: string; name: string }) => Promise<IpcResult>
     updateAmmoPackage: (input: unknown, currentUser: { id: string; name: string }) => Promise<IpcResult>
   }
   user: {

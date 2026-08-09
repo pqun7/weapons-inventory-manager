@@ -86,10 +86,10 @@ export function AppRoot() {
             lang={lang}
             theme={(settings.theme ?? "system") as "dark" | "light" | "system"}
             displayCurrency={userPreferences?.displayCurrency ?? settings.preferredDisplayCurrency ?? settings.currencyCode}
-            reportViewMode={userPreferences?.reportViewMode ?? "accounting"}
+            reportViewMode={userPreferences?.reportViewMode ?? "display"}
             locale={LANGUAGE_LOCALE[lang]}
             onThemeChange={(theme: AppProps["theme"]) => { void updateSettings({ theme }) }}
-            onDisplayCurrencyChange={(code: string) => { void updateSettings({ preferredDisplayCurrency: code }) }}
+            onDisplayCurrencyChange={(code: string) => { void updateUserPreferences({ displayCurrency: code }) }}
             onReportViewModeChange={(mode: AppProps["reportViewMode"]) => { void updateUserPreferences({ reportViewMode: mode }) }}
             onLangChange={handleLangChange}
         />

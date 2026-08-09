@@ -16,6 +16,7 @@ import { useDynamicMasterData } from "@/hooks/use-dynamic-master-data"
 import { Spinner } from "@/components/ui/spinner"
 import { hasAnyValidationErrors, validateFullCombination } from "@/lib/validation"
 import { toast } from "sonner"
+import { useCurrency } from "@/lib/currency-context"
 
 const CONDITIONS: WeaponCondition[] = ["Excellent", "Good", "Fair", "Poor"]
 
@@ -25,6 +26,7 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
   const shipments = useStore((s) => s.shipments)
   const weapons = useStore((s) => s.weapons)
   const md = useDynamicMasterData()
+  const { currencies, transactionCurrency, currencyPresentation } = useCurrency()
 
   const [step, setStep] = useState(1)
   // Step 1 fields with safe defaults
@@ -37,6 +39,7 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
   const [purchasePrice, setPurchasePrice] = useState("")
   const [retailPrice, setRetailPrice] = useState("")
   const [wholesalePrice, setWholesalePrice] = useState("")
+  const [currency, setCurrency] = useState(transactionCurrency)
   const [supplierId, setSupplierId] = useState("")
   const [shipmentId, setShipmentId] = useState<string>("none")
   const [notes, setNotes] = useState("")
@@ -174,6 +177,7 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
       purchasePrice: Number(purchasePrice),
       retailPrice: Number(retailPrice),
       wholesalePrice: Number(wholesalePrice),
+      currency,
       supplierId,
       shipmentId: shipmentId === "none" ? null : shipmentId,
       serialNumbers: serials,
@@ -224,7 +228,7 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
     return (
       <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground">
         <Spinner className="size-4" />
-        <span className="text-xs">Loading classification data…</span>
+        <span className="text-xs">{t("bulk.loadingClassification")}</span>
       </div>
     )
   }
@@ -260,12 +264,12 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
             />
           </div>
           <div className="flex flex-col gap-1">
-            <Label className="text-xs">Sub-Type</Label>
+            <Label className="text-xs">{t("bulk.subType")}</Label>
             <SearchableCombobox
               value={subType}
               onValueChange={handleSubTypeChange}
               options={subTypeOptions}
-              placeholder="Sub-Type"
+              placeholder={t("bulk.subType")}
               searchPlaceholder={t("common.search")}
               allowCreate
               onCreateNew={(v) => md.createWeaponSubtype(weaponType, v)}
@@ -331,29 +335,42 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
             {errors.supplierId && <span className="text-[10px] text-status-sold">{errors.supplierId}</span>}
           </div>
           <div className="flex flex-col gap-1">
-            <Label className="text-xs">Shipment (optional)</Label>
+            <Label className="text-xs">{t("bulk.shipmentOptional")}</Label>
             <Select value={shipmentId} onValueChange={setShipmentId}>
               <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">No shipment</SelectItem>
+                <SelectItem value="none">{t("bulk.noShipment")}</SelectItem>
                 {shipments.filter((s) => s.status !== "Arrived").map((s) => (
                   <SelectItem key={s.id} value={s.id}>{s.shipmentNumber} ({t(`status.${s.status}`)})</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
+          <div className="flex flex-col gap-1 sm:col-span-2">
+            <Label className="text-xs">{t("ship.currency")}</Label>
+            <Select value={currency} onValueChange={setCurrency}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {currencies.map((item) => (
+                  <SelectItem key={item.isoCode} value={item.isoCode}>
+                    {item.isoCode} — {currencyPresentation(item.isoCode).name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex flex-col gap-1">
-            <Label className="text-xs">{t("bulk.purchasePrice")}</Label>
+            <Label className="text-xs">{t("bulk.purchasePrice")} ({currencyPresentation(currency).compactSymbol})</Label>
             <Input type="number" value={purchasePrice} onChange={(e) => setPurchasePrice(e.target.value)} placeholder="0" className="h-8 text-xs" />
             {errors.purchasePrice && <span className="text-[10px] text-status-sold">{errors.purchasePrice}</span>}
           </div>
           <div className="flex flex-col gap-1">
-            <Label className="text-xs">Retail Price</Label>
+            <Label className="text-xs">{t("bulk.retailPrice")} ({currencyPresentation(currency).compactSymbol})</Label>
             <Input type="number" value={retailPrice} onChange={(e) => setRetailPrice(e.target.value)} placeholder="0" className="h-8 text-xs" />
             {errors.retailPrice && <span className="text-[10px] text-status-sold">{errors.retailPrice}</span>}
           </div>
           <div className="flex flex-col gap-1">
-            <Label className="text-xs">Wholesale Price</Label>
+            <Label className="text-xs">{t("bulk.wholesalePrice")} ({currencyPresentation(currency).compactSymbol})</Label>
             <Input type="number" value={wholesalePrice} onChange={(e) => setWholesalePrice(e.target.value)} placeholder="0" className="h-8 text-xs" />
             {errors.wholesalePrice && <span className="text-[10px] text-status-sold">{errors.wholesalePrice}</span>}
           </div>
@@ -412,7 +429,7 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
 
           <div className="flex flex-col gap-1 sm:col-span-2">
             <Label className="text-xs">{t("common.notes")}</Label>
-            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any notes for this batch" className="h-8 text-xs" />
+            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("bulk.notesPlaceholder")} className="h-8 text-xs" />
           </div>
           <div className="col-span-full flex justify-end">
             <Button size="sm" disabled={hasCompatErrors} onClick={() => { if (canProceed()) { setStep(2); console.log("[BulkIntake] Proceeding to Step 2: Serial Numbers") } }}>
@@ -426,10 +443,10 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between rounded-md border bg-muted/30 p-2">
             <div className="flex flex-col">
-              <span className="text-[10px] text-muted-foreground">Entering serials for</span>
+              <span className="text-[10px] text-muted-foreground">{t("bulk.enteringSerials")}</span>
               <span className="text-xs font-medium">{brand} {model} ({t(`weaponType.${weaponType}`)}/{subType}, {caliber})</span>
             </div>
-            <Badge variant="secondary" className="tabular-nums text-[10px]">{filledCount} / {serials.length} filled</Badge>
+            <Badge variant="secondary" className="tabular-nums text-[10px]">{t("bulk.serialProgress", { filled: filledCount, total: serials.length })}</Badge>
           </div>
 
           {suggestion && predictedPrefix && (
@@ -438,7 +455,7 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
                 <Sparkles className="size-3.5 text-primary" />
                 <div className="flex flex-col">
                   <span className="text-[11px] font-medium">{t("bulk.predictPrefix")}</span>
-                  <span className="text-[10px] text-muted-foreground">Prefix: <span className="font-mono">{predictedPrefix}</span> — next: <span className="font-mono">{suggestion}</span></span>
+                  <span className="text-[10px] text-muted-foreground">{t("bulk.prefixNext", { prefix: predictedPrefix, next: suggestion })}</span>
                 </div>
               </div>
               <Button size="xs" variant="outline" onClick={fillAllWithSuggestion}><Sparkles className="size-3" /> {t("bulk.autoFillSerials")}</Button>
@@ -457,14 +474,14 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
 
           <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
             <AlertCircle className="size-3" />
-            Press <kbd className="rounded bg-muted px-1 text-[10px]">Enter</kbd> to advance, or leave empty + Enter to auto-suggest.
+            {t("bulk.serialHint")}
           </div>
 
           {!serialsValid && (
             <div className="flex items-center gap-1.5 rounded-md border border-status-sold/40 bg-status-sold/5 p-2">
               <AlertCircle className="size-3.5 text-status-sold" />
               <span className="text-[10px] text-status-sold">
-                {serialMismatch} serial{serialMismatch === 1 ? "" : "s"} remaining — filled {filledCount} of {quantity}. All {quantity} serial fields must be filled to continue.
+                {t("bulk.serialRemaining", { remaining: serialMismatch, filled: filledCount, total: quantity })}
               </span>
             </div>
           )}
