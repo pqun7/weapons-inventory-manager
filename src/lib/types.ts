@@ -30,6 +30,110 @@ export type ShipmentEventType =
 
 export type ShipmentProductType = "weapon" | "ammunition" | "accessory"
 
+export type CostCalculationType = "fixed" | "percentage"
+export type CostCalculationBase = "original_purchase_cost"
+export type CostSource = "product_level" | "shipment_level"
+export type ShipmentCostScope = "entire_shipment" | "selected_products" | "single_product" | "manual"
+export type ShipmentAllocationMethod = "by_value" | "by_quantity" | "equal" | "manual"
+
+export interface ProductAdditionalCostInput {
+  id?: string
+  name: string
+  calculationType: CostCalculationType
+  amount: string
+  percentageRate?: string
+  calculationBase: CostCalculationBase
+  currency: string
+}
+
+export interface ShipmentAdditionalCostInput extends ProductAdditionalCostInput {
+  scope: ShipmentCostScope
+  allocationMethod: ShipmentAllocationMethod
+  selectedShipmentItemIds: string[]
+  manualAllocations?: Record<string, string>
+}
+
+export interface PersistedProductCost {
+  id: string
+  productType: string
+  productId: string
+  name: string
+  calculationType: CostCalculationType
+  inputAmount: string
+  percentageRate?: string
+  calculationBase: CostCalculationBase
+  calculatedAmount: string
+  currency: string
+  exchangeRate: string
+  baseAmount: string
+  baseCurrency: string
+  exchangeRateDate: string
+  rateSource: MoneyValuation["rateSource"]
+  source: CostSource
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PersistedShipmentCost {
+  id: string
+  shipmentId: string
+  name: string
+  calculationType: CostCalculationType
+  inputAmount: string
+  percentageRate?: string
+  calculationBase: CostCalculationBase
+  calculatedAmount: string
+  currency: string
+  exchangeRate: string
+  baseAmount: string
+  baseCurrency: string
+  exchangeRateDate: string
+  rateSource: MoneyValuation["rateSource"]
+  scope: ShipmentCostScope
+  allocationMethod: ShipmentAllocationMethod
+  selectedShipmentItemIds: string[]
+  allocations: ShipmentCostAllocation[]
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ShipmentCostAllocation {
+  id: string
+  shipmentId: string
+  shipmentItemId: string
+  costId: string
+  automaticAmount: string
+  finalAmount: string
+  manualOverride: boolean
+  difference: string
+  currency: string
+  exchangeRate: string
+  automaticBaseAmount: string
+  finalBaseAmount: string
+  baseCurrency: string
+  allocationMethod: ShipmentAllocationMethod
+}
+
+export interface InventoryCostSnapshot {
+  productType: string
+  productId: string
+  shipmentId?: string
+  shipmentItemId?: string
+  originalAmount: string
+  originalCurrency: string
+  originalExchangeRate: string
+  originalBaseAmount: string
+  productCostsBaseAmount: string
+  shipmentCostsBaseAmount: string
+  finalLandedBaseAmount: string
+  baseCurrency: string
+  exchangeRateDate: string
+  rateSource: MoneyValuation["rateSource"]
+  finalizedAt: string
+}
+
 /**
  * Dual-valuation pattern: every monetary value stores its original currency,
  * the exchange rate at time of transaction, and the configured accounting amount.
@@ -67,6 +171,8 @@ export interface ShipmentLineItem {
   purchasePriceValuation?: MoneyValuation
   retailPriceValuation?: MoneyValuation
   wholesalePriceValuation?: MoneyValuation
+  productAdditionalCosts?: ProductAdditionalCostInput[]
+  landedUnitCostAccounting?: number
 }
 
 export interface ShipmentDocument {
@@ -219,6 +325,10 @@ export interface SaleLineItem {
   quantity: number
   unitPrice: number
   total: number
+  /** Immutable cost-of-goods snapshot captured when the sale is committed. */
+  unitLandedCostAccounting?: number
+  costAccountingCurrency?: string
+  costSnapshotFinalizedAt?: string
 }
 
 // ============ Saved Filters ============
@@ -274,6 +384,8 @@ export interface Weapon {
   wholesalePriceValuation?: MoneyValuation
   actualFinalPriceValuation?: MoneyValuation
   salePriceValuation?: MoneyValuation
+  costSnapshot?: InventoryCostSnapshot
+  additionalCosts?: PersistedProductCost[]
 }
 
 export interface WeaponMovement {
@@ -297,6 +409,8 @@ export interface Accessory {
   priceValuation?: MoneyValuation
   dateAdded: string
   location: StorageLocation
+  costSnapshot?: InventoryCostSnapshot
+  additionalCosts?: PersistedProductCost[]
 }
 
 export type PackageType = "Carton" | "Box" | "Case" | "Custom"
@@ -315,6 +429,8 @@ export interface Ammunition {
   priceValuation?: MoneyValuation;
   dateAdded: string;
   location: StorageLocation;
+  costSnapshot?: InventoryCostSnapshot;
+  additionalCosts?: PersistedProductCost[];
 }
 
 export function ammoTotalRounds(a: Pick<Ammunition, "fullPackages" | "unitsPerPackage" | "looseRounds">): number {
@@ -349,6 +465,7 @@ export interface Shipment {
   arrivalNote?: string
   delayReason?: string
   lastArrivalPromptAt?: string
+  additionalCosts?: PersistedShipmentCost[]
 }
 
 export interface ShipmentTimelineEntry {

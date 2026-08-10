@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import {
-  Package, FileText, History, Info, Upload, Trash2, Download,
+  Package, FileText, History, Info, Upload, Trash2, Download, ChevronDown,
   Truck, MapPin, DollarSign, Hash, Building2, Calendar,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { useStore } from "@/lib/store"
 import { useI18n } from "@/lib/i18n"
 import { useNav } from "@/lib/nav"
@@ -33,6 +34,7 @@ interface ShipmentDetailPanelProps {
 }
 
 export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
+  const [costDetailsOpen, setCostDetailsOpen] = useState(false)
   const { t } = useI18n()
   const suppliers = useStore((s) => s.suppliers)
   const weapons = useStore((s) => s.weapons)
@@ -139,11 +141,13 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
     finally { setArrivalBusy(false) }
   }
 
-  const totalCostAccounting = shipment.totalCostValuation?.accountingAmount
-    ?? sumMoney(lineItems.map((item) => multiplyMoney(
+  const productSubtotalAccounting = sumMoney(lineItems.map((item) => multiplyMoney(
       valuationAccountingAmount(item.purchasePriceValuation, item.purchasePrice),
       item.quantity,
     )))
+  const shipmentAdditionalCostsAccounting = sumMoney((shipment.additionalCosts ?? []).map((cost) => Number(cost.baseAmount)))
+  const totalCostAccounting = shipment.totalCostValuation?.accountingAmount
+    ?? sumMoney([productSubtotalAccounting, shipmentAdditionalCostsAccounting])
   const totalRetailAccounting = sumMoney(lineItems.map((item) => multiplyMoney(
     valuationAccountingAmount(item.retailPriceValuation, item.retailPrice),
     item.quantity,
@@ -234,22 +238,30 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
                 {lineItems.length > 0 && (
                   <div className="rounded-md border p-2">
                     <div className="mb-1 text-[10px] font-medium text-muted-foreground">{t("ship.financialBreakdown")}</div>
-                    <div className="grid grid-cols-3 gap-2 text-[11px]">
+                    <div className="grid grid-cols-2 gap-2 text-[11px] lg:grid-cols-4">
                       <div>
-                        <span className="text-muted-foreground">{t("ship.totalCost")}</span>
-                        <div className="font-bold tabular-nums">{shipment.totalCostValuation
-                          ? formatValuation(shipment.totalCostValuation, "display")
-                          : formatAccountingAggregate(totalCostAccounting)}</div>
+                        <span className="text-muted-foreground">{t("cost.productSubtotal")}</span>
+                        <div className="font-bold tabular-nums">{formatAccountingAggregate(productSubtotalAccounting)}</div>
                       </div>
                       <div>
-                        <span className="text-muted-foreground">{t("ship.totalRetail")}</span>
-                        <div className="font-bold tabular-nums">{formatAccountingAggregate(totalRetailAccounting)}</div>
+                        <span className="text-muted-foreground">{t("cost.shipmentAdditionalCosts")}</span>
+                        <div className="font-bold tabular-nums">{formatAccountingAggregate(shipmentAdditionalCostsAccounting)}</div>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">{t("cost.totalShipmentCost")}</span>
+                        <div className="font-bold tabular-nums text-primary">{shipment.totalCostValuation ? formatValuation(shipment.totalCostValuation, "display") : formatAccountingAggregate(totalCostAccounting)}</div>
                       </div>
                       <div>
                         <span className="text-muted-foreground">{t("ship.projectedProfit")}</span>
                         <div className="font-bold tabular-nums text-status-returned-fg">{formatAccountingAggregate(sumMoney([totalRetailAccounting, -totalCostAccounting]))}</div>
                       </div>
                     </div>
+                    {(shipment.additionalCosts ?? []).length > 0 && (
+                      <Collapsible open={costDetailsOpen} onOpenChange={setCostDetailsOpen} className="mt-2 border-t pt-1">
+                        <CollapsibleTrigger asChild><Button size="xs" variant="ghost" className="px-0 text-muted-foreground">{t("cost.viewBreakdown")} <ChevronDown className={`size-3 transition-transform ${costDetailsOpen ? "rotate-180" : ""}`} /></Button></CollapsibleTrigger>
+                        <CollapsibleContent className="space-y-1 pt-1">{shipment.additionalCosts!.map((cost) => <div key={cost.id} className="flex flex-wrap items-center justify-between gap-1 text-[10px]"><span>{cost.name} · {t(`cost.${cost.scope}`)} · {t(`cost.${cost.allocationMethod}`)}</span><span className="tabular-nums" dir="ltr">{cost.calculatedAmount} {cost.currency}</span></div>)}</CollapsibleContent>
+                      </Collapsible>
+                    )}
                   </div>
                 )}
 

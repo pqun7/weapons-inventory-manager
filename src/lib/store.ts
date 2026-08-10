@@ -5,6 +5,7 @@ import type {
   AppNotification, User, SystemSettings, WeaponStatus, WeaponCondition, SaleMode,
   InvoiceStatus, PaymentMethod, AuditActionType, NotificationType, ShipmentStatus,
   SaleLineItem, SavedFilter, StorageLocation, PackageType, UserPreferences,
+  ProductAdditionalCostInput, ShipmentAdditionalCostInput,
 } from "./types.js"
 import { ammoTotalRounds } from "./types.js"
 import * as db from "./db/index.js"
@@ -37,6 +38,7 @@ export interface BulkIntakeInput {
   shipmentId: string | null          // ← corrected to allow null
   currency?: string
   notes: string
+  additionalCosts?: ProductAdditionalCostInput[]
 }
 
 export interface SaleInput {
@@ -79,6 +81,7 @@ export interface ShipmentInput {
 
 // Updated: now contains the FK IDs required by the backend
 export interface ShipmentLineItemInput {
+  id?: string
   productType: "weapon" | "ammunition" | "accessory"
   weaponTypeId: string
   weaponSubtypeId: string
@@ -100,11 +103,13 @@ export interface ShipmentLineItemInput {
   modelLabel?: string
   // Optional location object (if known) – overrides DB lookup in backend
   location?: StorageLocation
+  additionalCosts?: ProductAdditionalCostInput[]
 }
 
 export interface BulkShipmentCreateInput {
   shipment: ShipmentInput
   lineItems: ShipmentLineItemInput[]
+  additionalCosts?: ShipmentAdditionalCostInput[]
 }
 
 export interface ShipmentDocumentInput {
@@ -239,6 +244,7 @@ export interface StoreState {
   addShipmentDocument: (shipmentId: string, doc: ShipmentDocumentInput) => void
   deleteShipmentDocument: (shipmentId: string, docId: string) => void
   addShipmentTimelineEvent: (shipmentId: string, eventType: ShipmentEventType, notes: string) => void
+  updateProductCosts: (productType: string, productId: string, costs: ProductAdditionalCostInput[]) => Promise<{ success: boolean; error?: string }>
 
   registerPayment: (input: PaymentInput) => Promise<{ success: boolean; error?: string; newBalance?: number }>
   extendDueDate: (input: DueDateExtensionInput) => Promise<{ success: boolean; error?: string }>
@@ -251,8 +257,8 @@ export interface StoreState {
 
   updateAccessory: (id: string, updates: Partial<Accessory>) => void
   updateAmmunition: (id: string, updates: Partial<Ammunition>) => void
-  addAccessory: (accessory: Omit<Accessory, "id" | "dateAdded">) => Promise<{ success: boolean; error?: string }>
-  addAmmunition: (ammo: Omit<Ammunition, "id" | "dateAdded">) => Promise<{ success: boolean; error?: string }>
+  addAccessory: (accessory: Omit<Accessory, "id" | "dateAdded" | "additionalCosts" | "costSnapshot"> & { additionalCostInputs?: ProductAdditionalCostInput[] }) => Promise<{ success: boolean; error?: string }>
+  addAmmunition: (ammo: Omit<Ammunition, "id" | "dateAdded" | "additionalCosts" | "costSnapshot"> & { additionalCostInputs?: ProductAdditionalCostInput[] }) => Promise<{ success: boolean; error?: string }>
   addStock: (input: AddStockInput) => Promise<{ success: boolean; error?: string }>
   receiveAmmoByPackages: (input: ReceiveAmmoByPackagesInput) => Promise<{ success: boolean; error?: string }>
   receiveAmmoByRounds: (input: ReceiveAmmoByRoundsInput) => Promise<{ success: boolean; error?: string }>
@@ -827,7 +833,8 @@ export const useStore = create<StoreState>()(
 
       const api = getElectronAPI()
       if (api) {
-        const result = await api.accessory.insert(newAccessory)
+        const currentUser = get().getCurrentUser()
+        const result = await api.accessory.insert(newAccessory, { id: currentUser.id, name: currentUser.name })
         if (!result.success) return { success: false, error: result.error }
         await get().refreshFromDb()
         return { success: true }
@@ -845,7 +852,8 @@ export const useStore = create<StoreState>()(
 
       const api = getElectronAPI()
       if (api) {
-        const result = await api.ammunition.insert(newAmmo)
+        const currentUser = get().getCurrentUser()
+        const result = await api.ammunition.insert(newAmmo, { id: currentUser.id, name: currentUser.name })
         if (!result.success) return { success: false, error: result.error }
         await get().refreshFromDb()
         return { success: true }
@@ -930,6 +938,16 @@ export const useStore = create<StoreState>()(
         return { success: false, error: result.error }
       }
       set({ settings: result.data as SystemSettings })
+      return { success: true }
+    },
+
+    updateProductCosts: async (productType, productId, costs) => {
+      const api = getElectronAPI()
+      if (!api?.cost?.replaceProduct) return { success: false, error: "The authoritative backend is required to update costs" }
+      const currentUser = get().getCurrentUser()
+      const result = await api.cost.replaceProduct(productType, productId, costs, { id: currentUser.id, name: currentUser.name })
+      if (!result.success) return { success: false, error: result.error }
+      await get().refreshFromDb()
       return { success: true }
     },
 

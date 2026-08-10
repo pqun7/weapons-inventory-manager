@@ -1,4 +1,4 @@
-import { memo, useState } from "react"
+import { memo, useEffect, useState } from "react"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
@@ -7,10 +7,11 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
-import { Package, History, Receipt, ImageIcon, StickyNote, Upload, Truck } from "lucide-react"
+import { ChevronDown, Package, History, Receipt, ImageIcon, StickyNote, Upload, Truck } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { useNav } from "@/lib/nav"
 import { useI18n } from "@/lib/i18n"
@@ -19,7 +20,9 @@ import {
   formatDate, formatDateTime, statusBadgeClass, statusDotClass,
 } from "@/lib/format"
 import type { WeaponStatus } from "@/lib/types"
+import type { ProductAdditionalCostInput } from "@/lib/types"
 import { toast } from "sonner"
+import { ProductCostEditor } from "./product-cost-editor"
 
 export const WeaponDetailPanel = memo(function WeaponDetailPanel({
   weaponId, open, onOpenChange,
@@ -32,12 +35,28 @@ export const WeaponDetailPanel = memo(function WeaponDetailPanel({
   const updateWeaponNotes = useStore((s) => s.updateWeaponNotes)
   const addWeaponImage = useStore((s) => s.addWeaponImage)
   const bindWeaponToShipment = useStore((s) => s.bindWeaponToShipment)
-  const { formatValuation, formatInvoice } = useCurrency()
+  const updateProductCosts = useStore((s) => s.updateProductCosts)
+  const { formatValuation, formatInvoice, formatOriginal, formatAccountingAggregate } = useCurrency()
   const { navigate } = useNav()
   const { t } = useI18n()
   const [notesDraft, setNotesDraft] = useState("")
+  const [editingCosts, setEditingCosts] = useState(false)
+  const [costBreakdownOpen, setCostBreakdownOpen] = useState(false)
+  const [costDrafts, setCostDrafts] = useState<ProductAdditionalCostInput[]>([])
 
   const weapon = weapons.find((w) => w.id === weaponId)
+  useEffect(() => {
+    if (!weapon) return
+    setCostDrafts((weapon.additionalCosts ?? []).map((cost) => ({
+      id: cost.id,
+      name: cost.name,
+      calculationType: cost.calculationType,
+      amount: cost.inputAmount,
+      percentageRate: cost.percentageRate,
+      calculationBase: cost.calculationBase,
+      currency: cost.currency,
+    })))
+  }, [weapon])
   if (!weapon) return null
 
   const supplier = suppliers.find((s) => s.id === weapon.supplierId)
@@ -106,6 +125,33 @@ export const WeaponDetailPanel = memo(function WeaponDetailPanel({
               <DataRow label={t("weapon.status")} value={t(`status.${weapon.status}`)} />
               <Separator className="my-1" />
               <DataRow label={t("weapon.purchasePrice")} value={formatValuation(weapon.purchasePriceValuation, "display", weapon.purchasePrice)} />
+              {weapon.costSnapshot && (
+                <Collapsible open={costBreakdownOpen} onOpenChange={setCostBreakdownOpen} className="rounded-md bg-muted/25 p-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div><div className="text-[10px] font-medium text-muted-foreground">{t("cost.finalCost")}</div><div className="mt-0.5 text-base font-bold tabular-nums text-primary">{formatAccountingAggregate(Number(weapon.costSnapshot.finalLandedBaseAmount), "accounting")}</div></div>
+                    <Button size="xs" variant="ghost" onClick={() => setEditingCosts((value) => !value)}>{editingCosts ? t("common.cancel") : t("common.edit")}</Button>
+                  </div>
+                  <CollapsibleTrigger asChild><Button size="xs" variant="ghost" className="mt-1 px-0 text-muted-foreground">{t("cost.viewBreakdown")} <ChevronDown className={`size-3 transition-transform ${costBreakdownOpen ? "rotate-180" : ""}`} /></Button></CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-1 pt-1">
+                    <DataRow label={t("cost.originalCost")} value={formatOriginal(Number(weapon.costSnapshot.originalAmount), weapon.costSnapshot.originalCurrency)} />
+                    {(weapon.additionalCosts ?? []).map((cost) => <DataRow key={cost.id} label={cost.name} value={formatOriginal(Number(cost.calculatedAmount), cost.currency)} />)}
+                    <DataRow label={t("cost.additionalCosts")} value={formatAccountingAggregate(Number(weapon.costSnapshot.productCostsBaseAmount), "accounting")} />
+                    <DataRow label={t("cost.shipmentAllocatedCosts")} value={formatAccountingAggregate(Number(weapon.costSnapshot.shipmentCostsBaseAmount), "accounting")} />
+                    <Separator />
+                    <div className="text-[9px] text-muted-foreground">{t("cost.rateSnapshot")}: <span dir="ltr">{weapon.costSnapshot.originalExchangeRate} · {formatDate(weapon.costSnapshot.exchangeRateDate)}</span></div>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+              {editingCosts && weapon.costSnapshot && (
+                <div className="space-y-2">
+                  <ProductCostEditor originalAmount={weapon.costSnapshot.originalAmount} originalCurrency={weapon.costSnapshot.originalCurrency} costs={costDrafts} onChange={setCostDrafts} />
+                  <Button size="sm" onClick={async () => {
+                    const result = await updateProductCosts("weapon", weapon.id, costDrafts)
+                    if (result.success) { toast.success(t("cost.costsUpdated")); setEditingCosts(false) }
+                    else toast.error(t("cost.costUpdateFailed"))
+                  }}>{t("common.save")}</Button>
+                </div>
+              )}
               <DataRow label={t("weaponDetail.retailPrice")} value={formatValuation(weapon.retailPriceValuation, "display", weapon.retailPrice)} />
               <DataRow label={t("weaponDetail.wholesalePrice")} value={formatValuation(weapon.wholesalePriceValuation, "display", weapon.wholesalePrice)} />
               {weapon.actualFinalPrice !== null && (

@@ -19,7 +19,7 @@ export function moneyDecimal(value: MoneyInput, field = "amount"): Decimal {
 
 export function positiveMoney(value: MoneyInput, field = "amount"): Decimal {
   const decimal = moneyDecimal(value, field)
-  if (!decimal.isPositive()) throw new Error(`${field} must be greater than zero`)
+  if (!decimal.greaterThan(0)) throw new Error(`${field} must be greater than zero`)
   return decimal
 }
 

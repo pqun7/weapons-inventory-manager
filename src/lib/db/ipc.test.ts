@@ -1,4 +1,3 @@
-import { table } from "console";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 
 type IpcResult<T = unknown> = { success: boolean; data?: T; error?: string }
@@ -42,7 +41,7 @@ describe("IPC Channel Registration & Coverage", () => {
       "db:listBackups", "db:createBackup", "db:restoreBackup", "db:deleteBackup",
       "settings:update", "userPreferences:upsert",
       "weapon:bulkInsert", "weapon:update", "weapon:updateStatus",
-      "sale:complete", "shipment:create", "shipment:bulkCreate", "shipment:update",
+      "sale:complete", "shipment:create", "shipment:bulkCreate", "shipment:update", "cost:shipment:list", "cost:product:replace",
       "invoice:update", "invoice:void", "invoice:extendDueDate",
       "payment:register", "customer:insert", "customer:delete",
       "supplier:insert", "accessory:insert", "accessory:update",

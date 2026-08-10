@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import Database, { type Database as SqliteDatabase } from "better-sqlite3"
 import {
@@ -71,6 +72,12 @@ describe("currency-aware database schema", () => {
     ).all() as { name: string }[]).map((row) => row.name))
     expect(tables.has("financial_data_issues")).toBe(true)
     expect(tables.has("inventory_transactions")).toBe(true)
+    expect(tables.has("shipment_items")).toBe(true)
+    expect(tables.has("product_costs")).toBe(true)
+    expect(tables.has("shipment_costs")).toBe(true)
+    expect(tables.has("shipment_cost_scope_items")).toBe(true)
+    expect(tables.has("shipment_cost_allocations")).toBe(true)
+    expect(tables.has("inventory_cost_snapshots")).toBe(true)
     expect(tables.has("shipment_imports")).toBe(true)
     expect(tables.has("shipment_import_items")).toBe(true)
     expect(tables.has("shipment_validation_issues")).toBe(true)
@@ -197,6 +204,47 @@ describe("currency-aware database schema", () => {
     expect(invoice.exchange_rate).toBe("600")
     expect(Number(invoice.total_negotiated_accounting)).toBe(1000)
     expect(JSON.parse(invoice.total_valuation).exchangeRate).toBe(600)
+  })
+
+  it("preserves normalized cost sources, automatic allocations, and manual overrides", () => {
+    database.prepare(`
+      INSERT INTO shipments
+        (id, shipment_number, supplier_id, shipment_date, expected_arrival_date, currency)
+      VALUES ('SHP-COST', 'SHP-COST', 'SUP001', '2026-08-09', '2026-08-10', 'USD')
+    `).run()
+    database.prepare(`
+      INSERT INTO shipment_items
+        (id, shipment_id, product_type, quantity, unit_purchase_amount, currency_code,
+         exchange_rate, unit_purchase_base_amount, base_currency_code, exchange_rate_date, rate_source)
+      VALUES ('ITEM-A', 'SHP-COST', 'future-product', '1', '50.00', 'USD', '1', '50.0000',
+        'USD', '2026-08-09T00:00:00.000Z', 'manual')
+    `).run()
+    database.prepare(`
+      INSERT INTO shipment_costs
+        (id, shipment_id, name, calculation_type, input_amount, calculation_base,
+         calculated_amount, currency_code, exchange_rate, base_amount, base_currency_code,
+         exchange_rate_date, rate_source, scope, allocation_method, created_by)
+      VALUES ('COST-1', 'SHP-COST', 'Customs', 'fixed', '10.00', 'original_purchase_cost',
+        '10.00', 'USD', '1', '10.0000', 'USD', '2026-08-09T00:00:00.000Z',
+        'manual', 'single_product', 'by_value', 'U001')
+    `).run()
+    database.prepare("INSERT INTO shipment_cost_scope_items VALUES ('COST-1', 'ITEM-A')").run()
+    database.prepare(`
+      INSERT INTO shipment_cost_allocations
+        (id, shipment_id, shipment_item_id, cost_id, automatic_amount, final_amount,
+         manual_override, difference, currency_code, exchange_rate, automatic_base_amount,
+         final_base_amount, base_currency_code, allocation_method)
+      VALUES ('ALLOC-1', 'SHP-COST', 'ITEM-A', 'COST-1', '10.00', '10.00', 1, '0.00',
+        'USD', '1', '10.0000', '10.0000', 'USD', 'by_value')
+    `).run()
+    const allocation = database.prepare(`
+      SELECT automatic_amount, final_amount, manual_override FROM shipment_cost_allocations
+      WHERE id = 'ALLOC-1'
+    `).get() as Record<string, unknown>
+    expect(allocation).toMatchObject({ automatic_amount: "10.00", final_amount: "10.00", manual_override: 1 })
+    database.prepare("UPDATE currencies SET last_known_rate = '700' WHERE iso_code = 'SDG'").run()
+    const storedCost = database.prepare("SELECT exchange_rate, base_amount FROM shipment_costs WHERE id = 'COST-1'").get() as Record<string, unknown>
+    expect(storedCost).toMatchObject({ exchange_rate: "1", base_amount: "10.0000" })
   })
 
   it.each(["sale", "payment", "shipment", "inventory"])(

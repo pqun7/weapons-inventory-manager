@@ -68,6 +68,12 @@ export const electronAPI = {
     update: (shipment: unknown) => ipcRenderer.invoke("shipment:update", shipment),
   },
 
+  cost: {
+    listShipment: (shipmentId: string) => ipcRenderer.invoke("cost:shipment:list", shipmentId),
+    replaceProduct: (productType: string, productId: string, costs: unknown[], currentUser: { id: string; name: string }) =>
+      ipcRenderer.invoke("cost:product:replace", productType, productId, costs, currentUser),
+  },
+
   manifest: {
     upload: (input: unknown, currentUser: { id: string; name: string }) =>
       ipcRenderer.invoke("manifest:upload", input, currentUser),
@@ -121,12 +127,12 @@ export const electronAPI = {
   },
 
   accessory: {
-    insert: (accessory: unknown) => ipcRenderer.invoke("accessory:insert", accessory),
+    insert: (accessory: unknown, currentUser: { id: string; name: string }) => ipcRenderer.invoke("accessory:insert", accessory, currentUser),
     update: (accessory: unknown) => ipcRenderer.invoke("accessory:update", accessory),
   },
 
   ammunition: {
-    insert: (ammo: unknown) => ipcRenderer.invoke("ammunition:insert", ammo),
+    insert: (ammo: unknown, currentUser: { id: string; name: string }) => ipcRenderer.invoke("ammunition:insert", ammo, currentUser),
     update: (ammo: unknown) => ipcRenderer.invoke("ammunition:update", ammo),
   },
 

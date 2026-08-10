@@ -9,6 +9,7 @@ import type {
   Weapon, Shipment, Invoice, Accessory, Ammunition,
   Customer, Supplier, AuditLog, AppNotification, User, SystemSettings,
   SavedFilter, UserPreferences, StorageLocation,
+  ProductAdditionalCostInput,
 } from "../../src/lib/types.js"
 import type { CurrencyRow, ExchangeRateOverrideRow, AuditLogEntry } from "../../src/lib/db/mappers.js"
 
@@ -27,6 +28,18 @@ import {
   authorizeManifest, cancelManifest, confirmManifest, confirmScheduledArrival, deleteManifestReview, getManifestReview, listManifestReviews,
   processManifestUpload, rescheduleManifest, updateManifestDetails, updateManifestItem, updateManifestItems,
 } from "../services/shipment-manifest-service.js"
+import {
+  finalizeInventoryCosts,
+  finalizeStandaloneInventoryCost,
+  insertShipmentCosts,
+  insertShipmentItemBasis,
+  listShipmentCosts,
+  listProductCosts,
+  prepareProductCosts,
+  prepareShipmentCosts,
+  replaceProductCosts,
+  type ShipmentItemCostBasis,
+} from "../services/product-cost-service.js"
 
 
 function pad(num: number, size: number): string {
@@ -312,6 +325,12 @@ export function registerIpcHandlers(): void {
         const display = resolveWeaponDisplayFields(input)
         let serialCounter = all.weapons.length + 1
         const today = new Date().toISOString().split("T")[0]
+        const currency = input.currency?.trim().toUpperCase() || backendCurrencyService.getDefaultTransactionCurrency()
+        const purchaseRateSnapshot = backendCurrencyService.getRateSnapshot(currency)
+
+        // Validate the reusable per-product cost template before any inventory
+        // row is written. Each created serial receives its own traceable rows.
+        prepareProductCosts("weapon", "validation-only", input.purchasePrice, purchaseRateSnapshot, input.additionalCosts ?? [], currentUser.id)
 
         // ── Look up the storage location details once for the whole batch ──
         let location: StorageLocation = { warehouse: "", shelf: "", bin: "" }
@@ -335,10 +354,9 @@ export function registerIpcHandlers(): void {
           positiveMoney(input.purchasePrice, "Purchase price")
           positiveMoney(input.retailPrice, "Retail price")
           positiveMoney(input.wholesalePrice, "Wholesale price")
-          const currency = input.currency?.trim().toUpperCase() || backendCurrencyService.getDefaultTransactionCurrency()
-          const purchaseValuation = backendCurrencyService.createValuation(input.purchasePrice, currency)
-          const retailValuation = backendCurrencyService.createValuation(input.retailPrice, currency)
-          const wholesaleValuation = backendCurrencyService.createValuation(input.wholesalePrice, currency)
+          const purchaseValuation = backendCurrencyService.createValuationFromSnapshot(input.purchasePrice, purchaseRateSnapshot)
+          const retailValuation = backendCurrencyService.createValuationFromSnapshot(input.retailPrice, purchaseRateSnapshot)
+          const wholesaleValuation = backendCurrencyService.createValuationFromSnapshot(input.wholesalePrice, purchaseRateSnapshot)
           newWeapons.push({
             id: `W${pad(serialCounter, 5)}`,
             serialNumber: trimmed,
@@ -385,6 +403,10 @@ export function registerIpcHandlers(): void {
 
         if (newWeapons.length > 0) {
           repo.bulkInsertWeapons(newWeapons)
+          const costSnapshots = newWeapons.map((weapon) => finalizeStandaloneInventoryCost(
+            "weapon", weapon.id, weapon.purchasePrice, purchaseRateSnapshot,
+            input.additionalCosts ?? [], currentUser.id,
+          ))
           const desc = `Bulk intake: ${newWeapons.length} ${input.brandLabel ?? input.brandId} ${input.modelLabel ?? input.modelId} (${input.weaponTypeLabel ?? input.weaponTypeId}/${input.subTypeLabel ?? input.weaponSubtypeId}) — Batch: ${batchId}`
           repo.insertAuditLog({
             id: generateId("LOG", "audit_logs"), timestamp: new Date().toISOString(), date: today,
@@ -407,6 +429,13 @@ export function registerIpcHandlers(): void {
               retailPrice: newWeapons[0].retailPrice,
               wholesalePrice: newWeapons[0].wholesalePrice,
               accountingCurrency: newWeapons[0].purchasePriceValuation?.accountingCurrency,
+              productAdditionalCosts: input.additionalCosts?.length ?? 0,
+              finalLandedBaseAmount: costSnapshots[0]?.finalLandedBaseAmount,
+              additionalCosts: (input.additionalCosts ?? []).map((cost) => ({
+                name: cost.name,
+                calculationType: cost.calculationType,
+                currency: cost.currency,
+              })),
             }),
           })
         }
@@ -573,12 +602,14 @@ export function registerIpcHandlers(): void {
         const newWeapons: Weapon[] = []
         const newAccessories: Accessory[] = []
         const newAmmunition: Ammunition[] = []
-        const inventoryReceipts: Array<{ itemType: "weapon" | "accessory" | "ammunition"; itemId: string; quantity: number; unitAmount: number }> = []
+        const inventoryReceipts: Array<{ itemType: "weapon" | "accessory" | "ammunition"; itemId: string; quantity: number; unitAmount: number; currency: string }> = []
         let serialCounter = all.weapons.length + 1
         let accessoryCounter = Number.parseInt(generateId("ACC", "accessories").slice(3), 10)
         let ammunitionCounter = Number.parseInt(generateId("AMM", "ammunition").slice(3), 10)
         let lineItemCounter = 0
         const lineItems: Shipment["lineItems"] = []
+        const costBasisItems: ShipmentItemCostBasis[] = []
+        const seenLineItemIds = new Set<string>()
 
         for (const item of input.lineItems) {
           if (!new Set(["weapon", "accessory", "ammunition"]).has(item.productType)) throw new Error("Invalid shipment product type")
@@ -586,13 +617,18 @@ export function registerIpcHandlers(): void {
           if (item.productType === "weapon" && item.serialNumbers.filter((serial) => serial.trim()).length !== item.quantity) {
             throw new Error("Serialized weapon quantity must match the number of serial numbers")
           }
-          positiveMoney(item.purchasePrice, "Shipment purchase price")
+          nonNegativeMoney(item.purchasePrice, "Shipment purchase price")
           nonNegativeMoney(item.retailPrice, "Shipment retail price")
           nonNegativeMoney(item.wholesalePrice, "Shipment wholesale price")
-          const itemPurchaseValuation = backendCurrencyService.createValuation(item.purchasePrice, shipmentCurrency)
-          const itemRetailValuation = backendCurrencyService.createValuation(item.retailPrice, shipmentCurrency)
-          const itemWholesaleValuation = backendCurrencyService.createValuation(item.wholesalePrice, shipmentCurrency)
-          const lineItemId = `SLI${pad(++lineItemCounter, 4)}`
+          const itemCurrency = item.currency?.trim().toUpperCase() || shipmentCurrency
+          const itemRateSnapshot = backendCurrencyService.getRateSnapshot(itemCurrency)
+          const itemPurchaseValuation = backendCurrencyService.createValuationFromSnapshot(item.purchasePrice, itemRateSnapshot)
+          const itemRetailValuation = backendCurrencyService.createValuationFromSnapshot(item.retailPrice, itemRateSnapshot)
+          const itemWholesaleValuation = backendCurrencyService.createValuationFromSnapshot(item.wholesalePrice, itemRateSnapshot)
+          const lineItemId = item.id?.trim() || `SLI${pad(++lineItemCounter, 4)}`
+          if (seenLineItemIds.has(lineItemId)) throw new Error("Shipment line item IDs must be unique")
+          seenLineItemIds.add(lineItemId)
+          const productIds: string[] = []
           // Determine location for non‑weapon items
           const loc: StorageLocation = item.location ?? { warehouse: "Main", shelf: "", bin: "" }
 
@@ -603,7 +639,7 @@ export function registerIpcHandlers(): void {
               if (!trimmed) continue
               if (existingSerials.has(trimmed.toLowerCase())) throw new Error(`Duplicate weapon serial number: ${trimmed}`)
               existingSerials.add(trimmed.toLowerCase())
-              positiveMoney(item.purchasePrice, "Shipment purchase price")
+              nonNegativeMoney(item.purchasePrice, "Shipment purchase price")
               nonNegativeMoney(item.retailPrice, "Shipment retail price")
               nonNegativeMoney(item.wholesalePrice, "Shipment wholesale price")
               const weaponId = `W${pad(serialCounter, 5)}`
@@ -658,11 +694,11 @@ export function registerIpcHandlers(): void {
                 retailPriceValuation: itemRetailValuation,
                 wholesalePriceValuation: itemWholesaleValuation,
               })
-              inventoryReceipts.push({ itemType: "weapon", itemId: weaponId, quantity: 1, unitAmount: itemPurchaseValuation.originalAmount })
+              productIds.push(weaponId)
+              inventoryReceipts.push({ itemType: "weapon", itemId: weaponId, quantity: 1, unitAmount: itemPurchaseValuation.originalAmount, currency: itemCurrency })
               serialCounter++
             }
           } else if (item.productType === "accessory") {
-            const itemCurrency = shipmentCurrency
             const accessoryId = `ACC${pad(accessoryCounter++, 5)}`
             newAccessories.push({
               id: accessoryId,
@@ -676,9 +712,9 @@ export function registerIpcHandlers(): void {
               location: loc,
               dateAdded: today,
             })
-            inventoryReceipts.push({ itemType: "accessory", itemId: accessoryId, quantity: item.quantity, unitAmount: itemPurchaseValuation.originalAmount })
+            productIds.push(accessoryId)
+            inventoryReceipts.push({ itemType: "accessory", itemId: accessoryId, quantity: item.quantity, unitAmount: itemPurchaseValuation.originalAmount, currency: itemCurrency })
           } else if (item.productType === "ammunition") {
-            const itemCurrency = shipmentCurrency
             const ammunitionId = `AMM${pad(ammunitionCounter++, 5)}`
             newAmmunition.push({
               id: ammunitionId,
@@ -694,7 +730,8 @@ export function registerIpcHandlers(): void {
               location: loc,
               dateAdded: today,
             })
-            inventoryReceipts.push({ itemType: "ammunition", itemId: ammunitionId, quantity: item.quantity, unitAmount: itemPurchaseValuation.originalAmount })
+            productIds.push(ammunitionId)
+            inventoryReceipts.push({ itemType: "ammunition", itemId: ammunitionId, quantity: item.quantity, unitAmount: itemPurchaseValuation.originalAmount, currency: itemCurrency })
           }
 
           // Build the shipment line-item snapshot. Labels are intentionally stored as historical display data.
@@ -719,8 +756,34 @@ export function registerIpcHandlers(): void {
             purchasePriceValuation,
             retailPriceValuation,
             wholesalePriceValuation,
+            productAdditionalCosts: item.additionalCosts ?? [],
+          })
+          costBasisItems.push({
+            id: lineItemId,
+            productType: item.productType,
+            description: `${item.brandLabel ?? ""} ${item.modelLabel ?? ""}`.trim() || item.productType,
+            quantity: String(item.quantity),
+            unitPurchaseAmount: String(item.purchasePrice),
+            currency: itemCurrency,
+            snapshot: itemRateSnapshot,
+            productIds,
+            productAdditionalCosts: item.additionalCosts ?? [],
           })
         }
+
+        // Validate every product and shipment cost before the first inventory row
+        // is written. The surrounding transaction remains the final rollback guard.
+        for (const basis of costBasisItems) {
+          for (const productId of basis.productIds) {
+            prepareProductCosts(basis.productType, productId, basis.unitPurchaseAmount, basis.snapshot, basis.productAdditionalCosts ?? [], currentUser.id)
+          }
+        }
+        const preparedShipmentCosts = prepareShipmentCosts(
+          shipmentId,
+          costBasisItems,
+          input.additionalCosts ?? [],
+          currentUser.id,
+        )
 
         const totalItems = lineItems.reduce((sum, li) => sum + li.quantity, 0)
         const newShipment: Shipment = {
@@ -736,15 +799,42 @@ export function registerIpcHandlers(): void {
           shippingCarrier: input.shipment.shippingCarrier, containerNumber: input.shipment.containerNumber,
           currency: shipmentCurrency, purchaseDate: input.shipment.purchaseDate,
           actualArrivalDate: input.shipment.actualArrivalDate, lineItems, documents: [],
-          totalCostValuation: backendCurrencyService.createValuation(
-            sumMoney(lineItems.map((li) => nonNegativeMoney(li.purchasePrice).times(li.quantity))).toString(),
-            shipmentCurrency
-          ),
+          totalCostValuation: (() => {
+            const baseTotal = sumMoney(costBasisItems.map((basis) =>
+              nonNegativeMoney(basis.unitPurchaseAmount).times(basis.quantity).dividedBy(basis.snapshot.exchangeRate),
+            ))
+            const additionalBase = sumMoney(preparedShipmentCosts.map((cost) => cost.baseAmount))
+            return backendCurrencyService.createValuation(sumMoney([baseTotal, additionalBase]).toString(), backendCurrencyService.getAccountingCurrency())
+          })(),
         }
         repo.insertShipment(newShipment)
+        for (const basis of costBasisItems) insertShipmentItemBasis(basis, shipmentId)
+        insertShipmentCosts(preparedShipmentCosts)
+        for (const cost of preparedShipmentCosts) {
+          repo.insertAuditLog({
+            id: generateId("LOG", "audit_logs"), timestamp: new Date().toISOString(), date: today,
+            userId: currentUser.id, actionType: "Shipment",
+            description: `Shipment cost added: ${cost.name}`,
+            metadata: JSON.stringify({
+              schemaVersion: 3, event: "SHIPMENT_COST_ADDED", shipmentId, costId: cost.id,
+              amount: cost.calculatedAmount, currency: cost.currency, baseAmount: cost.baseAmount,
+              baseCurrency: cost.baseCurrency, exchangeRate: cost.exchangeRate,
+              exchangeRateDate: cost.exchangeRateDate, rateSource: cost.rateSource,
+              scope: cost.scope, allocationMethod: cost.allocationMethod,
+              selectedShipmentItemIds: cost.selectedShipmentItemIds,
+              manualOverrides: cost.allocations.filter((allocation) => allocation.manualOverride).map((allocation) => ({
+                shipmentItemId: allocation.shipmentItemId,
+                automaticAmount: allocation.automaticAmount,
+                finalAmount: allocation.finalAmount,
+                difference: allocation.difference,
+              })),
+            }),
+          })
+        }
         if (newWeapons.length > 0) repo.bulkInsertWeapons(newWeapons)
         for (const a of newAccessories) repo.insertAccessory(a)
         for (const a of newAmmunition) repo.insertAmmunition(a)
+        const finalizedCosts = finalizeInventoryCosts(shipmentId, costBasisItems, preparedShipmentCosts, currentUser.id)
         for (const receipt of inventoryReceipts) {
           recordInventoryTransaction({
             itemType: receipt.itemType,
@@ -752,7 +842,7 @@ export function registerIpcHandlers(): void {
             transactionType: "receipt",
             quantityDelta: receipt.quantity,
             unitAmount: receipt.unitAmount,
-            currency: shipmentCurrency,
+            currency: receipt.currency,
             shipmentId,
             userId: currentUser.id,
             notes: `Received through shipment ${newShipment.shipmentNumber}`,
@@ -779,6 +869,9 @@ export function registerIpcHandlers(): void {
             exchangeRate: newShipment.totalCostValuation?.exchangeRate,
             exchangeRateDate: newShipment.totalCostValuation?.exchangeRateDate,
             rateSource: newShipment.totalCostValuation?.rateSource,
+            shipmentAdditionalCosts: preparedShipmentCosts.length,
+            shipmentAdditionalCostsBase: sumMoney(preparedShipmentCosts.map((cost) => cost.baseAmount)).toString(),
+            inventoryCostSnapshots: finalizedCosts.length,
           }),
         })
         repo.insertNotification({
@@ -802,6 +895,36 @@ export function registerIpcHandlers(): void {
         totalCostValuation: existing.totalCostValuation,
       })
       return ok()
+    } catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle("cost:shipment:list", (_, shipmentId: string): IpcResult => {
+    try {
+      if (typeof shipmentId !== "string" || !shipmentId.trim()) throw new Error("Shipment ID is required")
+      return ok(listShipmentCosts(shipmentId))
+    } catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle("cost:product:replace", (_, productType: string, productId: string, drafts: ProductAdditionalCostInput[], currentUser: { id: string; name: string }): IpcResult => {
+    try {
+      if (typeof productType !== "string" || !productType.trim()) throw new Error("Product type is required")
+      if (typeof productId !== "string" || !productId.trim()) throw new Error("Product ID is required")
+      if (!Array.isArray(drafts)) throw new Error("Product costs must be an array")
+      return getDb().transaction(() => {
+        const before = listProductCosts(productType, productId)
+        const snapshot = replaceProductCosts(productType, productId, drafts, currentUser.id)
+        repo.insertAuditLog({
+          id: generateId("LOG", "audit_logs"), timestamp: new Date().toISOString(), date: new Date().toISOString().slice(0, 10),
+          userId: currentUser.id, actionType: "Update", description: `Product costs updated for ${productType} ${productId}`,
+          metadata: JSON.stringify({
+            schemaVersion: 3, event: "PRODUCT_COSTS_REPLACED", productType, productId,
+            before: before.map((cost) => ({ id: cost.id, name: cost.name, baseAmount: cost.baseAmount })),
+            after: drafts.map((cost) => ({ id: cost.id, name: cost.name, amount: cost.amount, percentageRate: cost.percentageRate, currency: cost.currency })),
+            finalLandedBaseAmount: snapshot.finalLandedBaseAmount, baseCurrency: snapshot.baseCurrency,
+          }),
+        })
+        return ok(snapshot)
+      })()
     } catch (e) { return fail(String(e)) }
   })
 
@@ -1015,11 +1138,18 @@ export function registerIpcHandlers(): void {
   })
 
   // ===== Accessories & Ammunition =====
-  ipcMain.handle("accessory:insert", (_, accessory: Accessory): IpcResult => {
+  ipcMain.handle("accessory:insert", (_, accessory: Accessory, currentUser: { id: string; name: string }): IpcResult => {
     try {
-      nonNegativeMoney(accessory.price, "Accessory price")
-      const currency = accessory.priceCurrency?.trim().toUpperCase() || backendCurrencyService.getDefaultTransactionCurrency()
-      repo.insertAccessory({ ...accessory, priceCurrency: currency, priceValuation: backendCurrencyService.createValuation(accessory.price, currency) })
+      getDb().transaction(() => {
+        if (!currentUser?.id) throw new Error("A valid current user is required")
+        nonNegativeMoney(accessory.price, "Accessory price")
+        const currency = accessory.priceCurrency?.trim().toUpperCase() || backendCurrencyService.getDefaultTransactionCurrency()
+        const snapshot = backendCurrencyService.getRateSnapshot(currency)
+        const drafts = (accessory as Accessory & { additionalCostInputs?: import("../../src/lib/types.js").ProductAdditionalCostInput[] }).additionalCostInputs ?? []
+        prepareProductCosts("accessory", accessory.id, accessory.price, snapshot, drafts, currentUser.id)
+        repo.insertAccessory({ ...accessory, priceCurrency: currency, priceValuation: backendCurrencyService.createValuationFromSnapshot(accessory.price, snapshot) })
+        finalizeStandaloneInventoryCost("accessory", accessory.id, accessory.price, snapshot, drafts, currentUser.id)
+      })()
       return ok()
     } catch (e) { return fail(String(e)) }
   })
@@ -1041,11 +1171,18 @@ export function registerIpcHandlers(): void {
     } catch (e) { return fail(String(e)) }
   })
 
-  ipcMain.handle("ammunition:insert", (_, ammo: Ammunition): IpcResult => {
+  ipcMain.handle("ammunition:insert", (_, ammo: Ammunition, currentUser: { id: string; name: string }): IpcResult => {
     try {
-      nonNegativeMoney(ammo.price, "Ammunition price")
-      const currency = ammo.priceCurrency?.trim().toUpperCase() || backendCurrencyService.getDefaultTransactionCurrency()
-      repo.insertAmmunition({ ...ammo, priceCurrency: currency, priceValuation: backendCurrencyService.createValuation(ammo.price, currency) })
+      getDb().transaction(() => {
+        if (!currentUser?.id) throw new Error("A valid current user is required")
+        nonNegativeMoney(ammo.price, "Ammunition price")
+        const currency = ammo.priceCurrency?.trim().toUpperCase() || backendCurrencyService.getDefaultTransactionCurrency()
+        const snapshot = backendCurrencyService.getRateSnapshot(currency)
+        const drafts = (ammo as Ammunition & { additionalCostInputs?: import("../../src/lib/types.js").ProductAdditionalCostInput[] }).additionalCostInputs ?? []
+        prepareProductCosts("ammunition", ammo.id, ammo.price, snapshot, drafts, currentUser.id)
+        repo.insertAmmunition({ ...ammo, priceCurrency: currency, priceValuation: backendCurrencyService.createValuationFromSnapshot(ammo.price, snapshot) })
+        finalizeStandaloneInventoryCost("ammunition", ammo.id, ammo.price, snapshot, drafts, currentUser.id)
+      })()
       return ok()
     } catch (e) { return fail(String(e)) }
   })

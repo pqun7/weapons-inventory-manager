@@ -30,6 +30,7 @@ import { useI18n } from "@/lib/i18n"
 import { Textarea } from "@/components/ui/textarea";
 import { useCurrency } from "@/lib/currency-context"
 import { convertValuationToCurrency, multiplyMoney, sumMoney } from "@/lib/money-ui"
+import { CurrencyService } from "@/lib/currency-service"
 
 
 type WizardStep = 1 | 2 | 3 | 4 | 5
@@ -205,6 +206,13 @@ export function SalesPage() {
       : valuationPrice(weapon.retailPriceValuation, weapon.retailPrice)
   }, [mode, valuationPrice])
 
+  const landedCostPrice = useCallback((weapon: Weapon): number => {
+    if (weapon.costSnapshot) {
+      return CurrencyService.convertFromAccounting(Number(weapon.costSnapshot.finalLandedBaseAmount), saleCurrency)
+    }
+    return valuationPrice(weapon.purchasePriceValuation, weapon.purchasePrice)
+  }, [saleCurrency, valuationPrice])
+
   const formatTransaction = useCallback(
     (amount: number) => Number.isFinite(amount) ? formatOriginal(amount, saleCurrency) : "—",
     [formatOriginal, saleCurrency],
@@ -261,8 +269,8 @@ export function SalesPage() {
   const finalGrandTotal = sumMoney([finalSubtotal, finalTax])
 
   const totalCost = useMemo(
-    () => sumMoney(selectedWeapons.map((weapon) => valuationPrice(weapon.purchasePriceValuation, weapon.purchasePrice))),
-    [selectedWeapons, valuationPrice]
+    () => sumMoney(selectedWeapons.map(landedCostPrice)),
+    [selectedWeapons, landedCostPrice]
   )
   const netProfit = sumMoney([finalSubtotal, -totalCost])
   const marginPercent = totalCost > 0 ? (netProfit / totalCost) * 100 : 100
@@ -274,7 +282,7 @@ export function SalesPage() {
   const ammoStockIssues = ammoLines.filter((l) => (Number(l.quantity) || 0) > ammoTotalRounds(l.ammo))
   const accessoryStockIssues = accessoryLines.filter((l) => (Number(l.quantity) || 0) > l.accessory.quantity)
   const hasStockIssues = ammoStockIssues.length > 0 || accessoryStockIssues.length > 0
-  const hasPricingIssues = selectedWeapons.some((weapon) => !Number.isFinite(modePrice(weapon)) || !Number.isFinite(valuationPrice(weapon.purchasePriceValuation, weapon.purchasePrice)))
+  const hasPricingIssues = selectedWeapons.some((weapon) => !Number.isFinite(modePrice(weapon)) || !Number.isFinite(landedCostPrice(weapon)))
     || ammoLines.some((line) => !Number.isFinite(line.unitPrice))
     || accessoryLines.some((line) => !Number.isFinite(line.unitPrice))
 
@@ -293,12 +301,12 @@ export function SalesPage() {
 
   // ---------- Handlers ----------
   const handleAddWeapon = useCallback((weapon: Weapon) => {
-    if (!Number.isFinite(modePrice(weapon)) || !Number.isFinite(valuationPrice(weapon.purchasePriceValuation, weapon.purchasePrice))) {
+    if (!Number.isFinite(modePrice(weapon)) || !Number.isFinite(landedCostPrice(weapon))) {
       toast.error("This item has no authoritative currency valuation")
       return
     }
     setSelectedWeapons((prev) => (prev.find((w) => w.id === weapon.id) ? prev : [...prev, weapon]))
-  }, [modePrice, valuationPrice])
+  }, [modePrice, landedCostPrice])
 
   const handleSerialAdd = useCallback(() => {
     const trimmed = serialInput.trim()
@@ -927,7 +935,7 @@ export function SalesPage() {
                             selectedWeapons.map((w) => {
                               const custom = customPrices[w.id];
                               const finalPrice = custom ? Number(custom) || 0 : modePrice(w);
-                              const cost = valuationPrice(w.purchasePriceValuation, w.purchasePrice)
+                              const cost = landedCostPrice(w)
                               const profit = sumMoney([finalPrice, -cost]);
                               const isExpanded = expandedIds.has(w.id);
 
@@ -1593,7 +1601,7 @@ export function SalesPage() {
                         </thead>
                         <tbody>
                           {selectedWeapons.map((w) => {
-                            const cost = valuationPrice(w.purchasePriceValuation, w.purchasePrice)
+                            const cost = landedCostPrice(w)
                             const selling = customPrices[w.id]
                               ? Number(customPrices[w.id]) || 0
                               : modePrice(w)

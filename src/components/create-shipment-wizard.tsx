@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { useStore, type ShipmentLineItemInput } from "@/lib/store"
 import { useI18n } from "@/lib/i18n"
 import { generateShipmentNumber, formatDate } from "@/lib/format"
-import type { ShipmentStatus } from "@/lib/types"
+import type { ShipmentAdditionalCostInput, ShipmentStatus } from "@/lib/types"
 import { toast } from "sonner"
 import { BulkSerialParserDialog } from "./bulk-serial-parser-dialog"
 import { SearchableCombobox } from "@/components/ui/searchable-combobox"
@@ -23,6 +23,10 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { useDynamicMasterData } from "@/hooks/use-dynamic-master-data"
 import { useCurrency } from "@/lib/currency-context"
 import { multiplyMoney, sumMoney } from "@/lib/money-ui"
+import { CurrencyService } from "@/lib/currency-service"
+import { calculatePercentageCost } from "@/lib/product-cost"
+import { areProductCostsValid, ProductCostEditor } from "./product-cost-editor"
+import { ShipmentCostEditor } from "./shipment-cost-editor"
 
 const SHIPMENT_STATUSES: ShipmentStatus[] = ["Pending", "In Transit", "Delayed", "Arrived", "Cancelled", "Partial"]
 const PRODUCT_TYPES = ["weapon", "ammunition", "accessory"] as const
@@ -66,6 +70,8 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
   const [notes, setNotes] = useState("")
 
   const [lineItems, setLineItems] = useState<WizardLineItem[]>([])
+  const [additionalCosts, setAdditionalCosts] = useState<ShipmentAdditionalCostInput[]>([])
+  const [shipmentCostsValid, setShipmentCostsValid] = useState(true)
   const [serialParserOpen, setSerialParserOpen] = useState(false)
   const [serialParserTargetId, setSerialParserTargetId] = useState<string | null>(null)
   const [quickAddSupplierOpen, setQuickAddSupplierOpen] = useState(false)
@@ -89,6 +95,8 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
     setInitialStatus("Pending")
     setNotes("")
     setLineItems([])
+    setAdditionalCosts([])
+    setShipmentCostsValid(true)
   }, [transactionCurrency])
 
   useEffect(() => {
@@ -192,6 +200,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
       for (const item of lineItems) {
         if (!(item.brandLabel ?? "").trim()) return false
         if (item.quantity <= 0) return false
+        if (!areProductCostsValid(item.additionalCosts ?? [])) return false
         if (item.productType === "weapon" && item.serialNumbers.length !== item.quantity) return false
       }
       return true
@@ -199,8 +208,11 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
     if (step === 2) {
       return lineItems.filter((i) => i.productType === "weapon").every((i) => i.serialNumbers.length === i.quantity)
     }
+    if (step === 3) {
+      return shipmentCostsValid && additionalCosts.every((cost) => cost.name.trim().length > 0)
+    }
     return true
-  }, [step, shipmentNumber, supplierId, expectedArrivalDate, lineItems, currencies, currency])
+  }, [step, shipmentNumber, supplierId, expectedArrivalDate, lineItems, currencies, currency, additionalCosts, shipmentCostsValid])
 
   const totals = useMemo(() => {
     let weapons = 0, ammo = 0, accessories = 0
@@ -213,8 +225,30 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
       else if (item.productType === "ammunition") ammo += item.quantity
       else accessories += item.quantity
     }
-    return { weapons, ammo, accessories, totalItems: weapons + ammo + accessories, totalCost: sumMoney(costs), totalRetail: sumMoney(retailValues) }
-  }, [lineItems])
+    const productSubtotal = sumMoney(costs)
+    let productAdditional = 0
+    for (const item of lineItems) {
+      for (const cost of item.additionalCosts ?? []) {
+        try {
+          const amount = cost.calculationType === "fixed"
+            ? Number(cost.amount || 0)
+            : Number(calculatePercentageCost(CurrencyService.convert(item.purchasePrice, item.currency ?? currency, cost.currency), cost.percentageRate || "0", currencies.find((candidate) => candidate.isoCode === cost.currency)?.decimalPrecision ?? 2))
+          productAdditional = sumMoney([productAdditional, multiplyMoney(CurrencyService.convert(amount, cost.currency, currency), item.quantity)])
+        } catch { /* Validation remains next to the source field. */ }
+      }
+    }
+    let shipmentAdditional = 0
+    for (const cost of additionalCosts) {
+      try {
+        const amount = cost.calculationType === "fixed"
+          ? Number(cost.amount || 0)
+          : Number(calculatePercentageCost(CurrencyService.convert(productSubtotal, currency, cost.currency), cost.percentageRate || "0", currencies.find((candidate) => candidate.isoCode === cost.currency)?.decimalPrecision ?? 2))
+        shipmentAdditional = sumMoney([shipmentAdditional, CurrencyService.convert(amount, cost.currency, currency)])
+      } catch { /* Validation remains next to the source field. */ }
+    }
+    const additionalTotal = sumMoney([productAdditional, shipmentAdditional])
+    return { weapons, ammo, accessories, totalItems: weapons + ammo + accessories, productSubtotal, productAdditional, shipmentAdditional, additionalTotal, totalCost: sumMoney([productSubtotal, additionalTotal]), totalRetail: sumMoney(retailValues) }
+  }, [additionalCosts, currencies, currency, lineItems])
 
   const handleFinalSubmit = async () => {
     // Map label fields to FK IDs using master data
@@ -256,6 +290,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
         currency, purchaseDate, actualArrivalDate: actualArrivalDate || undefined,
       },
       lineItems: mappedLineItems,
+      additionalCosts,
     }
 
     const result = await bulkCreate(input)
@@ -264,12 +299,12 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
       resetWizard()
       onOpenChange(false)
     } else {
-      toast.error(result.error ?? t("ship.shipmentFailed"))
+      toast.error(t("ship.shipmentFailed"))
     }
   }
 
   const handleNext = () => {
-    if (step < 3) setStep(step + 1)
+    if (step < 4) setStep(step + 1)
     else handleFinalSubmit()
   }
 
@@ -281,6 +316,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
     t("ship.wizardStep1"),
     t("ship.wizardStep2"),
     t("ship.wizardStep3"),
+    t("cost.shipmentCosts"),
     t("ship.wizardStep4"),
   ]
 
@@ -289,7 +325,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
   return (
     <>
       <Dialog open={open} onOpenChange={(v) => { if (!v) resetWizard(); onOpenChange(v) }}>
-        <DialogContent className="max-w-4xl max-h-[90vh]">
+        <DialogContent className="max-h-[92vh] w-[min(96vw,72rem)] max-w-6xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-sm">
               <Truck className="size-4" /> {t("ship.createShipment")}
@@ -497,6 +533,14 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
                           <Input type="number" step="0.01" value={item.wholesalePrice} onChange={(e) => updateLineItem(item.id, { wholesalePrice: Number(e.target.value) })} className="mt-0.5 h-7 text-[11px]" />
                         </div>
                       </div>
+                      <div className="mt-2">
+                        <ProductCostEditor
+                          originalAmount={item.purchasePrice}
+                          originalCurrency={item.currency ?? currency}
+                          costs={item.additionalCosts ?? []}
+                          onChange={(costs) => updateLineItem(item.id, { additionalCosts: costs })}
+                        />
+                      </div>
                       {item.productType === "weapon" && (
                         <div className="mt-2 flex items-center gap-2">
                           <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => openSerialParser(item.id)}>
@@ -566,8 +610,24 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
                 </div>
               )}
 
-              {/* Step 3: Review */}
+              {/* Step 3: Shipment-level costs and allocation */}
               {step === 3 && (
+                <ShipmentCostEditor
+                  items={lineItems.map((item) => ({
+                    id: item.id,
+                    label: `${item.brandLabel ?? ""} ${item.modelLabel ?? ""}`.trim() || item.productType,
+                    value: item.purchasePrice,
+                    quantity: item.quantity,
+                  }))}
+                  shipmentCurrency={currency}
+                  costs={additionalCosts}
+                  onChange={setAdditionalCosts}
+                  onValidityChange={setShipmentCostsValid}
+                />
+              )}
+
+              {/* Step 4: Review */}
+              {step === 4 && (
                 <div className="flex flex-col gap-3">
                   <div className="rounded-lg border p-3">
                     <h4 className="mb-2 text-xs font-semibold">{t("ship.reviewHeader")}</h4>
@@ -579,7 +639,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     <div className="rounded-md border p-2 text-center">
                       <div className="text-[10px] text-muted-foreground">{t("ship.prodType.weapon")}</div>
                       <div className="text-lg font-bold tabular-nums">{totals.weapons}</div>
@@ -600,14 +660,16 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
 
                   <Separator />
 
-                  <div className="rounded-lg border p-3">
+                  <div className="rounded-lg bg-muted/30 p-3">
                     <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold">
                       <DollarSign className="size-3.5" /> {t("ship.financialBreakdown")}
                     </h4>
-                    <div className="grid grid-cols-2 gap-2 text-[11px]">
-                      <div><span className="text-muted-foreground">{t("ship.totalCost")}:</span> <span className="font-bold tabular-nums">{formatOriginal(totals.totalCost, currency)}</span></div>
-                      <div><span className="text-muted-foreground">{t("ship.totalRetail")}:</span> <span className="font-bold tabular-nums">{formatOriginal(totals.totalRetail, currency)}</span></div>
-                      <div className="col-span-2"><span className="text-muted-foreground">{t("ship.projectedProfit")}:</span> <span className="font-bold tabular-nums text-status-returned-fg">{formatOriginal(sumMoney([totals.totalRetail, -totals.totalCost]), currency)}</span></div>
+                    <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 text-[11px]">
+                      <span className="text-muted-foreground">{t("cost.productSubtotal")}</span><span className="text-end font-medium tabular-nums" dir="ltr">{formatOriginal(totals.productSubtotal, currency)}</span>
+                      <span className="text-muted-foreground">{t("cost.additionalCosts")}</span><span className="text-end font-medium tabular-nums" dir="ltr">+ {formatOriginal(totals.additionalTotal, currency)}</span>
+                      <Separator className="col-span-2" />
+                      <span className="font-semibold">{t("cost.totalShipmentCost")}</span><span className="text-end text-base font-bold tabular-nums text-primary" dir="ltr">{formatOriginal(totals.totalCost, currency)}</span>
+                      <span className="text-muted-foreground">{t("cost.allocation")}</span><span className="inline-flex items-center justify-end gap-1 font-medium"><CheckCircle2 className="size-3.5" /> {t("cost.balanced")}</span>
                     </div>
                   </div>
 
@@ -631,10 +693,10 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
                 </Button>
               )}
               <Button size="sm" disabled={!stepValidation} onClick={handleNext}>
-                {step < 3 ? (
+                {step < 4 ? (
                   <>{t("ship.wizardNext")} <ChevronRight className="size-3.5 rtl:rotate-180" /></>
                 ) : (
-                  <><Check className="size-3.5" /> {t("ship.completeShipment")}</>
+                  <><Check className="size-3.5" /> {t("cost.confirmReceive")}</>
                 )}
               </Button>
             </div>

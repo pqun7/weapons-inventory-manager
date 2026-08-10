@@ -11,12 +11,13 @@ import { useStore } from "@/lib/store"
 import { useI18n } from "@/lib/i18n"
 import { InventoryService } from "@/lib/services"
 import { predictSerialPrefix, nextSerialSuggestion } from "@/lib/format"
-import type { WeaponCondition } from "@/lib/types"
+import type { ProductAdditionalCostInput, WeaponCondition } from "@/lib/types"
 import { useDynamicMasterData } from "@/hooks/use-dynamic-master-data"
 import { Spinner } from "@/components/ui/spinner"
 import { hasAnyValidationErrors, validateFullCombination } from "@/lib/validation"
 import { toast } from "sonner"
 import { useCurrency } from "@/lib/currency-context"
+import { areProductCostsValid, ProductCostEditor } from "./product-cost-editor"
 
 const CONDITIONS: WeaponCondition[] = ["Excellent", "Good", "Fair", "Poor"]
 
@@ -40,6 +41,7 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
   const [retailPrice, setRetailPrice] = useState("")
   const [wholesalePrice, setWholesalePrice] = useState("")
   const [currency, setCurrency] = useState(transactionCurrency)
+  const [additionalCosts, setAdditionalCosts] = useState<ProductAdditionalCostInput[]>([])
   const [supplierId, setSupplierId] = useState("")
   const [shipmentId, setShipmentId] = useState<string>("none")
   const [notes, setNotes] = useState("")
@@ -147,6 +149,10 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
   }
 
   const handleSubmit = async () => {
+    if (!areProductCostsValid(additionalCosts)) {
+      toast.error(t("cost.checkAmount"))
+      return
+    }
     // Map labels to IDs
     const weaponTypeId = md.getWeaponTypeIdByLabel(weaponType)
     const weaponSubtypeId = md.getWeaponSubtypeIdByLabel(subType, weaponTypeId)
@@ -182,6 +188,7 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
       shipmentId: shipmentId === "none" ? null : shipmentId,
       serialNumbers: serials,
       notes,
+      additionalCosts,
     })
 
 
@@ -430,6 +437,14 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
           <div className="flex flex-col gap-1 sm:col-span-2">
             <Label className="text-xs">{t("common.notes")}</Label>
             <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("bulk.notesPlaceholder")} className="h-8 text-xs" />
+          </div>
+          <div className="col-span-full">
+            <ProductCostEditor
+              originalAmount={purchasePrice || "0"}
+              originalCurrency={currency}
+              costs={additionalCosts}
+              onChange={setAdditionalCosts}
+            />
           </div>
           <div className="col-span-full flex justify-end">
             <Button size="sm" disabled={hasCompatErrors} onClick={() => { if (canProceed()) { setStep(2); console.log("[BulkIntake] Proceeding to Step 2: Serial Numbers") } }}>

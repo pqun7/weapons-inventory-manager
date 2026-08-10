@@ -15,6 +15,13 @@ import {
   type ManifestUploadInput, type ManifestValidationIssue, type ManifestWorkflowStatus, type ShipmentManifestReview,
 } from "../../src/lib/shipment-manifest.js"
 import type { Accessory, Ammunition, Shipment, ShipmentLineItem, StorageLocation, Weapon } from "../../src/lib/types.js"
+import {
+  finalizeInventoryCosts,
+  insertShipmentCosts,
+  insertShipmentItemBasis,
+  prepareShipmentCosts,
+  type ShipmentItemCostBasis,
+} from "./product-cost-service.js"
 
 type CurrentUser = { id: string; name: string }
 type ProgressCallback = (progress: ManifestProgress) => void
@@ -730,6 +737,10 @@ function insertInventory(review: ShipmentManifestReview, shipment: Shipment, use
   const today = new Date().toISOString().slice(0, 10)
   const batchId = `BATCH-${Date.now()}`
   const weapons: Weapon[] = []
+  const accessories: Accessory[] = []
+  const ammunitionRows: Ammunition[] = []
+  const receipts: Array<{ type: "weapon" | "accessory" | "ammunition"; id: string; quantity: number; amount: number; currency: string }> = []
+  const costBasisItems: ShipmentItemCostBasis[] = []
   let weaponCounter = Number.parseInt(nextId("W", "weapons").slice(1), 10)
   let accessoryCounter = Number.parseInt(nextId("ACC", "accessories").slice(3), 10)
   let ammoCounter = Number.parseInt(nextId("AMM", "ammunition").slice(3), 10)
@@ -737,8 +748,10 @@ function insertInventory(review: ShipmentManifestReview, shipment: Shipment, use
   let ammunitionCount = 0
   for (const item of review.items) {
     const itemCurrency = item.currency ?? currency
-    const purchaseValuation = backendCurrencyService.createValuation(item.unitPrice!, itemCurrency)
-    const zeroValuation = backendCurrencyService.createValuation(0, itemCurrency)
+    const rateSnapshot = backendCurrencyService.getRateSnapshot(itemCurrency)
+    const purchaseValuation = backendCurrencyService.createValuationFromSnapshot(item.unitPrice!, rateSnapshot)
+    const zeroValuation = backendCurrencyService.createValuationFromSnapshot(0, rateSnapshot)
+    const productIds: string[] = []
     if (item.productType === "weapon") {
       for (const serial of item.serialNumbers) {
         const weaponId = `W${String(weaponCounter++).padStart(5, "0")}`
@@ -749,19 +762,40 @@ function insertInventory(review: ShipmentManifestReview, shipment: Shipment, use
           supplierId: shipment.supplierId, shipmentId: shipment.id, dateAdded: today, batchId, notes: "Imported from reviewed shipment manifest", images: [], movementHistory: [],
           purchasePriceValuation: purchaseValuation, retailPriceValuation: zeroValuation, wholesalePriceValuation: zeroValuation,
         })
-        recordInventoryReceipt("weapon", weaponId, 1, item.unitPrice!, itemCurrency, shipment.id, user.id)
+        productIds.push(weaponId)
+        receipts.push({ type: "weapon", id: weaponId, quantity: 1, amount: item.unitPrice!, currency: itemCurrency })
       }
     } else if (item.productType === "accessory") {
       const id = `ACC${String(accessoryCounter++).padStart(5, "0")}`
       const accessory: Accessory = { id, name: item.productName!, type: item.category ?? "", quantity: item.quantity!, safetyThreshold: 5, price: 0, priceCurrency: itemCurrency, priceValuation: zeroValuation, dateAdded: today, location: storageLocation(item.storageLocationId) }
-      repo.insertAccessory(accessory); accessoryCount += item.quantity!; recordInventoryReceipt("accessory", id, item.quantity!, item.unitPrice!, itemCurrency, shipment.id, user.id)
+      accessories.push(accessory); productIds.push(id); accessoryCount += item.quantity!
+      receipts.push({ type: "accessory", id, quantity: item.quantity!, amount: item.unitPrice!, currency: itemCurrency })
     } else {
       const id = `AMM${String(ammoCounter++).padStart(5, "0")}`
       const ammunition: Ammunition = { id, name: item.productName ?? "", caliber: item.caliber ?? "", packageType: "Custom", unitsPerPackage: 1, fullPackages: item.quantity!, looseRounds: 0, safetyThreshold: 100, price: 0, priceCurrency: itemCurrency, priceValuation: zeroValuation, dateAdded: today, location: storageLocation(item.storageLocationId) }
-      repo.insertAmmunition(ammunition); ammunitionCount += item.quantity!; recordInventoryReceipt("ammunition", id, item.quantity!, item.unitPrice!, itemCurrency, shipment.id, user.id)
+      ammunitionRows.push(ammunition); productIds.push(id); ammunitionCount += item.quantity!
+      receipts.push({ type: "ammunition", id, quantity: item.quantity!, amount: item.unitPrice!, currency: itemCurrency })
     }
+    costBasisItems.push({
+      id: item.id,
+      productType: item.productType!,
+      description: item.productName ?? item.model ?? item.productType!,
+      quantity: String(item.quantity!),
+      unitPurchaseAmount: String(item.unitPrice!),
+      currency: itemCurrency,
+      snapshot: rateSnapshot,
+      productIds,
+      productAdditionalCosts: [],
+    })
   }
+  const preparedShipmentCosts = prepareShipmentCosts(shipment.id, costBasisItems, [], user.id)
+  for (const basis of costBasisItems) insertShipmentItemBasis(basis, shipment.id)
+  insertShipmentCosts(preparedShipmentCosts)
   if (weapons.length) repo.bulkInsertWeapons(weapons)
+  for (const accessory of accessories) repo.insertAccessory(accessory)
+  for (const ammunition of ammunitionRows) repo.insertAmmunition(ammunition)
+  finalizeInventoryCosts(shipment.id, costBasisItems, preparedShipmentCosts, user.id)
+  for (const receipt of receipts) recordInventoryReceipt(receipt.type, receipt.id, receipt.quantity, receipt.amount, receipt.currency, shipment.id, user.id)
   return { weapons: weapons.length, accessories: accessoryCount, ammunition: ammunitionCount }
 }
 

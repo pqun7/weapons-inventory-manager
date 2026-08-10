@@ -89,11 +89,15 @@ export function DashboardPage() {
   const stats = useMemo(() => {
     const now = new Date()
     const available = weapons.filter((w) => w.status === "Available")
-    const invValue = sumMoney(available.map((weapon) =>
-      valuationAccountingAmount(weapon.purchasePriceValuation, weapon.purchasePrice)))
+    const invValue = sumMoney(available.map((weapon) => weapon.costSnapshot
+      ? Number(weapon.costSnapshot.finalLandedBaseAmount)
+      : valuationAccountingAmount(weapon.purchasePriceValuation, weapon.purchasePrice)))
     const saleInvoices = invoices.filter((i) => i.type === "Sale" && !i.voided)
     const revenue = sumMoney(saleInvoices.map((invoice) => invoiceAccountingAmount(invoice, "totalNegotiated")))
     const invoiceCost = (invoice: typeof saleInvoices[number]) => sumMoney(invoice.lineItems.map((item) => {
+      if (item.unitLandedCostAccounting != null && Number.isFinite(item.unitLandedCostAccounting)) {
+        return multiplyMoney(item.unitLandedCostAccounting, item.quantity)
+      }
       const pricedItem = item.itemType === "weapon"
         ? { valuation: weaponById.get(item.itemId)?.purchasePriceValuation, amount: weaponById.get(item.itemId)?.purchasePrice }
         : item.itemType === "accessory"
@@ -135,6 +139,9 @@ export function DashboardPage() {
       if (months[key]) {
         const revenue = invoiceAccountingAmount(i, "totalNegotiated") ?? 0
         const cost = sumMoney(i.lineItems.map((item) => {
+          if (item.unitLandedCostAccounting != null && Number.isFinite(item.unitLandedCostAccounting)) {
+            return multiplyMoney(item.unitLandedCostAccounting, item.quantity)
+          }
           const pricedItem = item.itemType === "weapon"
             ? { valuation: weaponById.get(item.itemId)?.purchasePriceValuation, amount: weaponById.get(item.itemId)?.purchasePrice }
             : item.itemType === "accessory"

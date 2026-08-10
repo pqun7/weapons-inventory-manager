@@ -256,10 +256,18 @@ export function completeSale(
       const canonicalLineItems = lineItems.map((item) => {
         const unitPrice = nonNegativeMoney(item.unitPrice, `Unit price for ${item.name}`)
           .toDecimalPlaces(rateSnapshot.transactionPrecision)
+        const costRow = db.prepare(`
+          SELECT final_landed_base_amount, base_currency_code, finalized_at
+          FROM inventory_cost_snapshots
+          WHERE product_type = ? AND product_id = ?
+        `).get(item.itemType, item.itemId) as { final_landed_base_amount: string; base_currency_code: string; finalized_at: string } | undefined
         return {
           ...item,
           unitPrice: decimalToNumber(unitPrice),
           total: decimalToNumber(unitPrice.times(item.quantity)),
+          unitLandedCostAccounting: costRow ? decimalToNumber(nonNegativeMoney(costRow.final_landed_base_amount)) : undefined,
+          costAccountingCurrency: costRow?.base_currency_code,
+          costSnapshotFinalizedAt: costRow?.finalized_at,
         }
       })
       const requestedSubtotal = sumMoney(canonicalLineItems.map((item) => item.total))

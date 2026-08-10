@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 export const CONFIGURE_INITIAL_CURRENCIES_V5_SQL = `
 UPDATE currencies
@@ -475,6 +475,127 @@ CREATE TABLE IF NOT EXISTS inventory_transactions (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS idx_inventory_transactions_item
   ON inventory_transactions(item_type, item_id, created_at);
+
+-- ============ Product and landed cost accounting (V8) ============
+
+-- Normalized shipment items are the stable allocation target. The existing
+-- shipments.line_items JSON remains a historical display snapshot only.
+CREATE TABLE IF NOT EXISTS shipment_items (
+  id                         TEXT PRIMARY KEY,
+  shipment_id                TEXT NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+  product_type               TEXT NOT NULL,
+  description                TEXT NOT NULL DEFAULT '',
+  quantity                   TEXT NOT NULL CHECK (CAST(quantity AS REAL) > 0),
+  unit_purchase_amount       TEXT NOT NULL CHECK (CAST(unit_purchase_amount AS REAL) >= 0),
+  currency_code              TEXT NOT NULL REFERENCES currencies(iso_code) ON DELETE RESTRICT,
+  exchange_rate              TEXT NOT NULL CHECK (CAST(exchange_rate AS REAL) > 0),
+  unit_purchase_base_amount  TEXT NOT NULL CHECK (CAST(unit_purchase_base_amount AS REAL) >= 0),
+  base_currency_code         TEXT NOT NULL REFERENCES currencies(iso_code) ON DELETE RESTRICT,
+  exchange_rate_date         TEXT NOT NULL,
+  rate_source                TEXT NOT NULL CHECK (rate_source IN ('manual','api','cache','default')),
+  product_ids_json           TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(product_ids_json) = 1),
+  created_at                 TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at                 TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (shipment_id, id)
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_shipment_items_shipment ON shipment_items(shipment_id, id);
+
+CREATE TABLE IF NOT EXISTS product_costs (
+  id                    TEXT PRIMARY KEY,
+  product_type          TEXT NOT NULL,
+  product_id            TEXT NOT NULL,
+  name                  TEXT NOT NULL CHECK (length(trim(name)) > 0),
+  calculation_type      TEXT NOT NULL CHECK (calculation_type IN ('fixed','percentage')),
+  input_amount          TEXT NOT NULL CHECK (CAST(input_amount AS REAL) >= 0),
+  percentage_rate       TEXT CHECK (percentage_rate IS NULL OR CAST(percentage_rate AS REAL) >= 0),
+  calculation_base      TEXT NOT NULL CHECK (calculation_base IN ('original_purchase_cost')),
+  calculated_amount     TEXT NOT NULL CHECK (CAST(calculated_amount AS REAL) >= 0),
+  currency_code         TEXT NOT NULL REFERENCES currencies(iso_code) ON DELETE RESTRICT,
+  exchange_rate         TEXT NOT NULL CHECK (CAST(exchange_rate AS REAL) > 0),
+  base_amount           TEXT NOT NULL CHECK (CAST(base_amount AS REAL) >= 0),
+  base_currency_code    TEXT NOT NULL REFERENCES currencies(iso_code) ON DELETE RESTRICT,
+  exchange_rate_date    TEXT NOT NULL,
+  rate_source           TEXT NOT NULL CHECK (rate_source IN ('manual','api','cache','default')),
+  source                TEXT NOT NULL DEFAULT 'product_level' CHECK (source = 'product_level'),
+  created_by            TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_product_costs_product ON product_costs(product_type, product_id, created_at);
+
+CREATE TABLE IF NOT EXISTS shipment_costs (
+  id                    TEXT PRIMARY KEY,
+  shipment_id           TEXT NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+  name                  TEXT NOT NULL CHECK (length(trim(name)) > 0),
+  calculation_type      TEXT NOT NULL CHECK (calculation_type IN ('fixed','percentage')),
+  input_amount          TEXT NOT NULL CHECK (CAST(input_amount AS REAL) >= 0),
+  percentage_rate       TEXT CHECK (percentage_rate IS NULL OR CAST(percentage_rate AS REAL) >= 0),
+  calculation_base      TEXT NOT NULL CHECK (calculation_base IN ('original_purchase_cost')),
+  calculated_amount     TEXT NOT NULL CHECK (CAST(calculated_amount AS REAL) >= 0),
+  currency_code         TEXT NOT NULL REFERENCES currencies(iso_code) ON DELETE RESTRICT,
+  exchange_rate         TEXT NOT NULL CHECK (CAST(exchange_rate AS REAL) > 0),
+  base_amount           TEXT NOT NULL CHECK (CAST(base_amount AS REAL) >= 0),
+  base_currency_code    TEXT NOT NULL REFERENCES currencies(iso_code) ON DELETE RESTRICT,
+  exchange_rate_date    TEXT NOT NULL,
+  rate_source           TEXT NOT NULL CHECK (rate_source IN ('manual','api','cache','default')),
+  source                TEXT NOT NULL DEFAULT 'shipment_level' CHECK (source = 'shipment_level'),
+  scope                 TEXT NOT NULL CHECK (scope IN ('entire_shipment','selected_products','single_product','manual')),
+  allocation_method     TEXT NOT NULL CHECK (allocation_method IN ('by_value','by_quantity','equal','manual')),
+  basis_revision        INTEGER NOT NULL DEFAULT 1 CHECK (basis_revision > 0),
+  created_by            TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_shipment_costs_shipment ON shipment_costs(shipment_id, created_at);
+
+CREATE TABLE IF NOT EXISTS shipment_cost_scope_items (
+  cost_id             TEXT NOT NULL REFERENCES shipment_costs(id) ON DELETE CASCADE,
+  shipment_item_id    TEXT NOT NULL REFERENCES shipment_items(id) ON DELETE CASCADE,
+  PRIMARY KEY (cost_id, shipment_item_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS shipment_cost_allocations (
+  id                       TEXT PRIMARY KEY,
+  shipment_id              TEXT NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+  shipment_item_id         TEXT NOT NULL REFERENCES shipment_items(id) ON DELETE CASCADE,
+  cost_id                  TEXT NOT NULL REFERENCES shipment_costs(id) ON DELETE CASCADE,
+  automatic_amount         TEXT NOT NULL CHECK (CAST(automatic_amount AS REAL) >= 0),
+  final_amount             TEXT NOT NULL CHECK (CAST(final_amount AS REAL) >= 0),
+  manual_override          INTEGER NOT NULL DEFAULT 0 CHECK (manual_override IN (0,1)),
+  difference               TEXT NOT NULL,
+  currency_code            TEXT NOT NULL REFERENCES currencies(iso_code) ON DELETE RESTRICT,
+  exchange_rate            TEXT NOT NULL CHECK (CAST(exchange_rate AS REAL) > 0),
+  automatic_base_amount    TEXT NOT NULL CHECK (CAST(automatic_base_amount AS REAL) >= 0),
+  final_base_amount        TEXT NOT NULL CHECK (CAST(final_base_amount AS REAL) >= 0),
+  base_currency_code       TEXT NOT NULL REFERENCES currencies(iso_code) ON DELETE RESTRICT,
+  allocation_method        TEXT NOT NULL CHECK (allocation_method IN ('by_value','by_quantity','equal','manual')),
+  basis_revision           INTEGER NOT NULL DEFAULT 1 CHECK (basis_revision > 0),
+  created_at               TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at               TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (cost_id, shipment_item_id)
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_cost_allocations_item ON shipment_cost_allocations(shipment_item_id, cost_id);
+
+CREATE TABLE IF NOT EXISTS inventory_cost_snapshots (
+  product_type                  TEXT NOT NULL,
+  product_id                    TEXT NOT NULL,
+  shipment_id                  TEXT REFERENCES shipments(id) ON DELETE SET NULL,
+  shipment_item_id             TEXT REFERENCES shipment_items(id) ON DELETE SET NULL,
+  original_amount              TEXT NOT NULL CHECK (CAST(original_amount AS REAL) >= 0),
+  original_currency_code       TEXT NOT NULL REFERENCES currencies(iso_code) ON DELETE RESTRICT,
+  original_exchange_rate       TEXT NOT NULL CHECK (CAST(original_exchange_rate AS REAL) > 0),
+  original_base_amount         TEXT NOT NULL CHECK (CAST(original_base_amount AS REAL) >= 0),
+  product_costs_base_amount    TEXT NOT NULL CHECK (CAST(product_costs_base_amount AS REAL) >= 0),
+  shipment_costs_base_amount   TEXT NOT NULL CHECK (CAST(shipment_costs_base_amount AS REAL) >= 0),
+  final_landed_base_amount     TEXT NOT NULL CHECK (CAST(final_landed_base_amount AS REAL) >= 0),
+  base_currency_code           TEXT NOT NULL REFERENCES currencies(iso_code) ON DELETE RESTRICT,
+  exchange_rate_date           TEXT NOT NULL,
+  rate_source                  TEXT NOT NULL CHECK (rate_source IN ('manual','api','cache','default')),
+  finalized_at                 TEXT NOT NULL DEFAULT (datetime('now')),
+  finalized_by                 TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  PRIMARY KEY (product_type, product_id)
+) WITHOUT ROWID, STRICT;
+CREATE INDEX IF NOT EXISTS idx_inventory_cost_shipment ON inventory_cost_snapshots(shipment_id, shipment_item_id);
 
 -- ============ Shipment Manifest Import (V6) ============
 

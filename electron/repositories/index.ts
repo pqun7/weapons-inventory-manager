@@ -9,6 +9,7 @@ import type {
 } from "../../src/lib/types.js"
 import type { CurrencyRow, ExchangeRateOverrideRow, AuditLogEntry } from "../../src/lib/db/mappers.js"
 import { cleanMasterDataLabel, findCanonicalMasterId } from "../../src/lib/master-data-normalization.js"
+import { getInventoryCostSnapshot, listProductCosts, listShipmentCosts } from "../services/product-cost-service.js"
 
 function rowToCurrencyRow(r: Record<string, unknown>): CurrencyRow {
   return {
@@ -62,17 +63,21 @@ export class AppRepository {
       ORDER BY w.date_added DESC
     `).all() as Record<string, unknown>[])
       .map((r) => mappers.rowToWeapon(r as never))
+      .map((item) => ({ ...item, costSnapshot: getInventoryCostSnapshot("weapon", item.id), additionalCosts: listProductCosts("weapon", item.id) }))
 
     const shipments = (db.prepare("SELECT * FROM shipments ORDER BY shipment_date DESC").all() as Record<string, unknown>[])
       .map((r) => mappers.rowToShipment(r as never))
+      .map((shipment) => ({ ...shipment, additionalCosts: listShipmentCosts(shipment.id) }))
     const invoices = (db.prepare("SELECT * FROM invoices ORDER BY date DESC").all() as Record<string, unknown>[])
       .map((r) => mappers.rowToInvoice(r as never))
     const payments = (db.prepare("SELECT * FROM payment_records ORDER BY date DESC").all() as Record<string, unknown>[])
       .map((r) => mappers.rowToPayment(r as never))
     const accessories = (db.prepare("SELECT * FROM accessories ORDER BY date_added DESC").all() as Record<string, unknown>[])
       .map((r) => mappers.rowToAccessory(r as never))
+      .map((item) => ({ ...item, costSnapshot: getInventoryCostSnapshot("accessory", item.id), additionalCosts: listProductCosts("accessory", item.id) }))
     const ammunition = (db.prepare("SELECT * FROM ammunition ORDER BY date_added DESC").all() as Record<string, unknown>[])
       .map((r) => mappers.rowToAmmo(r as never))
+      .map((item) => ({ ...item, costSnapshot: getInventoryCostSnapshot("ammunition", item.id), additionalCosts: listProductCosts("ammunition", item.id) }))
     const customers = (db.prepare("SELECT * FROM customers ORDER BY date_added DESC").all() as Record<string, unknown>[])
       .map((r) => mappers.rowToCustomer(r as never))
     const suppliers = (db.prepare("SELECT * FROM suppliers ORDER BY date_added DESC").all() as Record<string, unknown>[])

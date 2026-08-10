@@ -42,12 +42,13 @@ import type { CurrencyInfo } from "@/lib/currency-service"
 import { convertValuationToCurrency } from "@/lib/money-ui"
 import { formatDateShort, statusRowClass, statusBadgeClass, statusDotClass } from "@/lib/format"
 import type {
-  Weapon, WeaponStatus, StorageLocation, Ammunition, PackageType,
+  Weapon, WeaponStatus, StorageLocation, Ammunition, PackageType, ProductAdditionalCostInput,
 } from "@/lib/types"
 import { ACCESSORY_TYPES, AMMUNITION_CALIBERS, ammoTotalRounds } from "@/lib/types"
 import { BulkIntakeForm } from "@/components/bulk-intake-form"
 import { ExcelToolbar } from "@/components/excel-toolbar"
 import { WeaponDetailPanel } from "@/components/weapon-detail-panel"
+import { areProductCostsValid, ProductCostEditor } from "@/components/product-cost-editor"
 import { SavedFiltersBar } from "@/components/ui/saved-filters-bar"
 import { toast } from "sonner"
 
@@ -171,7 +172,7 @@ export function InventoryPage() {
   const accessories = useStore((s) => s.accessories)
   const ammunition = useStore((s) => s.ammunition)
   const shipments = useStore((s) => s.shipments)
-  const { displayCurrency, formatValuation } = useCurrency()
+  const { displayCurrency, formatValuation, formatAccountingAggregate } = useCurrency()
   const ready = useStore((s) => s.ready)
   const refreshFromDb = useStore((s) => s.refreshFromDb)
   const userPreferences = useStore((s) => s.userPreferences)
@@ -1148,10 +1149,10 @@ export function InventoryPage() {
                   <DialogTrigger asChild><Button size="sm" className="h-8"><Plus className="size-3.5" /> {t("inv.addAccessory")}</Button></DialogTrigger>
                   <DialogContent>
                     <DialogHeader><DialogTitle className="text-sm">{t("inv.addAccessory")}</DialogTitle></DialogHeader>
-                    <AddAccessoryForm onAdd={async (name, type, qty, threshold, price, currency) => {
-                      const res = await addAccessory({ name, type, quantity: qty, safetyThreshold: threshold, price, priceCurrency: currency, location: { warehouse: "Main", shelf: "", bin: "" } })
+                    <AddAccessoryForm onAdd={async (name, type, qty, threshold, price, currency, additionalCostInputs) => {
+                      const res = await addAccessory({ name, type, quantity: qty, safetyThreshold: threshold, price, priceCurrency: currency, location: { warehouse: "Main", shelf: "", bin: "" }, additionalCostInputs })
                       if (res.success) { toast.success(t("toast.accessoryAdded")); setAddAccOpen(false) }
-                      else toast.error(res.error ?? t("toast.accessoryAddFailed"))
+                      else toast.error(t("toast.accessoryAddFailed"))
                     }} />
                   </DialogContent>
                 </Dialog>
@@ -1174,6 +1175,7 @@ export function InventoryPage() {
                         <Progress value={pct} className={`mt-1.5 h-1.5 ${low ? "[&>div]:bg-status-sold" : ""}`} />
                         <div className="mt-1.5 flex items-center justify-between">
                           <span className="text-[10px] text-muted-foreground">{formatValuation(a.priceValuation, "display", a.price, a.priceCurrency)} {t("inv.each")}</span>
+                          {a.costSnapshot && <span className="text-[9px] text-primary">{t("cost.finalLandedCost")}: {formatAccountingAggregate(Number(a.costSnapshot.finalLandedBaseAmount), "accounting")}</span>}
                           <Button
                             size="xs"
                             variant="outline"
@@ -1199,10 +1201,10 @@ export function InventoryPage() {
                   <DialogTrigger asChild><Button size="sm" className="h-8"><Plus className="size-3.5" /> {t("inv.addAmmunition")}</Button></DialogTrigger>
                   <DialogContent>
                     <DialogHeader><DialogTitle className="text-sm">{t("inv.addAmmunition")}</DialogTitle></DialogHeader>
-                    <AddAmmunitionForm onAdd={async (caliber, packageType, unitsPerPackage, fullPackages, looseRounds, safetyThreshold, price, currency) => {
-                      const res = await addAmmunition({ caliber, packageType, unitsPerPackage, fullPackages, looseRounds, safetyThreshold, price, priceCurrency: currency, location: { warehouse: "Main", shelf: "", bin: "" } })
+                    <AddAmmunitionForm onAdd={async (caliber, packageType, unitsPerPackage, fullPackages, looseRounds, safetyThreshold, price, currency, additionalCostInputs) => {
+                      const res = await addAmmunition({ caliber, packageType, unitsPerPackage, fullPackages, looseRounds, safetyThreshold, price, priceCurrency: currency, location: { warehouse: "Main", shelf: "", bin: "" }, additionalCostInputs })
                       if (res.success) { toast.success(t("toast.ammunitionAdded")); setAddAmmOpen(false) }
-                      else toast.error(res.error ?? t("toast.ammunitionAddFailed"))
+                      else toast.error(t("toast.ammunitionAddFailed"))
                     }} />
                   </DialogContent>
                 </Dialog>
@@ -1242,6 +1244,7 @@ export function InventoryPage() {
                         <Progress value={pct} className={`mt-1.5 h-1.5 ${low ? "[&>div]:bg-status-sold" : ""}`} />
                         <div className="mt-1.5 flex items-center justify-between">
                           <span className="text-[10px] text-muted-foreground">{formatValuation(a.priceValuation, "display", a.price, a.priceCurrency)}/{t("inv.rd")}</span>
+                          {a.costSnapshot && <span className="text-[9px] text-primary">{t("cost.finalLandedCost")}: {formatAccountingAggregate(Number(a.costSnapshot.finalLandedBaseAmount), "accounting")}</span>}
                           <Button
                             size="xs"
                             variant="outline"
@@ -1612,7 +1615,7 @@ function CurrencySelect({ value, onChange, currencies }: { value: string; onChan
   )
 }
 
-function AddAccessoryForm({ onAdd }: { onAdd: (name: string, type: string, qty: number, threshold: number, price: number, currency: string) => void }) {
+function AddAccessoryForm({ onAdd }: { onAdd: (name: string, type: string, qty: number, threshold: number, price: number, currency: string, costs: ProductAdditionalCostInput[]) => void }) {
   const { t } = useI18n()
   const { currencies, transactionCurrency, currencyPresentation } = useCurrency()
   const [name, setName] = useState("")
@@ -1621,6 +1624,7 @@ function AddAccessoryForm({ onAdd }: { onAdd: (name: string, type: string, qty: 
   const [threshold, setThreshold] = useState("10")
   const [price, setPrice] = useState("0")
   const [currency, setCurrency] = useState(transactionCurrency)
+  const [costs, setCosts] = useState<ProductAdditionalCostInput[]>([])
   return (
     <div className="grid gap-3">
       <div><Label className="text-xs">{t("inv.accName")}</Label><Input value={name} onChange={(e) => setName(e.target.value)} className="h-8 text-xs" /></div>
@@ -1631,6 +1635,7 @@ function AddAccessoryForm({ onAdd }: { onAdd: (name: string, type: string, qty: 
         <div><Label className="text-xs">{t("weapon.cost")} ({currencyPresentation(currency).compactSymbol})</Label><Input type="number" min={0} step="any" value={price} onChange={(e) => setPrice(e.target.value)} className="h-8 text-xs" /></div>
       </div>
       <CurrencySelect value={currency} onChange={setCurrency} currencies={currencies} />
+      <ProductCostEditor originalAmount={price} originalCurrency={currency} costs={costs} onChange={setCosts} />
       <Button
         size="sm"
         onClick={() => {
@@ -1641,7 +1646,8 @@ function AddAccessoryForm({ onAdd }: { onAdd: (name: string, type: string, qty: 
           if (!Number.isFinite(quantity) || quantity < 0) return toast.error(t("inv.quantityMustBePositive"))
           if (!Number.isFinite(min) || min < 0) return toast.error(t("inv.quantityMustBePositive"))
           if (!Number.isFinite(unitPrice) || unitPrice < 0) return toast.error(t("inv.priceMustBePositive"))
-          onAdd(name.trim(), type, quantity, min, unitPrice, currency)
+          if (!areProductCostsValid(costs)) return toast.error(t("cost.checkAmount"))
+          onAdd(name.trim(), type, quantity, min, unitPrice, currency, costs)
         }}
       >
         {t("common.add")}
@@ -1650,7 +1656,7 @@ function AddAccessoryForm({ onAdd }: { onAdd: (name: string, type: string, qty: 
   )
 }
 
-function AddAmmunitionForm({ onAdd }: { onAdd: (caliber: string, packageType: PackageType, unitsPerPackage: number, fullPackages: number, looseRounds: number, safetyThreshold: number, price: number, currency: string) => void }) {
+function AddAmmunitionForm({ onAdd }: { onAdd: (caliber: string, packageType: PackageType, unitsPerPackage: number, fullPackages: number, looseRounds: number, safetyThreshold: number, price: number, currency: string, costs: ProductAdditionalCostInput[]) => void }) {
   const { t } = useI18n()
   const { currencies, transactionCurrency, currencyPresentation } = useCurrency()
   const [caliber, setCaliber] = useState(AMMUNITION_CALIBERS[0])
@@ -1661,6 +1667,7 @@ function AddAmmunitionForm({ onAdd }: { onAdd: (caliber: string, packageType: Pa
   const [safetyThreshold, setSafetyThreshold] = useState("200")
   const [price, setPrice] = useState("0.35")
   const [currency, setCurrency] = useState(transactionCurrency)
+  const [costs, setCosts] = useState<ProductAdditionalCostInput[]>([])
   return (
     <div className="grid gap-3">
       <div><Label className="text-xs">{t("inv.caliber")}</Label><Select value={caliber} onValueChange={setCaliber}><SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger><SelectContent>{AMMUNITION_CALIBERS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div>
@@ -1675,6 +1682,7 @@ function AddAmmunitionForm({ onAdd }: { onAdd: (caliber: string, packageType: Pa
         <div><Label className="text-xs">{t("weapon.cost")} ({currencyPresentation(currency).compactSymbol})</Label><Input type="number" min={0} step="any" value={price} onChange={(e) => setPrice(e.target.value)} className="h-8 text-xs" /></div>
       </div>
       <CurrencySelect value={currency} onChange={setCurrency} currencies={currencies} />
+      <ProductCostEditor originalAmount={price} originalCurrency={currency} costs={costs} onChange={setCosts} />
       <Button
         size="sm"
         onClick={() => {
@@ -1688,7 +1696,8 @@ function AddAmmunitionForm({ onAdd }: { onAdd: (caliber: string, packageType: Pa
           if (!Number.isFinite(loose) || loose < 0) return toast.error(t("inv.roundsMustBePositive"))
           if (!Number.isFinite(threshold) || threshold < 0) return toast.error(t("inv.quantityMustBePositive"))
           if (!Number.isFinite(unitPrice) || unitPrice < 0) return toast.error(t("inv.priceMustBePositive"))
-          onAdd(caliber, packageType, units, packages, loose, threshold, unitPrice, currency)
+          if (!areProductCostsValid(costs)) return toast.error(t("cost.checkAmount"))
+          onAdd(caliber, packageType, units, packages, loose, threshold, unitPrice, currency, costs)
         }}
       >
         {t("common.add")}

@@ -50,6 +50,10 @@ export interface ElectronAPI {
     bulkCreate: (input: unknown, currentUser: { id: string; name: string }) => Promise<IpcResult>
     update: (shipment: unknown) => Promise<IpcResult>
   }
+  cost: {
+    listShipment: (shipmentId: string) => Promise<IpcResult>
+    replaceProduct: (productType: string, productId: string, costs: unknown[], currentUser: { id: string; name: string }) => Promise<IpcResult>
+  }
   manifest: {
     upload: (input: ManifestUploadInput, currentUser: { id: string; name: string }) => Promise<IpcResult<ShipmentManifestReview>>
     get: (importId: string, currentUser: { id: string; name: string }) => Promise<IpcResult<ShipmentManifestReview>>
@@ -80,11 +84,11 @@ export interface ElectronAPI {
     insert: (supplier: unknown) => Promise<IpcResult>
   }
   accessory: {
-    insert: (accessory: unknown) => Promise<IpcResult>
+    insert: (accessory: unknown, currentUser: { id: string; name: string }) => Promise<IpcResult>
     update: (accessory: unknown) => Promise<IpcResult>
   }
   ammunition: {
-    insert: (ammo: unknown) => Promise<IpcResult>
+    insert: (ammo: unknown, currentUser: { id: string; name: string }) => Promise<IpcResult>
     update: (ammo: unknown) => Promise<IpcResult>
   }
   inventory: {
