@@ -68,6 +68,36 @@ export const electronAPI = {
     update: (shipment: unknown) => ipcRenderer.invoke("shipment:update", shipment),
   },
 
+  manifest: {
+    upload: (input: unknown, currentUser: { id: string; name: string }) =>
+      ipcRenderer.invoke("manifest:upload", input, currentUser),
+    get: (importId: string, currentUser: { id: string; name: string }) =>
+      ipcRenderer.invoke("manifest:get", importId, currentUser),
+    list: (limit: number, currentUser: { id: string; name: string }) =>
+      ipcRenderer.invoke("manifest:list", limit, currentUser),
+    updateItem: (importId: string, itemId: string, patch: unknown, currentUser: { id: string; name: string }) =>
+      ipcRenderer.invoke("manifest:updateItem", importId, itemId, patch, currentUser),
+    updateItems: (importId: string, itemIds: string[], patch: unknown, currentUser: { id: string; name: string }) =>
+      ipcRenderer.invoke("manifest:updateItems", importId, itemIds, patch, currentUser),
+    updateDetails: (importId: string, patch: unknown, currentUser: { id: string; name: string }) =>
+      ipcRenderer.invoke("manifest:updateDetails", importId, patch, currentUser),
+    deleteReview: (importId: string, currentUser: { id: string; name: string }) =>
+      ipcRenderer.invoke("manifest:deleteReview", importId, currentUser),
+    confirm: (input: unknown, currentUser: { id: string; name: string }) =>
+      ipcRenderer.invoke("manifest:confirm", input, currentUser),
+    confirmArrival: (importId: string, currentUser: { id: string; name: string }) =>
+      ipcRenderer.invoke("manifest:confirmArrival", importId, currentUser),
+    reschedule: (importId: string, expectedArrivalDate: string, reason: string, currentUser: { id: string; name: string }) =>
+      ipcRenderer.invoke("manifest:reschedule", importId, expectedArrivalDate, reason, currentUser),
+    cancel: (importId: string, reason: string, currentUser: { id: string; name: string }) =>
+      ipcRenderer.invoke("manifest:cancel", importId, reason, currentUser),
+    onProgress: (callback: (progress: unknown) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
+      ipcRenderer.on("manifest:progress", listener)
+      return () => ipcRenderer.removeListener("manifest:progress", listener)
+    },
+  },
+
   invoice: {
     update: (invoice: unknown) => ipcRenderer.invoke("invoice:update", invoice),
     void: (invoiceId: string, currentUser: { id: string; name: string }) =>

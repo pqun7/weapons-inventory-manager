@@ -19,6 +19,7 @@ import type { ShipmentStatus } from "@/lib/types"
 import { toast } from "sonner"
 import { BulkSerialParserDialog } from "./bulk-serial-parser-dialog"
 import { SearchableCombobox } from "@/components/ui/searchable-combobox"
+import { DatePicker } from "@/components/ui/date-picker"
 import { useDynamicMasterData } from "@/hooks/use-dynamic-master-data"
 import { useCurrency } from "@/lib/currency-context"
 import { multiplyMoney, sumMoney } from "@/lib/money-ui"
@@ -379,22 +380,22 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
                     </div>
                     <div>
                       <Label className="text-xs">{t("ship.purchaseDate")}</Label>
-                      <Input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} className="h-8 text-xs" />
+                      <DatePicker value={purchaseDate} onChange={setPurchaseDate} className="h-8 text-xs" />
                     </div>
                     <div>
                       <Label className="text-xs">{t("ship.date")}</Label>
-                      <Input type="date" value={shipmentDate} onChange={(e) => setShipmentDate(e.target.value)} className="h-8 text-xs" />
+                      <DatePicker value={shipmentDate} onChange={setShipmentDate} className="h-8 text-xs" required />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <Label className="text-xs">{t("ship.expectedArrival")}</Label>
-                      <Input type="date" value={expectedArrivalDate} onChange={(e) => setExpectedArrivalDate(e.target.value)} className="h-8 text-xs" />
+                      <DatePicker value={expectedArrivalDate} onChange={setExpectedArrivalDate} min={shipmentDate} className="h-8 text-xs" required />
                     </div>
                     <div>
                       <Label className="text-xs">{t("ship.actualArrival")}</Label>
-                      <Input type="date" value={actualArrivalDate} onChange={(e) => setActualArrivalDate(e.target.value)} className="h-8 text-xs" />
+                      <DatePicker value={actualArrivalDate} onChange={setActualArrivalDate} min={shipmentDate} className="h-8 text-xs" />
                     </div>
                   </div>
 

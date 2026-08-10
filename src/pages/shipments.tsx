@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect, useRef } from "react"
+import { useState, useMemo, useEffect } from "react"
 import {
-  Truck, Search, Upload, FileSpreadsheet,
+  Truck, Search, FileSpreadsheet,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,24 +8,18 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { SavedFiltersBar } from "@/components/ui/saved-filters-bar"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { useStore } from "@/lib/store"
 import { useI18n } from "@/lib/i18n"
-import { useCurrency } from "@/lib/currency-context"
 import { formatDate, shipmentStatusClass, shipmentDelayDays } from "@/lib/format"
 import type { ShipmentStatus, SavedFilter } from "@/lib/types"
-import { toast } from "sonner"
 import { CreateShipmentWizard } from "@/components/create-shipment-wizard"
 import { ShipmentDetailPanel } from "@/components/shipment-detail-panel"
-import { parseManifestFile, type ManifestImportResult } from "@/lib/manifest-import"
-import type { ShipmentLineItemInput } from "@/lib/store"
+import { ShipmentManifestImportDialog } from "@/components/shipment-manifest-import-dialog"
 
 const SHIPMENT_STATUSES: ShipmentStatus[] = ["Pending", "In Transit", "Delayed", "Arrived", "Cancelled", "Partial"]
 
 export function ShipmentsPage() {
   const { t } = useI18n()
-  const { transactionCurrency, formatOriginal } = useCurrency()
   const shipments = useStore((s) => s.shipments)
   const suppliers = useStore((s) => s.suppliers)
   const weapons = useStore((s) => s.weapons)
@@ -37,9 +31,6 @@ export function ShipmentsPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [selectedShipmentId, setSelectedShipmentId] = useState<string | null>(null)
   const [importOpen, setImportOpen] = useState(false)
-  const [importResult, setImportResult] = useState<ManifestImportResult | null>(null)
-  const [importedItems, setImportedItems] = useState<ShipmentLineItemInput[]>([])
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     void refreshFromDb().then(() => autoFlagDelayedShipments())
@@ -93,39 +84,6 @@ export function ShipmentsPage() {
     "Partial": "ship.partial",
   }
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const result = await parseManifestFile(file)
-    setImportResult(result)
-    // Ensure all label fields exist for smooth preview
-    const items = result.lineItems.map(item => ({
-      ...item,
-      brandLabel: item.brandLabel ?? "",
-      modelLabel: item.modelLabel ?? "",
-      weaponTypeLabel: item.weaponTypeLabel ?? "",
-      subTypeLabel: item.subTypeLabel ?? "",
-      caliberLabel: item.caliberLabel ?? "",
-      location: item.location ?? { warehouse: "Main", shelf: "", bin: "" },
-    }))
-    setImportedItems(items)
-    if (result.errors.length > 0) {
-      toast.error(result.errors[0])
-    } else if (result.validRows > 0) {
-      toast.success(`${result.validRows} ${t("ship.importRowsParsed")}`)
-      setImportOpen(true)
-    } else {
-      toast.error(t("ship.importNoValidRows"))
-    }
-    e.target.value = ""
-  }
-
-  const handleImportToWizard = () => {
-    if (importedItems.length === 0) return
-    setImportOpen(false)
-    setCreateOpen(true)
-  }
-
   return (
     <div className="flex flex-col gap-3 p-3 lg:p-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -134,14 +92,13 @@ export function ShipmentsPage() {
           <Input placeholder={t("ship.searchShipments")} value={search} onChange={(e) => setSearch(e.target.value)} className="h-8 ps-8 text-xs" />
         </div>
         <SavedFiltersBar entityType="shipments" currentFilterState={{ search, statusFilter }} onLoadFilter={handleLoadFilter} />
-        <Button size="sm" variant="outline" className="h-8" onClick={() => fileInputRef.current?.click()}>
+        <Button size="sm" variant="outline" className="h-8" onClick={() => setImportOpen(true)}>
           <FileSpreadsheet className="size-3.5" /> {t("ship.importManifest")}
         </Button>
-        <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileSelect} />
         <Button size="sm" className="h-8" onClick={() => setCreateOpen(true)}>
           <Truck className="size-3.5" /> {t("ship.createShipment")}
         </Button>
-        <CreateShipmentWizard open={createOpen} onOpenChange={setCreateOpen} prefillLineItems={importedItems.length > 0 ? importedItems : undefined} />
+        <CreateShipmentWizard open={createOpen} onOpenChange={setCreateOpen} />
       </div>
 
       {/* Stats summary bar */}
@@ -219,84 +176,7 @@ export function ShipmentsPage() {
         )}
       </div>
 
-      {/* Import Preview Dialog */}
-      <Dialog open={importOpen} onOpenChange={setImportOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-sm">
-              <Upload className="size-4" /> {t("ship.importPreview")}
-            </DialogTitle>
-          </DialogHeader>
-
-          {importResult && (
-            <div className="flex flex-col gap-3">
-              {/* Stats */}
-              <div className="grid grid-cols-4 gap-2">
-                <div className="rounded-md border p-2 text-center">
-                  <div className="text-[10px] text-muted-foreground">{t("ship.importTotalRows")}</div>
-                  <div className="text-base font-bold tabular-nums">{importResult.totalRows}</div>
-                </div>
-                <div className="rounded-md border border-status-returned/30 bg-status-returned/10 p-2 text-center">
-                  <div className="text-[10px] text-muted-foreground">{t("ship.importValidRows")}</div>
-                  <div className="text-base font-bold tabular-nums text-status-returned-fg">{importResult.validRows}</div>
-                </div>
-                <div className="rounded-md border border-status-sold/30 bg-status-sold/10 p-2 text-center">
-                  <div className="text-[10px] text-muted-foreground">{t("ship.importErrors")}</div>
-                  <div className="text-base font-bold tabular-nums text-status-sold-fg">{importResult.errors.length}</div>
-                </div>
-                <div className="rounded-md border border-status-reserved/30 bg-status-reserved/10 p-2 text-center">
-                  <div className="text-[10px] text-muted-foreground">{t("ship.importWarnings")}</div>
-                  <div className="text-base font-bold tabular-nums text-status-reserved-fg">{importResult.warnings.length}</div>
-                </div>
-              </div>
-
-              {/* Warnings */}
-              {importResult.warnings.length > 0 && (
-                <ScrollArea className="max-h-[80px] rounded-md border border-status-reserved/30 bg-status-reserved/5 p-2">
-                  <div className="flex flex-col gap-1">
-                    {importResult.warnings.map((w, i) => (
-                      <div key={i} className="text-[10px] text-status-reserved-fg">{w}</div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              )}
-
-              {/* Parsed line items preview */}
-              <ScrollArea className="max-h-[250px] rounded-md border">
-                <div className="p-2">
-                  <div className="grid grid-cols-6 gap-2 border-b pb-1 text-[10px] font-medium text-muted-foreground">
-                    <span>{t("common.type")}</span>
-                    <span>{t("weapon.brand")}</span>
-                    <span>{t("weapon.model")}</span>
-                    <span>{t("common.quantity")}</span>
-                    <span>{t("ship.serials")}</span>
-                    <span>{t("common.purchasePrice")} ({transactionCurrency})</span>
-                  </div>
-                  {importedItems.map((item, i) => (
-                    <div key={i} className="grid grid-cols-6 gap-2 border-b py-1 text-[10px] last:border-0">
-                      <span>{t(`ship.prodType.${item.productType}`)}</span>
-                      <span className="truncate">{item.brandLabel ?? ""}</span>
-                      <span className="truncate">{item.modelLabel ?? ""}</span>
-                      <span className="tabular-nums">{item.quantity}</span>
-                      <span className="tabular-nums">{item.serialNumbers.length}</span>
-                      <span className="tabular-nums">{formatOriginal(item.purchasePrice, transactionCurrency)}</span>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button size="sm" variant="outline" onClick={() => setImportOpen(false)}>
-              {t("common.cancel")}
-            </Button>
-            <Button size="sm" disabled={importedItems.length === 0} onClick={handleImportToWizard}>
-              <Truck className="size-3.5" /> {t("ship.importToWizard")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ShipmentManifestImportDialog open={importOpen} onOpenChange={setImportOpen} onComplete={() => setImportOpen(false)} />
     </div>
   )
 }

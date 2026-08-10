@@ -71,7 +71,14 @@ describe("currency-aware database schema", () => {
     ).all() as { name: string }[]).map((row) => row.name))
     expect(tables.has("financial_data_issues")).toBe(true)
     expect(tables.has("inventory_transactions")).toBe(true)
+    expect(tables.has("shipment_imports")).toBe(true)
+    expect(tables.has("shipment_import_items")).toBe(true)
+    expect(tables.has("shipment_validation_issues")).toBe(true)
+    expect(tables.has("shipment_status_history")).toBe(true)
     expect(database.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION)
+
+    const manifestColumns = new Set((database.pragma("table_info(shipment_imports)") as { name: string }[]).map((row) => row.name))
+    expect(manifestColumns.has("review_note")).toBe(true)
 
     const invoiceColumns = new Set((database.pragma("table_info(invoices)") as { name: string }[]).map((row) => row.name))
     expect(invoiceColumns.has("exchange_rate_date")).toBe(true)

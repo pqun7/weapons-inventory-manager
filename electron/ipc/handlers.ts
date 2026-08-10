@@ -22,6 +22,11 @@ import type {
 import { backendCurrencyService } from "../services/currency-service.js"
 import { nonNegativeMoney, positiveMoney, sumMoney } from "../services/money.js"
 import { ammoTotalRounds } from "../../src/lib/types.js"
+import type { ManifestConfirmInput, ManifestDetailsPatch, ManifestItemPatch, ManifestUploadInput } from "../../src/lib/shipment-manifest.js"
+import {
+  authorizeManifest, cancelManifest, confirmManifest, confirmScheduledArrival, deleteManifestReview, getManifestReview, listManifestReviews,
+  processManifestUpload, rescheduleManifest, updateManifestDetails, updateManifestItem, updateManifestItems,
+} from "../services/shipment-manifest-service.js"
 
 
 function pad(num: number, size: number): string {
@@ -798,6 +803,69 @@ export function registerIpcHandlers(): void {
       })
       return ok()
     } catch (e) { return fail(String(e)) }
+  })
+
+  // ===== Production shipment manifest import =====
+  ipcMain.handle("manifest:upload", async (event, input: ManifestUploadInput, currentUser: { id: string; name: string }): Promise<IpcResult> => {
+    try {
+      const review = await processManifestUpload(input, currentUser, (progress) => {
+        if (!event.sender.isDestroyed()) event.sender.send("manifest:progress", progress)
+      })
+      return ok(review)
+    } catch (error) {
+      console.error(JSON.stringify({ scope: "shipment-manifest", event: "processing-failed", error: error instanceof Error ? error.stack ?? error.message : String(error) }))
+      return fail(error instanceof Error ? error.message : "Unable to extract shipment data")
+    }
+  })
+
+  ipcMain.handle("manifest:get", (_, importId: string, currentUser: { id: string; name: string }): IpcResult => {
+    try { authorizeManifest(currentUser, "shipment.review"); return ok(getManifestReview(importId)) }
+    catch (error) { return fail(error instanceof Error ? error.message : String(error)) }
+  })
+
+  ipcMain.handle("manifest:list", (_, limit: number, currentUser: { id: string; name: string }): IpcResult => {
+    try { authorizeManifest(currentUser, "shipment.review"); return ok(listManifestReviews(limit)) }
+    catch (error) { return fail(error instanceof Error ? error.message : String(error)) }
+  })
+
+  ipcMain.handle("manifest:updateItem", (_, importId: string, itemId: string, patch: ManifestItemPatch, currentUser: { id: string; name: string }): IpcResult => {
+    try { return ok(updateManifestItem(importId, itemId, patch, currentUser)) }
+    catch (error) { return fail(error instanceof Error ? error.message : String(error)) }
+  })
+
+  ipcMain.handle("manifest:updateItems", (_, importId: string, itemIds: string[], patch: ManifestItemPatch, currentUser: { id: string; name: string }): IpcResult => {
+    try { return ok(updateManifestItems(importId, itemIds, patch, currentUser)) }
+    catch (error) { return fail(error instanceof Error ? error.message : String(error)) }
+  })
+
+  ipcMain.handle("manifest:updateDetails", (_, importId: string, patch: ManifestDetailsPatch, currentUser: { id: string; name: string }): IpcResult => {
+    try { return ok(updateManifestDetails(importId, patch, currentUser)) }
+    catch (error) { return fail(error instanceof Error ? error.message : String(error)) }
+  })
+
+  ipcMain.handle("manifest:deleteReview", (_, importId: string, currentUser: { id: string; name: string }): IpcResult => {
+    try { deleteManifestReview(importId, currentUser); return ok() }
+    catch (error) { return fail(error instanceof Error ? error.message : String(error)) }
+  })
+
+  ipcMain.handle("manifest:confirm", (_, input: ManifestConfirmInput, currentUser: { id: string; name: string }): IpcResult => {
+    try { return ok(confirmManifest(input, currentUser)) }
+    catch (error) { return fail(error instanceof Error ? error.message : String(error)) }
+  })
+
+  ipcMain.handle("manifest:confirmArrival", (_, importId: string, currentUser: { id: string; name: string }): IpcResult => {
+    try { return ok(confirmScheduledArrival(importId, currentUser)) }
+    catch (error) { return fail(error instanceof Error ? error.message : String(error)) }
+  })
+
+  ipcMain.handle("manifest:reschedule", (_, importId: string, expectedArrivalDate: string, reason: string, currentUser: { id: string; name: string }): IpcResult => {
+    try { return ok(rescheduleManifest(importId, expectedArrivalDate, reason, currentUser)) }
+    catch (error) { return fail(error instanceof Error ? error.message : String(error)) }
+  })
+
+  ipcMain.handle("manifest:cancel", (_, importId: string, reason: string, currentUser: { id: string; name: string }): IpcResult => {
+    try { return ok(cancelManifest(importId, reason, currentUser)) }
+    catch (error) { return fail(error instanceof Error ? error.message : String(error)) }
   })
 
 

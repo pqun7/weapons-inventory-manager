@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { SavedFiltersBar } from "@/components/ui/saved-filters-bar"
+import { DatePicker } from "@/components/ui/date-picker"
 import { useStore } from "@/lib/store"
 import { useNav } from "@/lib/nav"
 import { useI18n } from "@/lib/i18n"
@@ -500,7 +501,7 @@ export function FinancialsPage() {
           <div className="grid gap-3">
             <div>
               <Label className="text-xs">{t("fin.newDueDate")}</Label>
-              <Input type="date" value={newDueDate} onChange={(e) => setNewDueDate(e.target.value)} className="h-8 text-xs" />
+              <DatePicker value={newDueDate} onChange={setNewDueDate} className="h-8 text-xs" required />
             </div>
             <div>
               <Label className="text-xs">{t("common.notes")}</Label>

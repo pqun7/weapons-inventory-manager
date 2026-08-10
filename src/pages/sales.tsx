@@ -18,6 +18,7 @@ import {
 import { SearchableCombobox } from "@/components/ui/searchable-combobox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SmartCurrencyInput } from "@/components/ui/smart-currency-input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useStore } from "@/lib/store"
 import { generateInvoiceNumber, statusBadgeClass, statusDotClass } from "@/lib/format"
@@ -1807,7 +1808,7 @@ export function SalesPage() {
                       </div>
                       <div>
                         <Label className="text-[10px]">{t("sales.dueDateRemaining")}</Label>
-                        <Input type="date" value={debtDueDate} onChange={(e) => setDebtDueDate(e.target.value)} className="h-8 text-xs" />
+                        <DatePicker value={debtDueDate} onChange={setDebtDueDate} min={invoiceDate} className="h-8 text-xs" required />
                       </div>
                     </div>
                   )}
@@ -1915,7 +1916,7 @@ export function SalesPage() {
                 <div className="grid gap-2 sm:grid-cols-2">
                   <div>
                     <Label className="text-xs">{t('common.date')}</Label>
-                    <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className="h-8 text-xs" />
+                    <DatePicker value={invoiceDate} onChange={setInvoiceDate} className="h-8 text-xs" required />
                   </div>
                   <div>
                     <Label className="text-xs">{t('sales.invoiceNum')}</Label>

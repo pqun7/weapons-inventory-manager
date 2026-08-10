@@ -7,6 +7,7 @@ import { initDatabase, closeDatabase } from "./database.js"
 import { registerIpcHandlers } from "./ipc/handlers.js"
 import { seedDemoDataIfNeeded } from "./services/demo-seed-service.js"
 import fs from "node:fs";
+import { syncShipmentArrivalNotifications } from "./services/shipment-manifest-service.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -22,6 +23,29 @@ function logBoot(stage: string): void {
 }
 
 let mainWindow: BrowserWindow | null = null
+let shipmentNotificationTimer: NodeJS.Timeout | null = null
+
+function loadRuntimeEnvironment(): void {
+  const candidates = [
+    path.resolve(process.cwd(), ".env"),
+    path.resolve(process.cwd(), ".env.local"),
+    path.join(app.getAppPath(), ".env"),
+    path.join(path.dirname(process.execPath), ".env"),
+    path.join(app.getPath("userData"), ".env"),
+  ]
+  for (const candidate of [...new Set(candidates)]) {
+    if (!fs.existsSync(candidate)) continue
+    for (const rawLine of fs.readFileSync(candidate, "utf8").split(/\r?\n/)) {
+      const line = rawLine.trim()
+      if (!line || line.startsWith("#")) continue
+      const match = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/)
+      if (!match || process.env[match[1]] != null) continue
+      let value = match[2].trim()
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1)
+      process.env[match[1]] = value
+    }
+  }
+}
 function createWindow(): BrowserWindow {
   logBoot("createWindow:start")
 
@@ -104,11 +128,14 @@ function createWindow(): BrowserWindow {
 app.whenReady().then(async () => {
   logBoot("app.whenReady")
   try {
+    loadRuntimeEnvironment()
     await initDatabase()
     logBoot("initDatabase:completed")
 
     seedDemoDataIfNeeded()
     registerIpcHandlers()
+    syncShipmentArrivalNotifications()
+    shipmentNotificationTimer = setInterval(() => syncShipmentArrivalNotifications(), 15 * 60 * 1000)
     logBoot("ipc:registered")
 
     createWindow()
@@ -129,5 +156,6 @@ app.on("window-all-closed", () => {
 })
 
 app.on("before-quit", () => {
+  if (shipmentNotificationTimer) clearInterval(shipmentNotificationTimer)
   closeDatabase()
 })

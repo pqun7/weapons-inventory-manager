@@ -298,9 +298,8 @@ function runMigrations(database: Database.Database): void {
     // The schema should already exist.
     // CREATE_TABLES_SQL is idempotent and acts as a final
     // integrity/safety pass.
-    database.exec(CREATE_TABLES_SQL);
-
     addColumnsIfMissing(database);
+    database.exec(CREATE_TABLES_SQL);
     ensureDefaultUserPreferences(database);
 
     validateFinalSchema(database);
@@ -342,9 +341,8 @@ function runMigrations(database: Database.Database): void {
     //
     // This is intentionally executed INSIDE the migration
     // transaction so that failure rolls everything back.
-    database.exec(CREATE_TABLES_SQL);
-
     addColumnsIfMissing(database);
+    database.exec(CREATE_TABLES_SQL);
 
     ensureDefaultUserPreferences(database);
 
@@ -804,6 +802,16 @@ function addColumnsIfMissing(
     ],
     exchange_rate_audit_log: [
       ["source", "TEXT NOT NULL DEFAULT 'manual'"],
+    ],
+    shipments: [
+      ["workflow_status", "TEXT NOT NULL DEFAULT 'draft'"],
+      ["import_id", "TEXT"],
+      ["arrival_note", "TEXT"],
+      ["delay_reason", "TEXT"],
+      ["last_arrival_prompt_at", "TEXT"],
+    ],
+    shipment_imports: [
+      ["review_note", "TEXT"],
     ],
   };
 
@@ -1588,6 +1596,12 @@ function validateFinalSchema(
     "user_preferences",
     "financial_data_issues",
     "inventory_transactions",
+    "shipment_imports",
+    "shipment_documents",
+    "shipment_import_items",
+    "shipment_validation_issues",
+    "shipment_item_changes",
+    "shipment_status_history",
   ];
 
   const tables = getExistingTables(database);

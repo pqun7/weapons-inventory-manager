@@ -14,6 +14,9 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { DatePicker } from "@/components/ui/date-picker"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useStore } from "@/lib/store"
 import { useI18n } from "@/lib/i18n"
 import { useNav } from "@/lib/nav"
@@ -38,6 +41,8 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
   const updateShipment = useStore((s) => s.updateShipment)
   const addShipmentDocument = useStore((s) => s.addShipmentDocument)
   const deleteShipmentDocument = useStore((s) => s.deleteShipmentDocument)
+  const refreshFromDb = useStore((s) => s.refreshFromDb)
+  const currentUser = useStore((s) => s.getCurrentUser())
   const { setSelectedWeaponId, navigate } = useNav()
 
   const [activeTab, setActiveTab] = useState("overview")
@@ -46,6 +51,10 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
   const [editCarrier, setEditCarrier] = useState(shipment.shippingCarrier ?? "")
   const [editContainer, setEditContainer] = useState(shipment.containerNumber ?? "")
   const [editNotes, setEditNotes] = useState(shipment.notes)
+  const [rescheduleOpen, setRescheduleOpen] = useState(false)
+  const [newExpectedDate, setNewExpectedDate] = useState(shipment.expectedArrivalDate)
+  const [delayReason, setDelayReason] = useState("")
+  const [arrivalBusy, setArrivalBusy] = useState(false)
 
   const supplier = suppliers.find((s) => s.id === shipment.supplierId)
   const shipmentWeapons = useMemo(() => weapons.filter((w) => w.shipmentId === shipment.id), [weapons, shipment.id])
@@ -106,6 +115,30 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
     else toast.success(t("toast.shipmentUpdated"))
   }
 
+  const confirmManifestArrival = async () => {
+    if (!shipment.importId || !window.electronAPI?.manifest) return
+    setArrivalBusy(true)
+    try {
+      const result = await window.electronAPI.manifest.confirmArrival(shipment.importId, { id: currentUser.id, name: currentUser.name })
+      if (!result.success) throw new Error(result.error ?? "Unable to confirm arrival")
+      await refreshFromDb()
+      toast.success("Shipment arrival confirmed and inventory received")
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to confirm arrival") }
+    finally { setArrivalBusy(false) }
+  }
+
+  const rescheduleManifestArrival = async () => {
+    if (!shipment.importId || !window.electronAPI?.manifest) return
+    setArrivalBusy(true)
+    try {
+      const result = await window.electronAPI.manifest.reschedule(shipment.importId, newExpectedDate, delayReason, { id: currentUser.id, name: currentUser.name })
+      if (!result.success) throw new Error(result.error ?? "Unable to reschedule shipment")
+      await refreshFromDb(); setRescheduleOpen(false); setDelayReason("")
+      toast.success("Shipment remains pending with a new expected date")
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to reschedule shipment") }
+    finally { setArrivalBusy(false) }
+  }
+
   const totalCostAccounting = shipment.totalCostValuation?.accountingAmount
     ?? sumMoney(lineItems.map((item) => multiplyMoney(
       valuationAccountingAmount(item.purchasePriceValuation, item.purchasePrice),
@@ -117,6 +150,7 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
   )))
 
   return (
+    <>
     <Card className="flex flex-col">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center justify-between text-sm">
@@ -224,7 +258,7 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
                 {/* Status control */}
                 <div className="flex items-center gap-2">
                   <Label className="text-xs whitespace-nowrap">{t("common.status")}:</Label>
-                  <Select value={shipment.status} onValueChange={(v) => handleStatusChange(v as ShipmentStatus)}>
+                  <Select disabled={Boolean(shipment.importId)} value={shipment.status} onValueChange={(v) => handleStatusChange(v as ShipmentStatus)}>
                     <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {SHIPMENT_STATUSES.map((s) => (
@@ -258,6 +292,12 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
+                    {shipment.importId && shipment.workflowStatus === "scheduled" && (
+                      <>
+                        <Button size="sm" className="h-7 text-[11px]" disabled={arrivalBusy} onClick={confirmManifestArrival}>✓ Confirm arrival</Button>
+                        <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={arrivalBusy} onClick={() => setRescheduleOpen(true)}>Not arrived yet</Button>
+                      </>
+                    )}
                     <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => setEditingMeta(true)}>
                       {t("ship.editMetadata")}
                     </Button>
@@ -422,6 +462,17 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
         </Tabs>
       </CardContent>
     </Card>
+    <Dialog open={rescheduleOpen} onOpenChange={setRescheduleOpen}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>Shipment not arrived</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div><Label>New expected arrival date</Label><DatePicker value={newExpectedDate} onChange={setNewExpectedDate} required /></div>
+          <div><Label>Delay reason</Label><Textarea value={delayReason} onChange={(event) => setDelayReason(event.target.value)} placeholder="Record the reason for the delay" /></div>
+        </div>
+        <DialogFooter><Button variant="outline" onClick={() => setRescheduleOpen(false)}>Cancel</Button><Button disabled={arrivalBusy || !newExpectedDate || !delayReason.trim()} onClick={rescheduleManifestArrival}>Save and remind later</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }
 

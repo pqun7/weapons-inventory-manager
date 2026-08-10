@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 7;
 
 export const CONFIGURE_INITIAL_CURRENCIES_V5_SQL = `
 UPDATE currencies
@@ -176,7 +176,12 @@ CREATE TABLE IF NOT EXISTS shipments (
   actual_arrival_date     TEXT,
   line_items              TEXT NOT NULL DEFAULT '[]',
   documents               TEXT NOT NULL DEFAULT '[]',
-  total_cost_valuation    TEXT
+  total_cost_valuation    TEXT,
+  workflow_status         TEXT NOT NULL DEFAULT 'draft',
+  import_id               TEXT,
+  arrival_note            TEXT,
+  delay_reason            TEXT,
+  last_arrival_prompt_at  TEXT
 );
 
 -- ============ Weapons Table (FULLY NORMALISED) ============
@@ -470,6 +475,164 @@ CREATE TABLE IF NOT EXISTS inventory_transactions (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS idx_inventory_transactions_item
   ON inventory_transactions(item_type, item_id, created_at);
+
+-- ============ Shipment Manifest Import (V6) ============
+
+CREATE TABLE IF NOT EXISTS shipment_imports (
+  id                    TEXT PRIMARY KEY,
+  shipment_id           TEXT REFERENCES shipments(id) ON DELETE SET NULL,
+  status                TEXT NOT NULL CHECK (status IN ('draft','processing','pending_review','scheduled','arrived','received','failed','cancelled')),
+  file_name             TEXT NOT NULL,
+  file_type             TEXT NOT NULL,
+  file_size             INTEGER NOT NULL CHECK (file_size > 0),
+  file_hash             TEXT NOT NULL,
+  raw_extraction_json   TEXT NOT NULL DEFAULT '{}',
+  normalized_json       TEXT NOT NULL DEFAULT '{}',
+  shipment_number       TEXT,
+  supplier_name         TEXT,
+  supplier_id           TEXT REFERENCES suppliers(id) ON DELETE SET NULL,
+  supplier_reference    TEXT,
+  invoice_number        TEXT,
+  manifest_number       TEXT,
+  shipment_date         TEXT,
+  expected_arrival_date TEXT,
+  origin                TEXT,
+  destination           TEXT,
+  currency              TEXT,
+  review_note           TEXT,
+  prompt_version        TEXT,
+  schema_version        TEXT NOT NULL DEFAULT '1.0',
+  ai_provider           TEXT,
+  ai_model              TEXT,
+  ai_request_id         TEXT,
+  ai_processing_ms      INTEGER,
+  ai_requested_at       TEXT,
+  validation_summary    TEXT NOT NULL DEFAULT '{}',
+  error_code            TEXT,
+  error_message         TEXT,
+  created_by            TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
+  reviewed_at           TEXT,
+  confirmed_at          TEXT
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_shipment_imports_hash ON shipment_imports(file_hash, status);
+CREATE INDEX IF NOT EXISTS idx_shipment_imports_status ON shipment_imports(status, expected_arrival_date);
+
+CREATE TABLE IF NOT EXISTS shipment_documents (
+  id              TEXT PRIMARY KEY,
+  import_id       TEXT NOT NULL REFERENCES shipment_imports(id) ON DELETE CASCADE,
+  shipment_id     TEXT REFERENCES shipments(id) ON DELETE SET NULL,
+  file_name       TEXT NOT NULL,
+  mime_type       TEXT NOT NULL,
+  file_size       INTEGER NOT NULL,
+  file_hash       TEXT NOT NULL,
+  content_blob    BLOB NOT NULL,
+  uploaded_by     TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  uploaded_at     TEXT NOT NULL DEFAULT (datetime('now'))
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS shipment_import_items (
+  id                    TEXT PRIMARY KEY,
+  import_id             TEXT NOT NULL REFERENCES shipment_imports(id) ON DELETE CASCADE,
+  row_index             INTEGER NOT NULL,
+  product_type          TEXT CHECK (product_type IN ('weapon','ammunition','accessory')),
+  product_name          TEXT,
+  category              TEXT,
+  weapon_type           TEXT,
+  manufacturer          TEXT,
+  model                 TEXT,
+  caliber               TEXT,
+  sku                   TEXT,
+  product_code          TEXT,
+  serial_number         TEXT,
+  serial_numbers_json   TEXT NOT NULL DEFAULT '[]',
+  quantity              INTEGER,
+  unit_price            REAL,
+  total_price           REAL,
+  currency              TEXT,
+  country_of_origin     TEXT,
+  weapon_type_id        TEXT REFERENCES weapon_types(id) ON DELETE RESTRICT,
+  weapon_subtype_id     TEXT REFERENCES weapon_subtypes(id) ON DELETE RESTRICT,
+  brand_id              TEXT REFERENCES brands(id) ON DELETE RESTRICT,
+  model_id              TEXT REFERENCES models(id) ON DELETE RESTRICT,
+  caliber_id            TEXT REFERENCES calibers(id) ON DELETE RESTRICT,
+  storage_location_id   TEXT REFERENCES storage_locations(id) ON DELETE SET NULL,
+  confidence_json       TEXT NOT NULL DEFAULT '{}',
+  source_json           TEXT NOT NULL DEFAULT '{}',
+  raw_data_json         TEXT NOT NULL DEFAULT '{}',
+  status                TEXT NOT NULL DEFAULT 'needs_review' CHECK (status IN ('valid','needs_review','invalid','duplicate','conflict')),
+  created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(import_id, row_index)
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_shipment_import_items_import ON shipment_import_items(import_id, row_index);
+CREATE INDEX IF NOT EXISTS idx_shipment_import_items_serial ON shipment_import_items(serial_number);
+
+CREATE TABLE IF NOT EXISTS shipment_validation_issues (
+  id          TEXT PRIMARY KEY,
+  import_id   TEXT NOT NULL REFERENCES shipment_imports(id) ON DELETE CASCADE,
+  item_id     TEXT REFERENCES shipment_import_items(id) ON DELETE CASCADE,
+  field_name  TEXT,
+  code        TEXT NOT NULL,
+  severity    TEXT NOT NULL CHECK (severity IN ('warning','error','conflict')),
+  message     TEXT NOT NULL,
+  details_json TEXT NOT NULL DEFAULT '{}',
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_shipment_validation_import ON shipment_validation_issues(import_id, severity);
+
+CREATE TABLE IF NOT EXISTS shipment_item_changes (
+  id          TEXT PRIMARY KEY,
+  import_id   TEXT NOT NULL REFERENCES shipment_imports(id) ON DELETE CASCADE,
+  item_id     TEXT REFERENCES shipment_import_items(id) ON DELETE SET NULL,
+  field_name  TEXT NOT NULL,
+  old_value   TEXT,
+  new_value   TEXT,
+  source      TEXT NOT NULL DEFAULT 'user' CHECK (source IN ('user','system','ai')),
+  changed_by  TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  changed_at  TEXT NOT NULL DEFAULT (datetime('now'))
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS shipment_status_history (
+  id          TEXT PRIMARY KEY,
+  import_id   TEXT NOT NULL REFERENCES shipment_imports(id) ON DELETE CASCADE,
+  shipment_id TEXT REFERENCES shipments(id) ON DELETE SET NULL,
+  from_status TEXT,
+  to_status   TEXT NOT NULL,
+  note        TEXT NOT NULL DEFAULT '',
+  changed_by  TEXT NOT NULL,
+  changed_at  TEXT NOT NULL DEFAULT (datetime('now'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_shipment_status_history_import ON shipment_status_history(import_id, changed_at);
+
+CREATE TRIGGER IF NOT EXISTS trg_manifest_status_transition
+BEFORE UPDATE OF status ON shipment_imports
+WHEN NEW.status <> OLD.status AND NOT (
+  (OLD.status = 'draft' AND NEW.status IN ('processing','cancelled')) OR
+  (OLD.status = 'processing' AND NEW.status IN ('pending_review','failed','cancelled')) OR
+  (OLD.status = 'pending_review' AND NEW.status IN ('scheduled','arrived','cancelled','processing')) OR
+  (OLD.status = 'scheduled' AND NEW.status IN ('arrived','cancelled')) OR
+  (OLD.status = 'arrived' AND NEW.status IN ('received','scheduled','cancelled')) OR
+  (OLD.status = 'failed' AND NEW.status IN ('processing','cancelled'))
+)
+BEGIN
+  SELECT RAISE(ABORT, 'invalid shipment manifest status transition');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_shipment_workflow_status_insert
+BEFORE INSERT ON shipments
+WHEN NEW.workflow_status NOT IN ('draft','processing','pending_review','scheduled','arrived','received','failed','cancelled')
+BEGIN
+  SELECT RAISE(ABORT, 'invalid shipment workflow status');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_shipment_workflow_status_update
+BEFORE UPDATE OF workflow_status ON shipments
+WHEN NEW.workflow_status NOT IN ('draft','processing','pending_review','scheduled','arrived','received','failed','cancelled')
+BEGIN
+  SELECT RAISE(ABORT, 'invalid shipment workflow status');
+END;
 
 -- Database guardrails for backend contracts. Historical rows remain readable
 -- after a currency is deactivated; only new/changed currency identities require

@@ -67,6 +67,9 @@ export function MasterDataPanel() {
       <p className="text-[11px] text-muted-foreground">
         {t("master.description")}
       </p>
+      <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] text-muted-foreground">
+        Reviewed shipment values are matched automatically. New weapon types, manufacturers, models, calibers, and subtypes are saved here once the shipment is confirmed, and remain editable for future use.
+      </div>
       <Separator />
 
       <Accordion type="multiple" className="flex flex-col gap-1">

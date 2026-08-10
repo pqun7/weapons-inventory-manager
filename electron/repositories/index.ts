@@ -1,4 +1,5 @@
 import { getDb } from "../database.js"
+import { randomUUID } from "node:crypto"
 import { mappers } from "../../src/lib/db/mappers.js"
 import type { AllData, MasterDataAll } from "../../src/lib/db/mappers.js"
 import type {
@@ -7,6 +8,7 @@ import type {
   SavedFilter, UserPreferences,
 } from "../../src/lib/types.js"
 import type { CurrencyRow, ExchangeRateOverrideRow, AuditLogEntry } from "../../src/lib/db/mappers.js"
+import { cleanMasterDataLabel, findCanonicalMasterId } from "../../src/lib/master-data-normalization.js"
 
 function rowToCurrencyRow(r: Record<string, unknown>): CurrencyRow {
   return {
@@ -528,30 +530,32 @@ export class AppRepository {
 
   getOrCreateWeaponType(label: string, sortOrder: number = 99): string {
     const db = getDb()
-    const existing = db.prepare("SELECT id FROM weapon_types WHERE label = ?").get(label) as { id: string } | undefined
-    if (existing) return existing.id
-    const id = `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    db.prepare("INSERT INTO weapon_types (id, label, sort_order) VALUES (?, ?, ?)").run(id, label, sortOrder)
+    const canonical = cleanMasterDataLabel(label, "Weapon type")
+    const existing = findCanonicalMasterId(db.prepare("SELECT id, label FROM weapon_types").all() as Array<{ id: string; label: string }>, canonical)
+    if (existing) return existing
+    const id = `wt-${randomUUID()}`
+    db.prepare("INSERT INTO weapon_types (id, label, sort_order) VALUES (?, ?, ?)").run(id, canonical, sortOrder)
     return id
   }
 
   getOrCreateWeaponSubtype(weaponTypeId: string, label: string, sortOrder: number = 99): string {
     const db = getDb()
-    const existing = db.prepare(
-      "SELECT id FROM weapon_subtypes WHERE weapon_type_id = ? AND label = ?"
-    ).get(weaponTypeId, label) as { id: string } | undefined
-    if (existing) return existing.id
-    const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    db.prepare("INSERT INTO weapon_subtypes (id, weapon_type_id, label, sort_order) VALUES (?, ?, ?, ?)").run(id, weaponTypeId, label, sortOrder)
+    const canonical = cleanMasterDataLabel(label, "Weapon subtype")
+    const rows = db.prepare("SELECT id, label FROM weapon_subtypes WHERE weapon_type_id = ?").all(weaponTypeId) as Array<{ id: string; label: string }>
+    const existing = findCanonicalMasterId(rows, canonical)
+    if (existing) return existing
+    const id = `ws-${randomUUID()}`
+    db.prepare("INSERT INTO weapon_subtypes (id, weapon_type_id, label, sort_order) VALUES (?, ?, ?, ?)").run(id, weaponTypeId, canonical, sortOrder)
     return id
   }
 
   getOrCreateCaliber(label: string): string {
     const db = getDb()
-    const existing = db.prepare("SELECT id FROM calibers WHERE label = ?").get(label) as { id: string } | undefined
-    if (existing) return existing.id
-    const id = `cal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    db.prepare("INSERT INTO calibers (id, label) VALUES (?, ?)").run(id, label)
+    const canonical = cleanMasterDataLabel(label, "Caliber")
+    const existing = findCanonicalMasterId(db.prepare("SELECT id, label FROM calibers").all() as Array<{ id: string; label: string }>, canonical)
+    if (existing) return existing
+    const id = `cal-${randomUUID()}`
+    db.prepare("INSERT INTO calibers (id, label) VALUES (?, ?)").run(id, canonical)
     return id
   }
 
@@ -561,21 +565,22 @@ export class AppRepository {
 
   getOrCreateBrand(label: string): string {
     const db = getDb()
-    const existing = db.prepare("SELECT id FROM brands WHERE label = ?").get(label) as { id: string } | undefined
-    if (existing) return existing.id
-    const id = `br-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    db.prepare("INSERT INTO brands (id, label) VALUES (?, ?)").run(id, label)
+    const canonical = cleanMasterDataLabel(label, "Manufacturer")
+    const existing = findCanonicalMasterId(db.prepare("SELECT id, label FROM brands").all() as Array<{ id: string; label: string }>, canonical)
+    if (existing) return existing
+    const id = `br-${randomUUID()}`
+    db.prepare("INSERT INTO brands (id, label) VALUES (?, ?)").run(id, canonical)
     return id
   }
 
   getOrCreateModel(label: string, brandId: string): string {
     const db = getDb()
-    const existing = db.prepare(
-      "SELECT id FROM models WHERE label = ? AND brand_id = ?"
-    ).get(label, brandId) as { id: string } | undefined
-    if (existing) return existing.id
-    const id = `mdl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    db.prepare("INSERT INTO models (id, label, brand_id) VALUES (?, ?, ?)").run(id, label, brandId)
+    const canonical = cleanMasterDataLabel(label, "Model")
+    const rows = db.prepare("SELECT id, label FROM models WHERE brand_id = ?").all(brandId) as Array<{ id: string; label: string }>
+    const existing = findCanonicalMasterId(rows, canonical)
+    if (existing) return existing
+    const id = `mdl-${randomUUID()}`
+    db.prepare("INSERT INTO models (id, label, brand_id) VALUES (?, ?, ?)").run(id, canonical, brandId)
     return id
   }
 

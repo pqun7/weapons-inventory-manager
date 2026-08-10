@@ -4,6 +4,10 @@ export interface IpcResult<T = unknown> {
   error?: string
 }
 
+import type {
+  ManifestConfirmInput, ManifestDetailsPatch, ManifestItemPatch, ManifestProgress, ManifestReviewSummary, ManifestUploadInput, ShipmentManifestReview,
+} from "../lib/shipment-manifest"
+
 export interface ElectronAPI {
   db: {
     getAll: () => Promise<IpcResult>
@@ -45,6 +49,20 @@ export interface ElectronAPI {
     create: (input: unknown, currentUser: { id: string; name: string }) => Promise<IpcResult>
     bulkCreate: (input: unknown, currentUser: { id: string; name: string }) => Promise<IpcResult>
     update: (shipment: unknown) => Promise<IpcResult>
+  }
+  manifest: {
+    upload: (input: ManifestUploadInput, currentUser: { id: string; name: string }) => Promise<IpcResult<ShipmentManifestReview>>
+    get: (importId: string, currentUser: { id: string; name: string }) => Promise<IpcResult<ShipmentManifestReview>>
+    list: (limit: number, currentUser: { id: string; name: string }) => Promise<IpcResult<ManifestReviewSummary[]>>
+    updateItem: (importId: string, itemId: string, patch: ManifestItemPatch, currentUser: { id: string; name: string }) => Promise<IpcResult<ShipmentManifestReview>>
+    updateItems: (importId: string, itemIds: string[], patch: ManifestItemPatch, currentUser: { id: string; name: string }) => Promise<IpcResult<ShipmentManifestReview>>
+    updateDetails: (importId: string, patch: ManifestDetailsPatch, currentUser: { id: string; name: string }) => Promise<IpcResult<ShipmentManifestReview>>
+    deleteReview: (importId: string, currentUser: { id: string; name: string }) => Promise<IpcResult>
+    confirm: (input: ManifestConfirmInput, currentUser: { id: string; name: string }) => Promise<IpcResult<ShipmentManifestReview>>
+    confirmArrival: (importId: string, currentUser: { id: string; name: string }) => Promise<IpcResult<ShipmentManifestReview>>
+    reschedule: (importId: string, expectedArrivalDate: string, reason: string, currentUser: { id: string; name: string }) => Promise<IpcResult<ShipmentManifestReview>>
+    cancel: (importId: string, reason: string, currentUser: { id: string; name: string }) => Promise<IpcResult<ShipmentManifestReview>>
+    onProgress: (callback: (progress: ManifestProgress) => void) => () => void
   }
   invoice: {
     update: (invoice: unknown) => Promise<IpcResult>

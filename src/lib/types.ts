@@ -303,6 +303,7 @@ export type PackageType = "Carton" | "Box" | "Case" | "Custom"
 
 export interface Ammunition {
   id: string;
+  name?: string;
   caliber: string;
   packageType: PackageType;
   unitsPerPackage: number;
@@ -343,6 +344,11 @@ export interface Shipment {
   documents?: ShipmentDocument[]
   // Dual-valuation: total shipment cost in original and accounting currencies
   totalCostValuation?: MoneyValuation
+  workflowStatus?: "draft" | "processing" | "pending_review" | "scheduled" | "arrived" | "received" | "failed" | "cancelled"
+  importId?: string
+  arrivalNote?: string
+  delayReason?: string
+  lastArrivalPromptAt?: string
 }
 
 export interface ShipmentTimelineEntry {
@@ -471,6 +477,12 @@ export interface UserPermissions {
   canVoidInvoices: boolean
   canExtendDueDates: boolean
   canDeleteRecords: boolean
+  "shipment.import"?: boolean
+  "shipment.review"?: boolean
+  "shipment.edit"?: boolean
+  "shipment.receive"?: boolean
+  "shipment.cancel"?: boolean
+  "shipment.reschedule"?: boolean
 }
 
 export interface SystemSettings {

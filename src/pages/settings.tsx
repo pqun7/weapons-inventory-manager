@@ -124,6 +124,12 @@ export function SettingsPage() {
     canVoidInvoices: t("settings.canVoidInvoices"),
     canExtendDueDates: t("settings.canExtendDueDates"),
     canDeleteRecords: t("settings.canDeleteRecords"),
+    "shipment.import": "Import shipment manifests",
+    "shipment.review": "Review shipment manifests",
+    "shipment.edit": "Edit shipment manifests",
+    "shipment.receive": "Receive shipments into inventory",
+    "shipment.cancel": "Cancel shipments",
+    "shipment.reschedule": "Reschedule shipments",
   }
 
   const handleSnapshotDownload = () => {

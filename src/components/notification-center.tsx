@@ -14,6 +14,7 @@ import { useNav } from "@/lib/nav"
 import { useI18n } from "@/lib/i18n"
 import { formatDateTime } from "@/lib/format"
 import type { NotificationType } from "@/lib/types"
+import { toast } from "sonner"
 
 const NOTIF_ICONS: Record<NotificationType, typeof Bell> = {
   OverdueDebt: AlertTriangle,
@@ -50,9 +51,22 @@ export function NotificationCenter() {
   const markRead = useStore((s) => s.markNotificationRead)
   const markAllRead = useStore((s) => s.markAllNotificationsRead)
   const dismiss = useStore((s) => s.dismissNotification)
+  const shipments = useStore((s) => s.shipments)
+  const currentUser = useStore((s) => s.getCurrentUser())
+  const refreshFromDb = useStore((s) => s.refreshFromDb)
   const { navigate, setFinancialFilter } = useNav()
   const { t } = useI18n()
   const [filterUnread, setFilterUnread] = useState(false)
+  const [arrivalBusy, setArrivalBusy] = useState<string | null>(null)
+
+  const confirmArrival = async (shipmentId: string, importId: string) => {
+    if (!window.electronAPI?.manifest) return
+    setArrivalBusy(shipmentId)
+    const result = await window.electronAPI.manifest.confirmArrival(importId, { id: currentUser.id, name: currentUser.name })
+    if (result.success) { await refreshFromDb(); toast.success("Shipment received into inventory") }
+    else toast.error(result.error ?? "Unable to confirm shipment arrival")
+    setArrivalBusy(null)
+  }
 
   const unreadCount = notifications.filter((n) => !n.read).length
   const displayed = useMemo(
@@ -113,6 +127,7 @@ export function NotificationCenter() {
               {displayed.map((n) => {
                 const Icon = NOTIF_ICONS[n.type]
                 const colorClass = NOTIF_COLORS[n.type]
+                const scheduledShipment = shipments.find((shipment) => shipment.id === n.entityId && shipment.workflowStatus === "scheduled" && shipment.importId)
                 return (
                   <div
                     key={n.id}
@@ -129,6 +144,12 @@ export function NotificationCenter() {
                       <span className="text-xs font-medium">{t(NOTIF_TITLE_KEYS[n.type])}</span>
                       <span className="text-xs text-muted-foreground">{n.message}</span>
                       <span className="mt-0.5 text-[10px] text-muted-foreground">{formatDateTime(n.date)}</span>
+                      {scheduledShipment && (
+                        <div className="mt-2 flex gap-1">
+                          <Button size="xs" className="h-6 text-[10px]" disabled={arrivalBusy === scheduledShipment.id} onClick={(event) => { event.stopPropagation(); void confirmArrival(scheduledShipment.id, scheduledShipment.importId!) }}>✓ Confirm arrival</Button>
+                          <Button size="xs" variant="outline" className="h-6 text-[10px]" onClick={(event) => { event.stopPropagation(); markRead(n.id); navigate("shipments") }}>Not arrived yet</Button>
+                        </div>
+                      )}
                     </div>
                     <Button
                       size="icon-xs"

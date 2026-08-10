@@ -155,6 +155,11 @@ interface ShipmentRow {
   line_items: string
   documents: string
   total_cost_valuation: string | null
+  workflow_status?: Shipment["workflowStatus"] | null
+  import_id?: string | null
+  arrival_note?: string | null
+  delay_reason?: string | null
+  last_arrival_prompt_at?: string | null
 }
 
 interface InvoiceRow {
@@ -482,6 +487,11 @@ function rowToShipment(r: ShipmentRow): Shipment {
     lineItems: parseJSON(r.line_items, []),
     documents: parseJSON(r.documents, []),
     totalCostValuation: parseValuation(r.total_cost_valuation),
+    workflowStatus: r.workflow_status ?? undefined,
+    importId: r.import_id ?? undefined,
+    arrivalNote: r.arrival_note ?? undefined,
+    delayReason: r.delay_reason ?? undefined,
+    lastArrivalPromptAt: r.last_arrival_prompt_at ?? undefined,
   }
 }
 

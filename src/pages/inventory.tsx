@@ -32,6 +32,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
+import { DatePicker } from "@/components/ui/date-picker"
 import { useStore } from "@/lib/store"
 import { useNav } from "@/lib/nav"
 import { useDebounce } from "@/hooks"
@@ -918,18 +919,8 @@ export function InventoryPage() {
                       <div className="col-span-2">
                         <Label className="text-[11px]">{t("inv.dateAdded")}</Label>
                         <div className="flex gap-2 mt-1">
-                          <Input
-                            type="date"
-                            value={dateFrom}
-                            onChange={(e) => setDateFrom(e.target.value)}
-                            className="h-7 text-[11px]"
-                          />
-                          <Input
-                            type="date"
-                            value={dateTo}
-                            onChange={(e) => setDateTo(e.target.value)}
-                            className="h-7 text-[11px]"
-                          />
+                          <DatePicker value={dateFrom} onChange={setDateFrom} max={dateTo || undefined} className="h-7 text-[11px]" aria-label={`${t("inv.dateAdded")} — ${t("common.min")}`} />
+                          <DatePicker value={dateTo} onChange={setDateTo} min={dateFrom || undefined} className="h-7 text-[11px]" aria-label={`${t("inv.dateAdded")} — ${t("common.max")}`} />
                         </div>
                       </div>
                     </div>
