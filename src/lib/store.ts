@@ -3,14 +3,12 @@ import type {
   Weapon, Accessory, Ammunition, Shipment, ShipmentDocument,
   ShipmentEventType, Invoice, PaymentRecord, Customer, Supplier, AuditLog,
   AppNotification, User, SystemSettings, WeaponStatus, WeaponCondition, SaleMode,
-  InvoiceStatus, PaymentMethod, AuditActionType, NotificationType, ShipmentStatus,
+  PaymentMethod, AuditActionType, NotificationType, ShipmentStatus,
   SaleLineItem, SavedFilter, StorageLocation, PackageType, UserPreferences,
   ProductAdditionalCostInput, ShipmentAdditionalCostInput,
 } from "./types.js"
 import { ammoTotalRounds } from "./types.js"
 import * as db from "./db/index.js"
-
-declare const window: any
 
 // ============ Input Types ============
 
@@ -183,15 +181,6 @@ export interface UpdateAmmoPackageInput {
   unitsPerPackage: number
 }
 
-// ============ IPC Helper ============
-
-function getElectronAPI(): any | null {
-  if (typeof window !== "undefined" && (window as any).electronAPI) {
-    return (window as any).electronAPI
-  }
-  return null
-}
-
 // ============ Store State ============
 
 export interface StoreState {
@@ -230,7 +219,7 @@ export interface StoreState {
   updateWeaponStatus: (weaponId: string, status: WeaponStatus, reason?: string) => Promise<{ success: boolean; error?: string }>
   updateWeaponNotes: (weaponId: string, notes: string) => Promise<{ success: boolean; error?: string }>
   updateWeaponLocation: (weaponId: string, storageLocationId: string) => Promise<{ success: boolean; error?: string }>
-  addWeaponImage: (weaponId: string, imageBase64: string) => void
+  addWeaponImage: (weaponId: string, imageBase64: string) => Promise<{ success: boolean; error?: string }>
   completeSale: (input: SaleInput) => Promise<{ success: boolean; invoiceId?: string; invoiceNumber?: string; error?: string }>
   returnWeapon: (weaponId: string) => Promise<{ success: boolean; error?: string }>
 
@@ -238,25 +227,26 @@ export interface StoreState {
   bindWeaponToShipment: (weaponId: string, shipmentId: string) => Promise<{ success: boolean; error?: string }>
   updateShipmentStatus: (shipmentId: string) => void
   setShipmentStatus: (shipmentId: string, status: ShipmentStatus, notes?: string) => Promise<{ success: boolean; error?: string }>
-  autoFlagDelayedShipments: () => void
+  autoFlagDelayedShipments: () => Promise<{ success: boolean; error?: string }>
   updateShipment: (shipmentId: string, updates: Partial<Shipment>) => Promise<{ success: boolean; error?: string }>
+  deleteShipment: (shipmentId: string) => Promise<{ success: boolean; error?: string }>
   bulkCreateShipmentWithItems: (input: BulkShipmentCreateInput) => Promise<{ success: boolean; shipmentId?: string; error?: string }>
-  addShipmentDocument: (shipmentId: string, doc: ShipmentDocumentInput) => void
-  deleteShipmentDocument: (shipmentId: string, docId: string) => void
-  addShipmentTimelineEvent: (shipmentId: string, eventType: ShipmentEventType, notes: string) => void
+  addShipmentDocument: (shipmentId: string, doc: ShipmentDocumentInput) => Promise<{ success: boolean; error?: string }>
+  deleteShipmentDocument: (shipmentId: string, docId: string) => Promise<{ success: boolean; error?: string }>
+  addShipmentTimelineEvent: (shipmentId: string, eventType: ShipmentEventType, notes: string) => Promise<{ success: boolean; error?: string }>
   updateProductCosts: (productType: string, productId: string, costs: ProductAdditionalCostInput[]) => Promise<{ success: boolean; error?: string }>
 
   registerPayment: (input: PaymentInput) => Promise<{ success: boolean; error?: string; newBalance?: number }>
   extendDueDate: (input: DueDateExtensionInput) => Promise<{ success: boolean; error?: string }>
   voidInvoice: (invoiceId: string) => Promise<{ success: boolean; error?: string }>
-  updateInvoiceNotes: (invoiceId: string, notes: string) => void
+  updateInvoiceNotes: (invoiceId: string, notes: string) => Promise<{ success: boolean; error?: string }>
 
   addCustomer: (customer: Omit<Customer, "id" | "dateAdded">) => Promise<{ success: boolean; customer?: Customer; error?: string }>
   addSupplier: (supplier: Omit<Supplier, "id" | "dateAdded">) => Promise<{ success: boolean; supplier?: Supplier; error?: string }>
   deleteCustomer: (customerId: string) => Promise<{ success: boolean; error?: string }>
 
-  updateAccessory: (id: string, updates: Partial<Accessory>) => void
-  updateAmmunition: (id: string, updates: Partial<Ammunition>) => void
+  updateAccessory: (id: string, updates: Partial<Accessory>) => Promise<{ success: boolean; error?: string }>
+  updateAmmunition: (id: string, updates: Partial<Ammunition>) => Promise<{ success: boolean; error?: string }>
   addAccessory: (accessory: Omit<Accessory, "id" | "dateAdded" | "additionalCosts" | "costSnapshot"> & { additionalCostInputs?: ProductAdditionalCostInput[] }) => Promise<{ success: boolean; error?: string }>
   addAmmunition: (ammo: Omit<Ammunition, "id" | "dateAdded" | "additionalCosts" | "costSnapshot"> & { additionalCostInputs?: ProductAdditionalCostInput[] }) => Promise<{ success: boolean; error?: string }>
   addStock: (input: AddStockInput) => Promise<{ success: boolean; error?: string }>
@@ -274,12 +264,12 @@ export interface StoreState {
   setCurrentUser: (userId: string) => void
 
   markNotificationRead: (id: string) => Promise<{ success: boolean; error?: string }>
-  markAllNotificationsRead: () => void
-  dismissNotification: (id: string) => void
-  pushNotification: (type: NotificationType, title: string, message: string, entityId?: string) => void
-  refreshNotifications: () => void
+  markAllNotificationsRead: () => Promise<{ success: boolean; error?: string }>
+  dismissNotification: (id: string) => Promise<{ success: boolean; error?: string }>
+  pushNotification: (type: NotificationType, title: string, message: string, entityId?: string) => Promise<{ success: boolean; error?: string }>
+  refreshNotifications: () => Promise<{ success: boolean; error?: string }>
 
-  addAuditLog: (actionType: AuditActionType, description: string, metadata?: string) => void
+  addAuditLog: (actionType: AuditActionType, description: string, metadata?: string) => Promise<{ success: boolean; error?: string }>
 
   addSearchHistory: (query: string) => void
   togglePinSearch: (item: string) => void
@@ -327,6 +317,25 @@ const DEFAULT_SETTINGS: SystemSettings = {
   theme: "system",
 }
 
+const UNLINKED_USER: User = {
+  id: "UNLINKED",
+  username: "",
+  name: "Unlinked User",
+  role: "Read-Only",
+  permissions: {
+    canImportExcel: false,
+    canExportData: false,
+    canViewReports: false,
+    canManageUsers: false,
+    canRegisterPayments: false,
+    canVoidInvoices: false,
+    canExtendDueDates: false,
+    canDeleteRecords: false,
+  },
+  passwordSet: false,
+  passwordHash: "",
+}
+
 let bootstrapPromise: Promise<void> | null = null
 
 function sleep(ms: number): Promise<void> {
@@ -364,11 +373,11 @@ export const useStore = create<StoreState>()(
 
         try {
           await db.initDb()
-          const currentUserId = get().currentUserId
+          const currentUserId = await db.dbGetCurrentUserId()
           let data = null as Awaited<ReturnType<typeof db.dbGetAll>> | null
 
           if (db.isDbReady()) {
-            const deadline = Date.now() + 15000
+            const deadline = Date.now() + 5000
             let lastError: unknown = null
 
             while (Date.now() < deadline) {
@@ -402,7 +411,9 @@ export const useStore = create<StoreState>()(
               notifications: data.notifications,
               users: data.users,
               settings: data.settings,
+              savedFilters: data.savedFilters,
               userPreferences: userPrefs,
+              currentUserId,
               ready: true,
             })
           } else {
@@ -410,7 +421,8 @@ export const useStore = create<StoreState>()(
           }
         } catch (e) {
           console.error("DB bootstrap failed:", e)
-          set({ ready: true })
+          set({ ready: false })
+          throw e
         } finally {
           perf?.mark("boot:store-bootstrap:end")
           perf?.measure("boot:store-bootstrap", "boot:store-bootstrap:start", "boot:store-bootstrap:end")
@@ -442,6 +454,7 @@ export const useStore = create<StoreState>()(
           notifications: data.notifications,
           users: data.users,
           settings: data.settings,
+          savedFilters: data.savedFilters,
         })
       } catch (e) {
         console.error("refreshFromDb failed:", e)
@@ -450,11 +463,7 @@ export const useStore = create<StoreState>()(
 
     getCurrentUser: () => {
       const state = get()
-      return state.users.find((u) => u.id === state.currentUserId) ?? state.users[0] ?? {
-        id: "U001", username: "admin", name: "Admin User", role: "Admin" as const,
-        permissions: { canImportExcel: true, canExportData: true, canViewReports: true, canManageUsers: true, canRegisterPayments: true, canVoidInvoices: true, canExtendDueDates: true, canDeleteRecords: true },
-        passwordSet: true, passwordHash: "",
-      }
+      return state.users.find((u) => u.id === state.currentUserId) ?? state.users[0] ?? UNLINKED_USER
     },
 
     getWeaponBySerial: (serial) => {
@@ -482,58 +491,33 @@ export const useStore = create<StoreState>()(
     },
 
     addBulkWeapons: async (input: BulkIntakeInput) => {
-      const state = get()
-      const api = getElectronAPI()
-      if (api) {
-        const currentUser = state.getCurrentUser()
-        const result = await api.weapon.bulkInsert(input, { id: currentUser.id, name: currentUser.name })
-        if (!result.success) return { success: false, added: 0, duplicates: [], error: result.error }
+      try {
+        const result = await db.dbBulkIntakeWeapons(input)
         await get().refreshFromDb()
-        return { success: true, added: result.data.added, duplicates: result.data.duplicates }
-      }
-      return {
-        success: false,
-        added: 0,
-        duplicates: [],
-        error: "The authoritative backend is required for financial inventory intake",
+        return { success: true, added: result.added, duplicates: result.duplicates }
+      } catch (error) {
+        return { success: false, added: 0, duplicates: [], error: error instanceof Error ? error.message : String(error) }
       }
     },
 
     updateWeaponStatus: async (weaponId, status, reason) => {
-      const api = getElectronAPI()
-      const state = get()
-      const currentUser = state.getCurrentUser()
-      if (api) {
-        const result = await api.weapon.updateStatus(weaponId, status, reason ?? "", { id: currentUser.id, name: currentUser.name })
-        if (!result.success) return { success: false, error: result.error }
+      try {
+        await db.dbUpdateWeaponStatus(weaponId, status, reason ?? "")
         await get().refreshFromDb()
         return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-      const weapon = state.weapons.find((w) => w.id === weaponId)
-      if (!weapon) return { success: false, error: "Weapon not found" }
-      const updatedWeapon = {
-        ...weapon, status,
-        movementHistory: [...weapon.movementHistory, {
-          id: `MV${pad(state.weapons.length + 1, 5)}`, timestamp: new Date().toISOString(),
-          fromStatus: weapon.status, toStatus: status,
-          userId: currentUser.id, userName: currentUser.name,
-          reason: reason || `Status changed to ${status}`,
-        }],
-      }
-      set({ weapons: state.weapons.map((w) => w.id === weaponId ? updatedWeapon : w) })
-      try { await db.dbUpdateWeapon(updatedWeapon) } catch (e) { console.error("DB persist failed:", e) }
-      return { success: true }
     },
 
     updateWeaponNotes: async (weaponId, notes) => {
-      set((state) => ({ weapons: state.weapons.map((w) => w.id === weaponId ? { ...w, notes } : w) }))
-      const w = get().weapons.find((w) => w.id === weaponId)
-      if (w) {
-        const api = getElectronAPI()
-        if (api) { await api.weapon.update(w) }
-        else { try { await db.dbUpdateWeapon(w) } catch (e) { console.error("DB persist failed:", e) } }
+      try {
+        await db.dbUpdateWeaponNotes(weaponId, notes)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-      return { success: true }
     },
 
     updateWeaponLocation: async (weaponId: string, storageLocationId: string) => {
@@ -541,54 +525,34 @@ export const useStore = create<StoreState>()(
       const weapon = state.weapons.find(w => w.id === weaponId)
       if (!weapon) return { success: false, error: "Weapon not found" }
 
-      // Build the exact normalized entity that must be persisted.
-      // The database stores storage_location_id, not warehouse/shelf/bin on weapons.
-      const updatedWeapon: Weapon = { ...weapon, storageLocationId }
-
-      set(state => ({
-        weapons: state.weapons.map(w => w.id === weaponId ? updatedWeapon : w),
-      }))
-
-      const api = getElectronAPI()
       try {
-        if (api) {
-          const result = await api.weapon.update(updatedWeapon)
-          if (!result?.success) {
-            throw new Error(result?.error ?? "Failed to update weapon location")
-          }
-          await get().refreshFromDb()
-        } else {
-          await db.dbUpdateWeapon(updatedWeapon)
-          await get().refreshFromDb()
-        }
+        await db.dbUpdateWeaponLocation(weaponId, storageLocationId)
+        await get().refreshFromDb()
       } catch (e) {
-        // Roll back the optimistic update if persistence fails.
-        set(state => ({
-          weapons: state.weapons.map(w => w.id === weaponId ? weapon : w),
-        }))
         console.error("Failed to update weapon location:", e)
         return { success: false, error: String(e) }
       }
       return { success: true }
     },
 
-    addWeaponImage: (weaponId, imageBase64) => {
-      set((state) => ({
-        weapons: state.weapons.map((w) => w.id === weaponId ? { ...w, images: [...w.images, imageBase64] } : w),
-      }))
+    addWeaponImage: async (weaponId, imageBase64) => {
+      try {
+        await db.dbAppendWeaponImage(weaponId, imageBase64)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
     },
 
     completeSale: async (input) => {
-      const api = getElectronAPI()
-      const state = get()
-      const currentUser = state.getCurrentUser()
-      if (api) {
-        const result = await api.sale.complete(input, { id: currentUser.id, name: currentUser.name })
-        if (!result.success) return { success: false, error: result.error }
+      try {
+        const result = await db.dbCompleteSale(input)
         await get().refreshFromDb()
-        return { success: true, invoiceId: result.data.invoiceId, invoiceNumber: result.data.invoiceNumber }
+        return { success: true, invoiceId: result.invoiceId, invoiceNumber: result.invoiceNumber }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-      return { success: false, error: "The authoritative backend is required to complete a sale" }
     },
 
     returnWeapon: async (weaponId) => {
@@ -596,30 +560,23 @@ export const useStore = create<StoreState>()(
     },
 
     createShipment: async (input) => {
-      const api = getElectronAPI()
-      const state = get()
-      const currentUser = state.getCurrentUser()
-      if (api) {
-        const result = await api.shipment.create(input, { id: currentUser.id, name: currentUser.name })
-        if (!result.success) return { success: false, error: result.error }
+      try {
+        const shipmentId = await db.dbCreateShipmentRpc(input)
         await get().refreshFromDb()
-        return { success: true, shipmentId: result.data.shipmentId }
+        return { success: true, shipmentId }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-      return { success: false, error: "The authoritative backend is required to create a shipment" }
     },
 
     bindWeaponToShipment: async (weaponId, shipmentId) => {
-      set((state) => ({
-        weapons: state.weapons.map((w) => w.id === weaponId ? { ...w, shipmentId } : w),
-      }))
-      const w = get().weapons.find((w) => w.id === weaponId)
-      if (w) {
-        const api = getElectronAPI()
-        if (api) { await api.weapon.update(w) }
-        else { try { await db.dbUpdateWeapon(w) } catch (e) { console.error("DB persist failed:", e) } }
+      try {
+        await db.dbBindWeaponToShipment(weaponId, shipmentId)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-      get().updateShipmentStatus(shipmentId)
-      return { success: true }
     },
 
     updateShipmentStatus: (shipmentId) => {
@@ -634,155 +591,135 @@ export const useStore = create<StoreState>()(
     },
 
     setShipmentStatus: async (shipmentId, status, notes) => {
-      const state = get()
-      const shipment = state.shipments.find((s) => s.id === shipmentId)
-      if (!shipment) return { success: false, error: "Shipment not found" }
-      const currentUser = state.getCurrentUser()
-      const updated = {
-        ...shipment, status,
-        timeline: [...shipment.timeline, { id: `STL${pad(state.shipments.length + 1, 4)}`, timestamp: new Date().toISOString(), status, userId: currentUser.id, userName: currentUser.name, notes: notes || `Status manually changed to ${status}` }],
+      try {
+        await db.dbSetShipmentStatus(shipmentId, status, notes ?? "")
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-      set({ shipments: state.shipments.map((s) => s.id === shipmentId ? updated : s) })
-      const api = getElectronAPI()
-      if (api) { await api.shipment.update(updated) }
-      else { try { await db.dbUpdateShipment(updated) } catch (e) { console.error("DB persist failed:", e) } }
-      return { success: true }
     },
 
-    autoFlagDelayedShipments: () => {
-      const state = get()
-      const today = new Date().toISOString().split("T")[0]
-      const delayed: Shipment[] = []
-      const updated = state.shipments.map((s) => {
-        if (s.status !== "Arrived" && s.status !== "Cancelled" && s.expectedArrivalDate < today) {
-          const updatedShipment: Shipment = { ...s, status: "Delayed", timeline: [...s.timeline, { id: `STL${pad(state.shipments.length + 1, 4)}`, timestamp: new Date().toISOString(), status: "Delayed", userId: "SYSTEM", userName: "System", notes: "Auto-flagged as delayed", eventType: "DelayedAlert" }] }
-          delayed.push(updatedShipment)
-          return updatedShipment
-        }
-        return s
-      })
-      if (delayed.length > 0) {
-        set({ shipments: updated })
-        const newNotifs: AppNotification[] = delayed.map((d, i) => ({ id: `NTF${pad(state.notifications.length + 1 + i, 4)}`, type: "ShipmentDelayed" as NotificationType, title: "Shipment Delayed", message: `Shipment ${d.shipmentNumber} is past its expected arrival date`, date: today, read: false, entityId: d.id })).filter((n) => !state.notifications.some((ex) => ex.entityId === n.entityId && ex.type === "ShipmentDelayed"))
-        if (newNotifs.length > 0) set({ notifications: [...newNotifs, ...state.notifications] })
+    autoFlagDelayedShipments: async () => {
+      try {
+        await db.dbFlagOverdueShipments()
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
     },
 
     updateShipment: async (shipmentId, updates) => {
-      const state = get()
-      const currentUser = state.getCurrentUser()
-      const shipment = state.shipments.find((s) => s.id === shipmentId)
-      if (!shipment) return { success: false, error: "Shipment not found" }
-      const updated = { ...shipment, ...updates, timeline: [...shipment.timeline, { id: `STL${pad(state.shipments.length + 1, 4)}`, timestamp: new Date().toISOString(), status: shipment.status, userId: currentUser.id, userName: currentUser.name, notes: "Shipment metadata updated", eventType: "MetadataUpdated" as ShipmentEventType }] }
-      set({ shipments: state.shipments.map((s) => s.id === shipmentId ? updated : s) })
-      const api = getElectronAPI()
-      if (api) { await api.shipment.update(updated) }
-      else { try { await db.dbUpdateShipment(updated) } catch (e) { console.error("DB persist failed:", e) } }
-      return { success: true }
+      try {
+        await db.dbUpdateShipmentDetails(shipmentId, updates)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
     },
 
     bulkCreateShipmentWithItems: async (input) => {
-      const api = getElectronAPI()
-      const state = get()
-      const currentUser = state.getCurrentUser()
-      if (api) {
-        const result = await api.shipment.bulkCreate(input, { id: currentUser.id, name: currentUser.name })
-        if (!result.success) return { success: false, error: result.error }
+      try {
+        const shipmentId = await db.dbBulkCreateShipment(input)
         await get().refreshFromDb()
-        return { success: true, shipmentId: result.data.shipmentId }
+        return { success: true, shipmentId }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
       // Browser fallback omitted for brevity — IPC path is primary
-      return { success: false, error: "Not available in browser mode" }
     },
 
-    addShipmentDocument: (shipmentId, doc) => {
+    addShipmentDocument: async (shipmentId, doc) => {
       const state = get()
       const currentUser = state.getCurrentUser()
       const newDoc: ShipmentDocument = { id: generateId("DOC", state.shipments.flatMap((s) => s.documents ?? [])), fileName: doc.fileName, fileType: doc.fileType, fileSize: doc.fileSize, uploadDate: new Date().toISOString(), uploadedBy: currentUser.name, category: doc.category, extractedText: doc.extractedText }
-      set({ shipments: state.shipments.map((s) => s.id === shipmentId ? { ...s, documents: [...(s.documents ?? []), newDoc] } : s) })
+      try {
+        await db.dbAddShipmentDocument(shipmentId, newDoc)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
     },
 
-    deleteShipmentDocument: (shipmentId, docId) => {
-      set((state) => ({ shipments: state.shipments.map((s) => s.id === shipmentId ? { ...s, documents: (s.documents ?? []).filter((d) => d.id !== docId) } : s) }))
+    deleteShipment: async (shipmentId) => {
+      try {
+        await db.dbDeleteShipment(shipmentId)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
     },
 
-    addShipmentTimelineEvent: (shipmentId, eventType, notes) => {
-      const state = get()
-      const currentUser = state.getCurrentUser()
-      set({ shipments: state.shipments.map((s) => s.id === shipmentId ? { ...s, timeline: [...s.timeline, { id: `STL${pad(state.shipments.length + 1, 4)}`, timestamp: new Date().toISOString(), status: s.status, userId: currentUser.id, userName: currentUser.name, notes, eventType }] } : s) })
+    deleteShipmentDocument: async (shipmentId, docId) => {
+      try {
+        await db.dbDeleteShipmentDocument(shipmentId, docId)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    },
+
+    addShipmentTimelineEvent: async (shipmentId, eventType, notes) => {
+      try {
+        await db.dbAddShipmentTimelineEvent(shipmentId, eventType, notes)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
     },
 
     registerPayment: async (input) => {
-      const api = getElectronAPI()
-      const state = get()
-      const currentUser = state.getCurrentUser()
-      if (api) {
-        const result = await api.payment.register(input, { id: currentUser.id, name: currentUser.name })
-        if (!result.success) return { success: false, error: result.error }
+      try {
+        const result = await db.dbRegisterPayment(input)
         await get().refreshFromDb()
-        return { success: true, newBalance: result.data.newBalance }
+        return { success: true, newBalance: result.newBalance }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-      return { success: false, error: "The authoritative backend is required to register a payment" }
     },
 
     extendDueDate: async (input) => {
-      const api = getElectronAPI()
-      const state = get()
-      const currentUser = state.getCurrentUser()
-      if (api) {
-        const result = await api.invoice.extendDueDate(input, { id: currentUser.id, name: currentUser.name })
-        if (!result.success) return { success: false, error: result.error }
+      try {
+        await db.dbExtendInvoiceDueDate(input)
         await get().refreshFromDb()
         return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-      const invoice = state.invoices.find((i) => i.id === input.invoiceId)
-      if (!invoice) return { success: false, error: "Invoice not found" }
-      if (invoice.voided) return { success: false, error: "Cannot extend voided invoice" }
-      if (!currentUser.permissions.canExtendDueDates) return { success: false, error: "You do not have permission to extend due dates" }
-      const updatedInv = { ...invoice, dueDate: input.newDueDate, status: new Date(input.newDueDate) < new Date() && invoice.balance > 0 ? "Overdue" as InvoiceStatus : invoice.status }
-      set({ invoices: state.invoices.map((i) => i.id === input.invoiceId ? updatedInv : i) })
-      try { await db.dbUpdateInvoice(updatedInv) } catch (e) { console.error("DB persist failed:", e) }
-      return { success: true }
     },
 
     voidInvoice: async (invoiceId) => {
-      const api = getElectronAPI()
-      const state = get()
-      const currentUser = state.getCurrentUser()
-      if (api) {
-        const result = await api.invoice.void(invoiceId, { id: currentUser.id, name: currentUser.name })
-        if (!result.success) return { success: false, error: result.error }
+      try {
+        await db.dbVoidInvoice(invoiceId)
         await get().refreshFromDb()
         return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-      const invoice = state.invoices.find((i) => i.id === invoiceId)
-      if (!invoice) return { success: false, error: "Invoice not found" }
-      if (!currentUser.permissions.canVoidInvoices) return { success: false, error: "You do not have permission to void invoices" }
-      const updatedInvoice = { ...invoice, voided: true, status: "Void" as InvoiceStatus }
-      set({ invoices: state.invoices.map((i) => i.id === invoiceId ? updatedInvoice : i) })
-      try { await db.dbUpdateInvoice(updatedInvoice) } catch (e) { console.error("DB persist failed:", e) }
-      return { success: true }
     },
 
-    updateInvoiceNotes: (invoiceId, notes) => {
-      set((state) => ({ invoices: state.invoices.map((i) => i.id === invoiceId ? { ...i, notes } : i) }))
+    updateInvoiceNotes: async (invoiceId, notes) => {
+      try {
+        await db.dbUpdateInvoiceNotes(invoiceId, notes)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
     },
 
     addCustomer: async (customer) => {
       const newCustomer: Customer = { ...customer, id: generateId("CUST", get().customers), dateAdded: new Date().toISOString().split("T")[0] }
       set((state) => ({ customers: [newCustomer, ...state.customers] }))
-      const api = getElectronAPI()
-      if (api) {
-        const result = await api.customer.insert(newCustomer)
-        if (!result.success) {
-          set((state) => ({ customers: state.customers.filter((c) => c.id !== newCustomer.id) }))
-          return { success: false, error: result.error }
-        }
-      } else {
-        try { await db.dbInsertCustomer(newCustomer) } catch (e) {
-          set((state) => ({ customers: state.customers.filter((c) => c.id !== newCustomer.id) }))
-          return { success: false, error: String(e) }
-        }
+      try { await db.dbInsertCustomer(newCustomer) } catch (e) {
+        set((state) => ({ customers: state.customers.filter((c) => c.id !== newCustomer.id) }))
+        return { success: false, error: String(e) }
       }
       return { success: true, customer: newCustomer }
     },
@@ -790,18 +727,9 @@ export const useStore = create<StoreState>()(
     addSupplier: async (supplier) => {
       const newSupplier: Supplier = { ...supplier, id: generateId("SUP", get().suppliers), dateAdded: new Date().toISOString().split("T")[0] }
       set((state) => ({ suppliers: [newSupplier, ...state.suppliers] }))
-      const api = getElectronAPI()
-      if (api) {
-        const result = await api.supplier.insert(newSupplier)
-        if (!result.success) {
-          set((state) => ({ suppliers: state.suppliers.filter((s) => s.id !== newSupplier.id) }))
-          return { success: false, error: result.error }
-        }
-      } else {
-        try { await db.dbInsertSupplier(newSupplier) } catch (e) {
-          set((state) => ({ suppliers: state.suppliers.filter((s) => s.id !== newSupplier.id) }))
-          return { success: false, error: String(e) }
-        }
+      try { await db.dbInsertSupplier(newSupplier) } catch (e) {
+        set((state) => ({ suppliers: state.suppliers.filter((s) => s.id !== newSupplier.id) }))
+        return { success: false, error: String(e) }
       }
       return { success: true, supplier: newSupplier }
     },
@@ -810,18 +738,28 @@ export const useStore = create<StoreState>()(
       const state = get()
       if (state.invoices.some((i) => i.customerId === customerId && !i.voided)) return { success: false, error: "Cannot delete customer with active invoices" }
       set({ customers: state.customers.filter((c) => c.id !== customerId) })
-      const api = getElectronAPI()
-      if (api) { const result = await api.customer.delete(customerId); if (!result.success) return { success: false, error: result.error } }
-      else { try { await db.dbDeleteCustomer(customerId) } catch (e) { console.error("DB persist failed:", e) } }
+      try { await db.dbDeleteCustomer(customerId) } catch (e) { console.error("DB persist failed:", e) }
       return { success: true }
     },
 
-    updateAccessory: (id, updates) => {
-      set((state) => ({ accessories: state.accessories.map((a) => a.id === id ? { ...a, ...updates } : a) }))
+    updateAccessory: async (id, updates) => {
+      try {
+        await db.dbUpdateInventoryProduct("accessory", id, updates)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
     },
 
-    updateAmmunition: (id, updates) => {
-      set((state) => ({ ammunition: state.ammunition.map((a) => a.id === id ? { ...a, ...updates } : a) }))
+    updateAmmunition: async (id, updates) => {
+      try {
+        await db.dbUpdateInventoryProduct("ammunition", id, updates)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
     },
 
     addAccessory: async (accessory) => {
@@ -831,16 +769,13 @@ export const useStore = create<StoreState>()(
         dateAdded: new Date().toISOString().split("T")[0],
       }
 
-      const api = getElectronAPI()
-      if (api) {
-        const currentUser = get().getCurrentUser()
-        const result = await api.accessory.insert(newAccessory, { id: currentUser.id, name: currentUser.name })
-        if (!result.success) return { success: false, error: result.error }
+      try {
+        await db.dbCreateAccessory(newAccessory, accessory.additionalCostInputs ?? [])
         await get().refreshFromDb()
         return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-
-      return { success: false, error: "The authoritative backend is required to create priced inventory" }
     },
 
     addAmmunition: async (ammo) => {
@@ -850,105 +785,81 @@ export const useStore = create<StoreState>()(
         dateAdded: new Date().toISOString().split("T")[0],
       }
 
-      const api = getElectronAPI()
-      if (api) {
-        const currentUser = get().getCurrentUser()
-        const result = await api.ammunition.insert(newAmmo, { id: currentUser.id, name: currentUser.name })
-        if (!result.success) return { success: false, error: result.error }
+      try {
+        await db.dbCreateAmmunition(newAmmo, ammo.additionalCostInputs ?? [])
         await get().refreshFromDb()
         return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-
-      return { success: false, error: "The authoritative backend is required to create priced inventory" }
     },
 
     addStock: async (input) => {
-      const api = getElectronAPI()
-      const state = get()
-      const currentUser = state.getCurrentUser()
-      if (api) {
-        const result = await api.inventory.addStock(input, { id: currentUser.id, name: currentUser.name })
-        if (!result.success) return { success: false, error: result.error }
+      try {
+        await db.dbAdjustInventoryStock(input)
         await get().refreshFromDb()
         return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-      return { success: false, error: "The authoritative backend is required for inventory changes" }
     },
 
     receiveAmmoByPackages: async (input) => {
-      const api = getElectronAPI()
-      const state = get()
-      const currentUser = state.getCurrentUser()
-      if (api) {
-        const result = await api.inventory.receiveAmmoByPackages(input, { id: currentUser.id, name: currentUser.name })
-        if (!result.success) return { success: false, error: result.error }
+      try {
+        await db.dbReceiveAmmoByPackages(input)
         await get().refreshFromDb()
         return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-      return { success: false, error: "The authoritative backend is required for ammunition receipts" }
     },
 
     receiveAmmoByRounds: async (input) => {
-      const api = getElectronAPI()
-      const state = get()
-      const currentUser = state.getCurrentUser()
-      if (api) {
-        const result = await api.inventory.receiveAmmoByRounds(input, { id: currentUser.id, name: currentUser.name })
-        if (!result.success) return { success: false, error: result.error }
+      try {
+        await db.dbReceiveAmmoByRounds(input)
         await get().refreshFromDb()
         return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-      return { success: false, error: "The authoritative backend is required for ammunition receipts" }
     },
 
-    sellAmmo: async (input) => {
-      const api = getElectronAPI()
-      const state = get()
-      const currentUser = state.getCurrentUser()
-      if (api) {
-        const result = await api.inventory.sellAmmo(input, { id: currentUser.id, name: currentUser.name })
-        if (!result.success) return { success: false, error: result.error }
-        await get().refreshFromDb()
-        return { success: true }
-      }
-      return { success: false, error: "The authoritative backend is required for ammunition sales" }
+    sellAmmo: async (_input) => {
+      return { success: false, error: "Ammunition sales must be completed through the atomic sale and invoice workflow" }
     },
 
     updateAmmoPackage: async (input) => {
-      const api = getElectronAPI()
-      const state = get()
-      const currentUser = state.getCurrentUser()
-      if (api) {
-        const result = await api.inventory.updateAmmoPackage(input, { id: currentUser.id, name: currentUser.name })
-        if (!result.success) return { success: false, error: result.error }
+      try {
+        await db.dbUpdateAmmoPackage(input)
         await get().refreshFromDb()
         return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-      return { success: false, error: "The authoritative backend is required for inventory changes" }
     },
 
     updateSettings: async (updates) => {
       const previous = get().settings
       const requested = { ...previous, ...updates }
-      const api = getElectronAPI()
-      if (!api) return { success: false, error: "The authoritative backend is required to update currency settings" }
-      const result = await api.settings.update(requested)
-      if (!result.success) {
+      try {
+        await db.dbUpdateSettings(requested)
+        const saved = await db.dbGetSettings()
+        set({ settings: saved })
+        return { success: true }
+      } catch (error) {
         set({ settings: previous })
-        return { success: false, error: result.error }
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-      set({ settings: result.data as SystemSettings })
-      return { success: true }
     },
 
     updateProductCosts: async (productType, productId, costs) => {
-      const api = getElectronAPI()
-      if (!api?.cost?.replaceProduct) return { success: false, error: "The authoritative backend is required to update costs" }
-      const currentUser = get().getCurrentUser()
-      const result = await api.cost.replaceProduct(productType, productId, costs, { id: currentUser.id, name: currentUser.name })
-      if (!result.success) return { success: false, error: result.error }
-      await get().refreshFromDb()
-      return { success: true }
+      try {
+        await db.dbReplaceProductCosts(productType, productId, costs)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
     },
 
     updateUserPreferences: async (updates) => {
@@ -961,14 +872,8 @@ export const useStore = create<StoreState>()(
       }
       const merged = { ...current, ...updates }
       set({ userPreferences: merged })
-      const api = getElectronAPI()
       try {
-        if (api) {
-          const result = await api.userPreferences.upsert(merged)
-          if (!result.success) throw new Error(result.error ?? "Failed to save user preferences")
-        } else {
-          await db.dbUpsertUserPreferences(merged)
-        }
+        await db.dbUpsertUserPreferences(merged)
         return { success: true }
       } catch (error) {
         set({ userPreferences: previous })
@@ -983,9 +888,10 @@ export const useStore = create<StoreState>()(
     addUser: async (user) => {
       const newUser: User = { ...user, id: generateId("U", get().users), passwordSet: false, passwordHash: "" }
       set((state) => ({ users: [...state.users, newUser] }))
-      const api = getElectronAPI()
-      if (api) { const result = await api.user.insert(newUser); if (!result.success) return { success: false, error: result.error } }
-      else { try { await db.dbInsertUser(newUser) } catch (e) { console.error("DB persist failed:", e) } }
+      try { await db.dbInsertUser(newUser) } catch (e) {
+        set((state) => ({ users: state.users.filter((item) => item.id !== newUser.id) }))
+        return { success: false, error: String(e) }
+      }
       return { success: true }
     },
 
@@ -993,15 +899,10 @@ export const useStore = create<StoreState>()(
       set((state) => ({ users: state.users.map((u) => u.id === id ? { ...u, ...updates } : u) }))
       const u = get().users.find((u) => u.id === id)
       if (u) {
-        const api = getElectronAPI()
-        if (api) {
-          const result = await api.user.update(u)
-          if (!result?.success) return { success: false, error: result?.error ?? "Failed to update user" }
-        } else {
-          try { await db.dbUpdateUser(u) } catch (e) {
-            console.error("DB persist failed:", e)
-            return { success: false, error: String(e) }
-          }
+        try { await db.dbUpdateUser(u) } catch (e) {
+          console.error("DB persist failed:", e)
+          await get().refreshFromDb()
+          return { success: false, error: String(e) }
         }
       }
       return { success: true }
@@ -1009,9 +910,10 @@ export const useStore = create<StoreState>()(
 
     deleteUser: async (id) => {
       set((state) => ({ users: state.users.filter((u) => u.id !== id) }))
-      const api = getElectronAPI()
-      if (api) { const result = await api.user.delete(id); if (!result.success) return { success: false, error: result.error } }
-      else { try { await db.dbDeleteUser(id) } catch (e) { console.error("DB persist failed:", e) } }
+      try { await db.dbDeleteUser(id) } catch (e) {
+        await get().refreshFromDb()
+        return { success: false, error: String(e) }
+      }
       return { success: true }
     },
 
@@ -1021,29 +923,46 @@ export const useStore = create<StoreState>()(
       set((state) => ({ notifications: state.notifications.map((n) => n.id === id ? { ...n, read: true } : n) }))
       const n = get().notifications.find((n) => n.id === id)
       if (n) {
-        const api = getElectronAPI()
-        if (api) {
-          const result = await api.notification.update(n)
-          if (!result?.success) return { success: false, error: result?.error ?? "Failed to update notification" }
-        } else {
-          try { await db.dbUpdateNotification(n) } catch (e) {
-            console.error("DB persist failed:", e)
-            return { success: false, error: String(e) }
-          }
+        try { await db.dbUpdateNotification(n) } catch (e) {
+          console.error("DB persist failed:", e)
+          await get().refreshFromDb()
+          return { success: false, error: String(e) }
         }
       }
       return { success: true }
     },
 
-    markAllNotificationsRead: () => { set((state) => ({ notifications: state.notifications.map((n) => ({ ...n, read: true })) })) },
-
-    dismissNotification: (id) => { set((state) => ({ notifications: state.notifications.filter((n) => n.id !== id) })) },
-
-    pushNotification: (type, title, message, entityId) => {
-      set((state) => ({ notifications: [{ id: `NTF${pad(state.notifications.length + 1, 4)}`, type, title, message, date: new Date().toISOString().split("T")[0], read: false, entityId: entityId ?? null }, ...state.notifications] }))
+    markAllNotificationsRead: async () => {
+      try {
+        await db.dbMarkAllNotificationsRead()
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
     },
 
-    refreshNotifications: () => {
+    dismissNotification: async (id) => {
+      try {
+        await db.dbDeleteNotification(id)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    },
+
+    pushNotification: async (type, title, message, entityId) => {
+      try {
+        await db.dbCreateNotification(type, title, message, entityId)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    },
+
+    refreshNotifications: async () => {
       const state = get()
       const notifs: AppNotification[] = []
       let id = state.notifications.length + 1
@@ -1056,12 +975,24 @@ export const useStore = create<StoreState>()(
       state.ammunition.filter((a) => ammoTotalRounds(a) < a.safetyThreshold).forEach((a) => {
         if (!state.notifications.some((n) => n.entityId === a.id && n.type === "LowStock")) notifs.push({ id: `NTF${pad(id++, 4)}`, type: "LowStock", title: "Low Stock: Ammunition", message: `${a.caliber} is below safety threshold (${ammoTotalRounds(a)}/${a.safetyThreshold})`, date: new Date().toISOString().split("T")[0], read: false, entityId: a.id })
       })
-      if (notifs.length > 0) set({ notifications: [...notifs, ...state.notifications] })
+      try {
+        await Promise.all(notifs.map((notification) => db.dbCreateNotification(
+          notification.type, notification.title, notification.message, notification.entityId ?? undefined,
+        )))
+        if (notifs.length > 0) await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
     },
 
-    addAuditLog: (actionType, description, metadata) => {
-      const state = get()
-      set({ auditLogs: [{ id: `LOG${pad(state.auditLogs.length + 1, 5)}`, timestamp: new Date().toISOString(), date: new Date().toISOString().split("T")[0], userId: get().getCurrentUser().id, actionType, description, metadata: metadata || "{}" }, ...state.auditLogs] })
+    addAuditLog: async (actionType, description, metadata) => {
+      try {
+        await db.dbWriteAuditEvent(actionType, description, metadata)
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
     },
 
     addSearchHistory: (query) => { set((state) => ({ searchHistory: [query, ...state.searchHistory.filter((q) => q !== query)].slice(0, 5) })) },
@@ -1070,17 +1001,19 @@ export const useStore = create<StoreState>()(
     saveFilter: async (name, entityType, filterState) => {
       const newFilter: SavedFilter = { id: `FLT${pad(get().savedFilters.length + 1, 4)}`, name, entityType, filterState }
       set((state) => ({ savedFilters: [...state.savedFilters, newFilter] }))
-      const api = getElectronAPI()
-      if (api) { const result = await api.savedFilter.insert(newFilter); if (!result.success) return { success: false, error: result.error } }
-      else { try { await db.dbInsertSavedFilter(newFilter) } catch (e) { console.error("DB persist failed:", e) } }
+      try { await db.dbInsertSavedFilter(newFilter) } catch (e) {
+        set((state) => ({ savedFilters: state.savedFilters.filter((item) => item.id !== newFilter.id) }))
+        return { success: false, error: String(e) }
+      }
       return { success: true }
     },
 
     deleteFilter: async (id) => {
       set((state) => ({ savedFilters: state.savedFilters.filter((f) => f.id !== id) }))
-      const api = getElectronAPI()
-      if (api) { const result = await api.savedFilter.delete(id); if (!result.success) return { success: false, error: result.error } }
-      else { try { await db.dbDeleteSavedFilter(id) } catch (e) { console.error("DB persist failed:", e) } }
+      try { await db.dbDeleteSavedFilter(id) } catch (e) {
+        await get().refreshFromDb()
+        return { success: false, error: String(e) }
+      }
       return { success: true }
     },
   }),

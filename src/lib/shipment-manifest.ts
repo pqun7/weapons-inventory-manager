@@ -135,6 +135,34 @@ export interface ManifestUploadInput {
   bytes: Uint8Array
 }
 
+export type ManifestExtractedItem = Omit<ManifestReviewItem, "id" | "issues" | "status">
+
+export interface ManifestExtractionResult {
+  fileName: string
+  fileType: string
+  fileSize: number
+  fileHash: string
+  shipmentNumber: string | null
+  supplierName: string | null
+  supplierReference: string | null
+  invoiceNumber: string | null
+  manifestNumber: string | null
+  shipmentDate: string | null
+  expectedArrivalDate: string | null
+  origin: string | null
+  destination: string | null
+  currency: string | null
+  aiProvider: string | null
+  aiModel: string | null
+  aiRequestId: string | null
+  aiProcessingMs: number | null
+  processingWarning: string | null
+  promptVersion: string
+  schemaVersion: string
+  rawExtraction: Record<string, unknown>
+  items: ManifestExtractedItem[]
+}
+
 export interface ManifestProgress {
   importId?: string
   stage: "uploading" | "reading" | "extracting" | "analyzing" | "normalizing" | "validating" | "preparing" | "complete" | "failed"

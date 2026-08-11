@@ -28,6 +28,7 @@
     "rsbuild.config.ts",
     "vitest.config.ts",
     "*.config.ts",
+    "src/env.d.ts",
     "electron/**/*.ts", "electron/seed/reset-db.ts",
   ],
   "baseUrl": ".",

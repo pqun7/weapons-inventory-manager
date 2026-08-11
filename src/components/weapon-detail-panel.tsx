@@ -67,9 +67,11 @@ export const WeaponDetailPanel = memo(function WeaponDetailPanel({
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = () => {
-      if (weaponId) addWeaponImage(weaponId, reader.result as string)
-      toast.success(t("toast.weaponUpdated"))
+    reader.onload = async () => {
+      if (!weaponId) return
+      const result = await addWeaponImage(weaponId, reader.result as string)
+      if (result.success) toast.success(t("toast.weaponUpdated"))
+      else toast.error(result.error ?? t("toast.error"))
     }
     reader.readAsDataURL(file)
   }

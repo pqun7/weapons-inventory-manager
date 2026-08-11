@@ -1,0 +1,25 @@
+{
+  "status": "verified",
+  "verifiedAt": "2026-08-11T03:55:57.585199+00:00",
+  "projectUrl": "https://cmvcduzhnlhacccqofjg.supabase.co",
+  "anonymousInventoryBlocked": true,
+  "authenticatedRole": "Admin",
+  "authenticatedProfileActive": true,
+  "authenticatedWeaponCount": 140,
+  "authenticatedSerialsUnique": true,
+  "activeCurrencyCount": 4,
+  "currencyCodes": [
+    "EGP",
+    "SAR",
+    "SDG",
+    "USD"
+  ],
+  "invoiceCount": 65,
+  "maximumInvoiceSuffix": 65,
+  "invoiceCounterValue": 65,
+  "invoiceCounterCollisionSafe": true,
+  "manifestImportCount": 4,
+  "manifestItemCount": 158,
+  "shipmentDeleteRpcVerified": true,
+  "shipmentDeleteVerificationId": "SHP00014"
+}

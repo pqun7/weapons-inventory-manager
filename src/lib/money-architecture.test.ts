@@ -6,7 +6,7 @@ import {
   fromAccountingAmount,
   moneyEquals,
   toAccountingAmount,
-} from "../../electron/services/money"
+} from "./money"
 
 describe("authoritative money conversion", () => {
   it.each([

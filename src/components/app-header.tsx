@@ -1,4 +1,4 @@
-import { Search } from "lucide-react"
+import { LogOut, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
@@ -11,6 +11,8 @@ import { useStore } from "@/lib/store"
 import { useI18n } from "@/lib/i18n"
 import { useCurrency } from "@/lib/currency-context"
 import type { PageKey } from "@/lib/nav"
+import { getSupabaseClient } from "@/lib/supabase/client"
+import { toast } from "sonner"
 
 export function AppHeader() {
   const { currentPage, setCommandBarOpen } = useNav()
@@ -75,6 +77,23 @@ export function AppHeader() {
             </span>
           </div>
         </div>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          title="Sign out"
+          aria-label="Sign out"
+          onClick={() => {
+            void getSupabaseClient().auth.signOut().then(({ error }) => {
+              if (error) {
+                toast.error(error.message)
+                return
+              }
+              window.location.reload()
+            })
+          }}
+        >
+          <LogOut className="size-3.5" />
+        </Button>
       </div>
     </header>
   )

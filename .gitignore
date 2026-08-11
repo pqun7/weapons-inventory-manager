@@ -5,6 +5,7 @@
 # ============================================================
 
 node_modules/
+.migration-tools/
 .npm/
 .pnpm-store/
 
@@ -65,15 +66,9 @@ electron-builder.yaml.local
 
 # ============================================================
 
-# SQLite databases
-
 *.db
 *.db-shm
 *.db-wal
-*.sqlite
-*.sqlite3
-*.sqlite-shm
-*.sqlite-wal
 
 # Local database directories
 
@@ -121,6 +116,8 @@ crash.log
 
 coverage/
 .nyc_output/
+__pycache__/
+*.py[cod]
 test-results/
 playwright-report/
 blob-report/
@@ -154,8 +151,6 @@ vite.config.*.timestamp-*
 **/build/Release/
 **/build/Debug/
 **/prebuilds/
-
-# better-sqlite3 / native binaries
 
 *.node
 

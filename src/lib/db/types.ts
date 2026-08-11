@@ -5,5 +5,4 @@ export type {
   CurrencyRow,
   ExchangeRateOverrideRow,
   AuditLogEntry,
-  DatabaseBackupInfo,
 } from "./mappers.js"

@@ -27,7 +27,7 @@ import type { AuditActionType, AuditLog } from "@/lib/types"
 const CATEGORY_BADGE: Record<AuditActionType, string> = {
   Intake: "bg-status-returned/15 text-status-returned-fg border-status-returned/30",
   Sale: "bg-status-sold/15 text-status-sold-fg border-status-sold/30",
-  Return: "bg-status-reserved/15 text-status-reserved-fg border-status-reserved/30",
+  Return: "bg-status-reserved/15 text-status-reserved-fg dark:text-status-reserved/90 border-status-reserved/30",
   Payment: "bg-chart-2/15 text-chart-2 border-chart-2/30",
   Shipment: "bg-chart-4/15 text-chart-4 border-chart-4/30",
   DebtWarning: "bg-status-sold/20 text-status-sold-fg border-status-sold/40",
@@ -39,7 +39,7 @@ const CATEGORY_BADGE: Record<AuditActionType, string> = {
   Void: "bg-destructive/15 text-destructive border-destructive/30",
   Backup: "bg-chart-3/15 text-chart-3 border-chart-3/30",
   RoleChange: "bg-chart-5/15 text-chart-5 border-chart-5/30",
-  DueDateExtension: "bg-status-reserved/15 text-status-reserved-fg border-status-reserved/30",
+  DueDateExtension: "bg-status-reserved/15 text-status-reserved-fg dark:text-status-reserved/90 border-status-reserved/30",
   StockAdjustment: "bg-chart-2/15 text-chart-2 border-chart-2/30",
 }
 

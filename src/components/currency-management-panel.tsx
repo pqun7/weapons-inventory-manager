@@ -63,14 +63,19 @@ export function CurrencyManagementPanel() {
 
   const handleSync = async () => {
     setSyncing(true)
-    const result = await CurrencyService.syncRatesFromAPI()
-    setSyncing(false)
-    if (result.synced > 0) {
-      toast.success(`${result.synced} ${t("settings.currenciesSynced")}`)
-    } else {
-      toast.error(`${t("settings.syncFailed")} — ${result.errors.join(", ")}`)
+    try {
+      const result = await CurrencyService.syncRatesFromAPI(currentUser.name)
+      if (result.synced > 0 && result.failed === 0) {
+        toast.success(`${result.synced} ${t("settings.currenciesSynced")}`)
+      } else {
+        toast.error(`${t("settings.syncFailed")} — ${result.errors.join(", ")}`)
+      }
+      await refreshData()
+    } catch (error) {
+      toast.error(`${t("settings.syncFailed")} — ${error instanceof Error ? error.message : "Unknown error"}`)
+    } finally {
+      setSyncing(false)
     }
-    await refreshData()
   }
 
   const handleSetManual = async (code: string) => {
@@ -442,7 +447,15 @@ export function CurrencyManagementPanel() {
               </div>
               <Separator className="my-3" />
               <div className="text-[10px] text-muted-foreground">
-                {t("settings.ratePerUSDNote", { currency: accountingCurrency })}
+                {t("settings.ratePerUSDNote", { currency: accountingCurrency })}{" · "}
+                <a
+                  href="https://www.exchangerate-api.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  Rates by ExchangeRate-API
+                </a>
               </div>
             </CardContent>
           </Card>

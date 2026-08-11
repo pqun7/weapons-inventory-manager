@@ -35,15 +35,15 @@
     }
   },
   "include": [
-    "electron/**/*.ts",
-    "electron/**/*.cts",
-    "electron/**/*.d.ts",
-    "src/lib/db/schema.ts",
-    "src/lib/db/mappers.ts",
-    "src/lib/types.ts",
-    "src/lib/mock-data.ts",
-    "src/lib/currency-service.ts",
-    "src/lib/store.ts"
+    "electron/main.ts",
+    "electron/preload.cts",
+    "electron/ipc/manifest-parser-handler.ts",
+    "electron/services/manifest-extraction-service.ts",
+    "electron/services/manifest-parser.ts",
+    "electron/services/manifest-parser-worker.ts",
+    "electron/services/openai-manifest-service.ts",
+    "src/env.d.ts",
+    "src/lib/shipment-manifest.ts"
   ],
   "exclude": [
     "node_modules",

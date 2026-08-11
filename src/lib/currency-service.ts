@@ -1,4 +1,4 @@
-import Decimal from "decimal.js"
+import { Decimal } from "decimal.js"
 import { formatLocalizedCurrency } from "./currency-display.js"
 import {
   dbAddCurrency,
@@ -15,8 +15,7 @@ import {
   dbDeleteCurrency, // ← جديدة: دالة حذف العملة من قاعدة البيانات
 } from "./db/index.js"
 
-const DecimalAny: any = Decimal as unknown as any
-DecimalAny.set({ rounding: DecimalAny.ROUND_HALF_UP, precision: 28 })
+Decimal.set({ rounding: Decimal.ROUND_HALF_UP, precision: 28 })
 
 export interface CurrencyInfo {
   isoCode: string
@@ -49,6 +48,36 @@ export interface AuditLogEntry {
 }
 
 export type RateSource = "api" | "manual" | "cache" | "default"
+
+export function isCurrencyActive(value: number | boolean): boolean {
+  return value === true || value === 1
+}
+
+type ExchangeRateApiPayload = {
+  result: "success"
+  baseCode: string
+  fetchedAt: string
+  rates: Record<string, number>
+}
+
+export function parseExchangeRateApiPayload(value: unknown, expectedBase: string): ExchangeRateApiPayload {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Exchange-rate provider returned an invalid response")
+  const payload = value as Record<string, unknown>
+  if (payload.result !== "success" || payload.base_code !== expectedBase) throw new Error("Exchange-rate provider rejected the request")
+  if (!payload.rates || typeof payload.rates !== "object" || Array.isArray(payload.rates)) throw new Error("Exchange-rate response has no rates")
+
+  const rates: Record<string, number> = {}
+  for (const [code, rawRate] of Object.entries(payload.rates)) {
+    if (/^[A-Z]{3}$/.test(code) && typeof rawRate === "number" && Number.isFinite(rawRate) && rawRate > 0) rates[code] = rawRate
+  }
+  if (Object.keys(rates).length === 0) throw new Error("Exchange-rate response has no valid rates")
+
+  const unixTime = payload.time_last_update_unix
+  const fetchedAt = typeof unixTime === "number" && Number.isFinite(unixTime)
+    ? new Date(unixTime * 1000).toISOString()
+    : new Date().toISOString()
+  return { result: "success", baseCode: expectedBase, fetchedAt, rates }
+}
 
 interface CachedRate {
   rate: number
@@ -138,7 +167,7 @@ class CurrencyServiceClass {
         name: row.name,
         symbol: row.symbol,
         decimalPrecision: row.decimal_precision,
-        isActive: row.is_active === 1,
+        isActive: isCurrencyActive(row.is_active),
         lastKnownRate: rateStr,
         lastRateUpdatedAt: row.last_rate_updated_at,
       })
@@ -212,16 +241,16 @@ class CurrencyServiceClass {
     if (fromCurrency === this.accountingCurrencyCode) return amount
     const rate = this.getRate(fromCurrency)
     if (!Number.isFinite(rate) || rate <= 0) throw new Error(`Invalid exchange rate for ${fromCurrency}`)
-    const decAmount = new DecimalAny(amount)
-    const decRate = new DecimalAny(rate)
+    const decAmount = new Decimal(amount)
+    const decRate = new Decimal(rate)
     return decAmount.dividedBy(decRate).toNumber()
   }
 
   convertFromAccounting(accountingAmount: number, toCurrency: string): number {
     if (toCurrency === this.accountingCurrencyCode) return accountingAmount
     const rate = this.getRate(toCurrency)
-    const decUsd = new DecimalAny(accountingAmount)
-    const decRate = new DecimalAny(rate)
+    const decUsd = new Decimal(accountingAmount)
+    const decRate = new Decimal(rate)
     return decUsd.times(decRate).toNumber()
   }
 
@@ -242,13 +271,13 @@ class CurrencyServiceClass {
   }
 
   roundAccounting(amount: number): number {
-    return new DecimalAny(amount).toDecimalPlaces(4, DecimalAny.ROUND_HALF_UP).toNumber()
+    return new Decimal(amount).toDecimalPlaces(4, Decimal.ROUND_HALF_UP).toNumber()
   }
 
   roundDisplay(amount: number, currencyCode: string): number {
     const currency = this.currencies.get(currencyCode)
     const precision = currency?.decimalPrecision ?? 2
-    return new DecimalAny(amount).toDecimalPlaces(precision, DecimalAny.ROUND_HALF_UP).toNumber()
+    return new Decimal(amount).toDecimalPlaces(precision, Decimal.ROUND_HALF_UP).toNumber()
   }
 
   async updateCurrencyRate(code: string, rate: number, source: RateSource = "api"): Promise<void> {
@@ -399,12 +428,51 @@ class CurrencyServiceClass {
     this.notify()
   }
 
-  async syncRatesFromAPI(): Promise<{ synced: number; failed: number; errors: string[] }> {
-    return {
-      synced: 0,
-      failed: 0,
-      errors: ["Rate sync is not available in offline mode"],
+  async syncRatesFromAPI(changedBy: string): Promise<{ synced: number; failed: number; errors: string[] }> {
+    await this.load()
+    const baseCode = this.accountingCurrencyCode
+    const response = await fetch(`https://open.er-api.com/v6/latest/${encodeURIComponent(baseCode)}`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!response.ok) throw new Error(`Exchange-rate provider failed with HTTP ${response.status}`)
+    const payload = parseExchangeRateApiPayload(await response.json() as unknown, baseCode)
+    let synced = 0
+    let failed = 0
+    const errors: string[] = []
+
+    for (const currency of this.getCurrencies()) {
+      const override = this.overrides.get(currency.isoCode)
+      if (override?.mode === "manual") continue
+      const rate = payload.rates[currency.isoCode]
+      if (!rate) {
+        failed += 1
+        errors.push(`${currency.isoCode}: rate unavailable`)
+        continue
+      }
+      try {
+        const oldRate = currency.lastKnownRate
+        await dbUpdateCurrencyRate(currency.isoCode, rate, payload.fetchedAt)
+        await dbRecordRateHistory(currency.isoCode, rate, "api")
+        await dbRecordRateAuditLog(
+          currency.isoCode,
+          oldRate,
+          rate,
+          changedBy,
+          `Automatic rate sync from ExchangeRate-API (${baseCode} base)`,
+          payload.fetchedAt,
+        )
+        currency.lastKnownRate = rate
+        currency.lastRateUpdatedAt = payload.fetchedAt
+        this.rateCache.set(currency.isoCode, { rate, source: "api", fetchedAt: new Date(payload.fetchedAt) })
+        synced += 1
+      } catch (error) {
+        failed += 1
+        errors.push(`${currency.isoCode}: ${error instanceof Error ? error.message : "update failed"}`)
+      }
     }
+    this.notify()
+    return { synced, failed, errors }
   }
 }
 

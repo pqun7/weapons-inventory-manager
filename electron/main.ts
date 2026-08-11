@@ -3,11 +3,8 @@ import { app, BrowserWindow, shell } from "electron"
 import path from "node:path"
 import { performance } from "node:perf_hooks"
 import { fileURLToPath } from "node:url"
-import { initDatabase, closeDatabase } from "./database.js"
-import { registerIpcHandlers } from "./ipc/handlers.js"
-import { seedDemoDataIfNeeded } from "./services/demo-seed-service.js"
 import fs from "node:fs";
-import { syncShipmentArrivalNotifications } from "./services/shipment-manifest-service.js"
+import { registerManifestParserHandler } from "./ipc/manifest-parser-handler.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -23,7 +20,13 @@ function logBoot(stage: string): void {
 }
 
 let mainWindow: BrowserWindow | null = null
-let shipmentNotificationTimer: NodeJS.Timeout | null = null
+
+const runtimeEnvironmentKeys = new Set([
+  "CHATGPT_API_KEY",
+  "CHATGPT_MODEL",
+  "DEEPSEEK_API_KEY",
+  "DEEPSEEK_MODEL",
+])
 
 function loadRuntimeEnvironment(): void {
   const candidates = [
@@ -39,7 +42,7 @@ function loadRuntimeEnvironment(): void {
       const line = rawLine.trim()
       if (!line || line.startsWith("#")) continue
       const match = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/)
-      if (!match || process.env[match[1]] != null) continue
+      if (!match || !runtimeEnvironmentKeys.has(match[1]) || process.env[match[1]] != null) continue
       let value = match[2].trim()
       if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1)
       process.env[match[1]] = value
@@ -113,7 +116,7 @@ function createWindow(): BrowserWindow {
     logBoot("window:loadURL")
   } else {
     // Production: load built index.html
-    const indexPath = path.resolve(process.cwd(), "dist/index.html")
+    const indexPath = path.join(app.getAppPath(), "dist", "index.html")
 
     mainWindow.loadFile(indexPath)
     // mainWindow.webContents.openDevTools({ mode: "detach" })
@@ -129,14 +132,8 @@ app.whenReady().then(async () => {
   logBoot("app.whenReady")
   try {
     loadRuntimeEnvironment()
-    await initDatabase()
-    logBoot("initDatabase:completed")
-
-    seedDemoDataIfNeeded()
-    registerIpcHandlers()
-    syncShipmentArrivalNotifications()
-    shipmentNotificationTimer = setInterval(() => syncShipmentArrivalNotifications(), 15 * 60 * 1000)
-    logBoot("ipc:registered")
+    registerManifestParserHandler()
+    logBoot("manifest-parser:registered")
 
     createWindow()
     logBoot("window:created")
@@ -151,11 +148,5 @@ app.whenReady().then(async () => {
 })
 
 app.on("window-all-closed", () => {
-  closeDatabase()
   if (process.platform !== "darwin") app.quit()
-})
-
-app.on("before-quit", () => {
-  if (shipmentNotificationTimer) clearInterval(shipmentNotificationTimer)
-  closeDatabase()
 })

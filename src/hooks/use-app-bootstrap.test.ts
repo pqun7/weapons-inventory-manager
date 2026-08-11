@@ -3,6 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react"
 
 vi.mock("@/lib/db", () => ({
   isDbReady: vi.fn().mockReturnValue(true),
+  dbGetCurrentUserId: vi.fn().mockResolvedValue("U001"),
   dbGetUserPreferences: vi.fn().mockResolvedValue(null),
   initDb: vi.fn().mockResolvedValue(undefined),
   seedDemoDataIfNeeded: vi.fn().mockResolvedValue(undefined),

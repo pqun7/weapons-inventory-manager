@@ -7,35 +7,52 @@
   "description": "Armory Store Management System - Desktop ERP for weapons retailers",
   "author": "Armory Store",
   "main": "dist-electron/electron/main.js",
+  "build": {
+    "appId": "com.armory.store",
+    "productName": "Armory Store",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": false
+    }
+  },
   "engines": {
     "node": ">=20.0.0"
   },
   "scripts": {
     "dev": "concurrently \"rsbuild dev\" \"wait-on tcp:3000 && cross-env RSBUILD_DEV_SERVER_URL=http://localhost:3000 nodemon\"",
-    "build": "tsc -b && rsbuild build",
+    "build": "python scripts/check-public-env.py && tsc -b && rsbuild build",
     "preview": "rsbuild preview",
     "electron:dev": "concurrently \"rsbuild dev\" \"wait-on tcp:3000 && cross-env RSBUILD_DEV_SERVER_URL=http://localhost:3000 nodemon --watch electron --ext js,ts,json --exec \"tsc -p tsconfig.electron.json && electron .\"\"",
-    "build:electron": "tsc -p tsconfig.electron.json && rsbuild build",
+    "build:electron": "python scripts/check-public-env.py && tsc -p tsconfig.electron.json && rsbuild build",
     "start": "nodemon --watch electron --ext js,ts,json --exec \"tsc -p tsconfig.electron.json && electron .\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
+    "test:supabase": "vitest run src/lib/supabase",
+    "supabase:schema:apply": "python scripts/apply-supabase-migrations.py",
+    "supabase:verify-auth": "python scripts/verify-supabase-auth.py",
     "electron:build": "npm run build:electron && electron-builder",
     "electron:build:win": "npm run build:electron && electron-builder --win",
     "electron:build:mac": "npm run build:electron && electron-builder --mac",
     "electron:build:linux": "npm run build:electron && electron-builder --linux",
-    "seed:master": "tsc -p tsconfig.electron.json && electron dist-electron/electron/seed/master-seed.cjs",
-    "seed:demo": "tsc -p tsconfig.electron.json && electron dist-electron/electron/seed/demo-seed.cjs",
-    "reset-db": "tsc -p tsconfig.electron.json && electron dist-electron/electron/seed/reset-db.js"
+    "verify:supabase": "python scripts/verify-supabase-auth.py"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-arabic": "^5.3.0",
     "@hookform/resolvers": "^5.2.2",
-    "@supabase/supabase-js": "^2.111.0",
+    "@supabase/supabase-js": "^2.112.2",
     "@tanstack/react-table": "^8.21.3",
-    "better-sqlite3": "^11.10.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -69,10 +86,10 @@
     "@rsbuild/plugin-react": "^2.1.0",
     "@rspack/core": "^2.1.8",
     "@tailwindcss/postcss": "^4.3.3",
+    "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
-    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
@@ -82,7 +99,6 @@
     "cross-env": "^7.0.3",
     "electron": "^32.3.3",
     "electron-builder": "^25.1.8",
-    "electron-rebuild": "^3.2.9",
     "electronmon": "^2.0.4",
     "jsdom": "^30.0.1",
     "nodemon": "^3.1.14",

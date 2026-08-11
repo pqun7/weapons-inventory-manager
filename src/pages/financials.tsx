@@ -1,18 +1,32 @@
-import { useState, useMemo, useCallback, useEffect } from "react"
+import { useMemo, useState, useCallback, useEffect } from "react"
 import {
   Search, Receipt, DollarSign, Check, X,
-  Calendar, Eye,
+  Calendar, Eye, Clock, CheckCircle, AlertCircle,
+  SlidersHorizontal, ArrowUpDown, ChevronLeft, ChevronRight,
+  Columns, List
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription, DialogTrigger } from "@/components/ui/dialog"
 import { Separator } from "@/components/ui/separator"
+import {
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  getPaginationRowModel,
+  getFilteredRowModel,
+  flexRender,
+  type ColumnDef,
+  type SortingState,
+  type ColumnFiltersState,
+  type VisibilityState,
+} from "@tanstack/react-table"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { SavedFiltersBar } from "@/components/ui/saved-filters-bar"
 import { DatePicker } from "@/components/ui/date-picker"
 import { useStore } from "@/lib/store"
@@ -22,11 +36,13 @@ import { useCurrency } from "@/lib/currency-context"
 import { DebtService } from "@/lib/services"
 import { cn } from "@/lib/utils"
 import {
-  formatDate, formatDateShort, daysUntilDue, invoiceStatusClass, debtLifecycleIcon,
+  formatDate, formatDateShort, daysUntilDue, invoiceStatusClass,
 } from "@/lib/format"
 import type { Invoice, PaymentMethod, SavedFilter } from "@/lib/types"
 import { toast } from "sonner"
 import { invoiceAccountingAmount, sumMoney, type InvoiceMoneyField } from "@/lib/money-ui"
+import { Textarea } from "@/components/ui/textarea"
+
 
 type QuickFilter = "all" | "overdue" | "not-overdue"
 
@@ -61,6 +77,9 @@ export function FinancialsPage() {
   const [payOpen, setPayOpen] = useState(false)
   const [extendOpen, setExtendOpen] = useState(false)
   const [voidConfirmOpen, setVoidConfirmOpen] = useState(false)
+
+  // Dialog internal tab
+  const [detailTab, setDetailTab] = useState<"overview" | "payments">("overview")
 
   // Payment form
   const [payAmount, setPayAmount] = useState("")
@@ -114,7 +133,6 @@ export function FinancialsPage() {
     if (quickFilter === "overdue") {
       data = data.filter((i) => i.status === "Overdue")
     } else if (quickFilter === "not-overdue") {
-      // Show only non-overdue invoices that still have a balance (unpaid)
       data = data.filter((i) => i.status !== "Overdue" && i.balance > 0)
     }
 
@@ -219,64 +237,96 @@ export function FinancialsPage() {
   ]
 
   return (
-    <div className="flex flex-col gap-3 p-3 lg:p-4">
-      {/* Quick-filter chips + Saved Filters bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1">
-          {quickFilterChips.map((chip) => (
-            <Button
-              key={chip.key}
-              size="xs"
-              variant={quickFilter === chip.key ? "default" : "outline"}
-              className={cn(
-                "h-6 rounded-full px-3 text-[10px] font-medium",
-                chip.key === "overdue" && quickFilter === chip.key && "bg-status-sold text-status-sold-fg hover:bg-status-sold",
-                chip.key === "overdue" && quickFilter !== chip.key && "text-status-sold border-status-sold/40 hover:bg-status-sold/10",
-              )}
-              onClick={() => setQuickFilter(chip.key)}
-            >
-              {chip.label}
-            </Button>
-          ))}
+    <div className="flex flex-col gap-4 p-4 lg:p-6">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as "receivable" | "payable")} className="flex flex-col gap-4">
+        {/* Header */}
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">
+              {t("fin.financials")}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {t("fin.financialsDesc")}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select value={reportViewMode} onValueChange={(v) => setReportViewMode(v as "original" | "accounting" | "display")}>
+              <SelectTrigger className="h-7 w-auto gap-1.5 text-[10px]">
+                <Eye className="size-3" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="accounting">{t("report.accountingCurrency")}</SelectItem>
+                <SelectItem value="original">{t("report.originalCurrency")}</SelectItem>
+                <SelectItem value="display">{t("report.displayCurrency")} ({displayCurrency})</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Select value={reportViewMode} onValueChange={(v) => setReportViewMode(v as "original" | "accounting" | "display")}>
-            <SelectTrigger className="h-7 w-auto gap-1.5 text-[10px]">
-              <Eye className="size-3" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="accounting">{t("report.accountingCurrency")}</SelectItem>
-              <SelectItem value="original">{t("report.originalCurrency")}</SelectItem>
-              <SelectItem value="display">{t("report.displayCurrency")} ({displayCurrency})</SelectItem>
-            </SelectContent>
-          </Select>
+
+        {/* 👇 هنا بالضبط: أزرار الفلتر السريع + شريط الفلاتر المحفوظة */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
+            {quickFilterChips.map((chip) => (
+              <Button
+                key={chip.key}
+                size="xs"
+                variant={quickFilter === chip.key ? "default" : "outline"}
+                className={cn(
+                  "h-6 rounded-full px-3 text-[10px] font-medium",
+                  chip.key === "overdue" && quickFilter === chip.key && "bg-status-sold text-status-sold-fg hover:bg-status-sold/90",
+                  chip.key === "overdue" && quickFilter !== chip.key && "text-status-sold border-status-sold/40 hover:bg-status-sold/10",
+                )}
+                onClick={() => setQuickFilterState(chip.key)}
+              >
+                {chip.label}
+              </Button>
+            ))}
+          </div>
           <SavedFiltersBar
             entityType="financials"
-            currentFilterState={currentFilterState}
+            currentFilterState={{ tab, search, quickFilter }}
             onLoadFilter={handleLoadFilter}
           />
         </div>
-      </div>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as "receivable" | "payable")}>
+        {/* Tabs */}
         <TabsList className="h-8">
-          <TabsTrigger value="receivable" className="text-xs">{t("fin.invoicesTab")}</TabsTrigger>
-          <TabsTrigger value="payable" className="text-xs">{t("fin.paymentsTab")}</TabsTrigger>
+          <TabsTrigger value="receivable" className="text-xs gap-1.5">
+            <Receipt className="size-3.5" />
+            {t("fin.invoicesTab")} ({filteredInvoices.length})
+          </TabsTrigger>
+          <TabsTrigger value="payable" className="text-xs gap-1.5">
+            <DollarSign className="size-3.5" />
+            {t("fin.paymentsTab")} ({filteredInvoices.length})
+          </TabsTrigger>
         </TabsList>
-        <TabsContent value="receivable">
+
+        {/* محتوى التبويب */}
+        <TabsContent value="receivable" className="mt-0">
           <FinancialGrid
-            invoices={filteredInvoices} selectedInvoiceId={selectedInvoiceId}
-            onSelect={setSelectedInvoiceId} search={search} setSearch={setSearch}
-            totals={totals} t={t} fmtAmount={fmtAmount}
+            invoices={filteredInvoices}
+            selectedInvoiceId={selectedInvoiceId}
+            onSelect={setSelectedInvoiceId}
+            search={search}
+            setSearch={setSearch}
+            totals={totals}
+            t={t}
+            fmtAmount={fmtAmount}
             formatAccountingAggregate={formatReportAggregate}
           />
         </TabsContent>
-        <TabsContent value="payable">
+
+        <TabsContent value="payable" className="mt-0">
           <FinancialGrid
-            invoices={filteredInvoices} selectedInvoiceId={selectedInvoiceId}
-            onSelect={setSelectedInvoiceId} search={search} setSearch={setSearch}
-            totals={totals} t={t} fmtAmount={fmtAmount}
+            invoices={filteredInvoices}
+            selectedInvoiceId={selectedInvoiceId}
+            onSelect={setSelectedInvoiceId}
+            search={search}
+            setSearch={setSearch}
+            totals={totals}
+            t={t}
+            fmtAmount={fmtAmount}
             formatAccountingAggregate={formatReportAggregate}
           />
         </TabsContent>
@@ -320,12 +370,22 @@ export function FinancialsPage() {
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">{t("fin.summary")}</span>
-                  <span className="font-medium">
-                    {debtLifecycleIcon(
-                      selectedInvoice.balance <= 0 ? "Paid" : selectedInvoice.status === "Overdue" ? "Overdue" : "Pending"
-                    )}{" "}
-                    {selectedInvoice.balance <= 0 ? t("status.Paid") : selectedInvoice.status === "Overdue" ? t("status.Overdue") : t("status.Pending")}
+                  <span className="text-muted-foreground">{t("common.status")}</span>
+                  <span className="font-medium flex items-center gap-1">
+                    <LifecycleIcon
+                      status={
+                        selectedInvoice.balance <= 0
+                          ? "Paid"
+                          : selectedInvoice.status === "Overdue"
+                            ? "Overdue"
+                            : "Pending"
+                      }
+                    />
+                    {selectedInvoice.balance <= 0
+                      ? t("status.Paid")
+                      : selectedInvoice.status === "Overdue"
+                        ? t("status.Overdue")
+                        : t("status.Pending")}
                   </span>
                 </div>
               </div>
@@ -435,6 +495,184 @@ export function FinancialsPage() {
 
       {/* Separate dialogs for actions – avoid nesting inside main dialog */}
       {/* Register Payment Dialog */}
+      {/* Invoice Detail Dialog – reorganized with internal tabs */}
+      <Dialog
+        open={!!selectedInvoiceId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedInvoiceId(null)
+            setDetailTab("overview")
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          {selectedInvoice && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-base">
+                  <Receipt className="size-4" />
+                  <span className="font-mono">{selectedInvoice.invoiceNumber}</span>
+                  <Badge variant="outline" className={cn("text-[10px]", invoiceStatusClass(selectedInvoice.status))}>
+                    {t(`status.${selectedInvoice.status}`)}
+                  </Badge>
+                </DialogTitle>
+                <DialogDescription className="text-xs">
+                  {selectedInvoice.customerName} — {formatDate(selectedInvoice.date)}
+                </DialogDescription>
+              </DialogHeader>
+
+              {/* Financial Summary Cards – always visible */}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <StatBox label={t("fin.total")} value={fmtAmount(selectedInvoice, "totalOriginal")} />
+                <StatBox label={t("fin.invoiceType")} value={fmtAmount(selectedInvoice, "totalNegotiated")} />
+                <StatBox label={t("fin.paid")} value={fmtAmount(selectedInvoice, "totalPaid")} color="text-green-600" />
+                <StatBox
+                  label={t("fin.balance")}
+                  value={fmtAmount(selectedInvoice, "balance")}
+                  color={selectedInvoice.balance > 0 ? "text-red-500" : "text-green-600"}
+                />
+              </div>
+
+              {/* Tabs for Overview & Payments */}
+              <Tabs value={detailTab} onValueChange={(v) => setDetailTab(v as "overview" | "payments")} className="w-full">
+                <TabsList className="h-7 w-full justify-start">
+                  <TabsTrigger value="overview" className="text-xs">{t("common.overview")}</TabsTrigger>
+                  <TabsTrigger value="payments" className="text-xs">{t("fin.payments")} ({invoicePayments.length})</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="overview" className="mt-3 space-y-3">
+                  {/* Due Date & Lifecycle */}
+                  <div className="rounded-md border p-3 text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">{t("fin.newDueDate")}</span>
+                      <span className="font-medium">
+                        {formatDate(selectedInvoice.dueDate)} (
+                        {daysUntilDue(selectedInvoice.dueDate) >= 0
+                          ? `${daysUntilDue(selectedInvoice.dueDate)}d left`
+                          : `${Math.abs(daysUntilDue(selectedInvoice.dueDate))}d overdue`})
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">{t("common.status")}</span>
+                      <span className="font-medium flex items-center gap-1">
+                        <LifecycleIcon
+                          status={
+                            selectedInvoice.balance <= 0
+                              ? "Paid"
+                              : selectedInvoice.status === "Overdue"
+                                ? "Overdue"
+                                : "Pending"
+                          }
+                        />
+                        {selectedInvoice.balance <= 0
+                          ? t("status.Paid")
+                          : selectedInvoice.status === "Overdue"
+                            ? t("status.Overdue")
+                            : t("status.Pending")}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Financial Lifecycle Timeline */}
+                  <div>
+                    <h4 className="mb-2 text-xs font-semibold">{t("fin.lifecycle")}</h4>
+                    <div className="flex flex-col gap-2">
+                      <TimelineEntry
+                        icon={<Receipt className="size-3" />}
+                        label={t("fin.invoiceNumber")}
+                        date={selectedInvoice.date}
+                        detail={fmtAmount(selectedInvoice, "totalNegotiated")}
+                      />
+                      {invoicePayments.map((p) => (
+                        <TimelineEntry
+                          key={p.id}
+                          icon={<DollarSign className="size-3" />}
+                          label={`${t("fin.registerPayment")} (${t(paymentMethodKey[p.method])})`}
+                          date={p.date}
+                          detail={`${formatPayment(p, "original")} → ${formatPayment(p, "accounting")} — ${p.employee}`}
+                        />
+                      ))}
+                      {selectedInvoice.status === "Paid" && (
+                        <TimelineEntry
+                          icon={<CheckCircle className="size-3 text-green-600" />}
+                          label={t("status.Paid")}
+                          date={selectedInvoice.date}
+                          detail={t("fin.paid")}
+                          color="text-green-600"
+                        />
+                      )}
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="payments" className="mt-3">
+                  {invoicePayments.length > 0 ? (
+                    <div className="rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/50">
+                            <TableHead className="h-7 text-[10px]">{t("common.date")}</TableHead>
+                            <TableHead className="h-7 text-[10px]">{t("fin.amount")}</TableHead>
+                            <TableHead className="h-7 text-[10px]">{t("fin.paymentMethod")}</TableHead>
+                            <TableHead className="h-7 text-[10px]">{t("common.name")}</TableHead>
+                            <TableHead className="h-7 text-[10px]">{t("common.notes")}</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {invoicePayments.map((p) => (
+                            <TableRow key={p.id}>
+                              <TableCell className="py-1 text-[10px]">{formatDateShort(p.date)}</TableCell>
+                              <TableCell className="py-1 text-[10px] font-medium tabular-nums">
+                                <div>{formatPayment(p, "original")}</div>
+                                {p.currency !== p.accountingCurrency && (
+                                  <div className="text-[9px] font-normal text-muted-foreground">
+                                    ≈ {formatPayment(p, "accounting")} · rate {p.exchangeRate} · {p.exchangeRateDate ? formatDateShort(p.exchangeRateDate) : "—"}
+                                  </div>
+                                )}
+                              </TableCell>
+                              <TableCell className="py-1 text-[10px]">{t(paymentMethodKey[p.method])}</TableCell>
+                              <TableCell className="py-1 text-[10px]">{p.employee}</TableCell>
+                              <TableCell className="py-1 text-[10px] text-muted-foreground">{p.notes}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">{t("fin.noPayments")}</p>
+                  )}
+                </TabsContent>
+              </Tabs>
+
+              {/* Action Buttons (only when invoice is active) */}
+              {selectedInvoice.balance > 0 && !selectedInvoice.voided && (
+                <div className="flex items-center justify-end gap-2 pt-2 border-t mt-3">
+                  <Button size="sm" className="h-8 gap-1.5" onClick={() => setPayOpen(true)}>
+                    <DollarSign className="size-3.5" />
+                    {t("fin.registerPayment")}
+                  </Button>
+
+                  {currentUser.permissions.canExtendDueDates && (
+                    <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setExtendOpen(true)}>
+                      <Calendar className="size-3.5" />
+                      {t("fin.extendDueDate")}
+                    </Button>
+                  )}
+
+                  {currentUser.permissions.canVoidInvoices && (
+                    <Button size="sm" variant="outline" className="h-8 gap-1.5 text-red-500" onClick={() => setVoidConfirmOpen(true)}>
+                      <X className="size-3.5" />
+                      {t("fin.voidInvoice")}
+                    </Button>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Register Payment Dialog */}
       <Dialog open={payOpen} onOpenChange={setPayOpen}>
         <DialogContent>
           <DialogHeader>
@@ -534,78 +772,340 @@ export function FinancialsPage() {
   )
 }
 
+
+
 function FinancialGrid({
-  invoices, selectedInvoiceId, onSelect, search, setSearch, totals, t, fmtAmount, formatAccountingAggregate,
+  invoices,
+  selectedInvoiceId,
+  onSelect,
+  search,
+  setSearch,
+  totals,
+  t,
+  fmtAmount,
+  formatAccountingAggregate,
 }: {
-  invoices: Invoice[]; selectedInvoiceId: string | null; onSelect: (id: string) => void
-  search: string; setSearch: (v: string) => void
+  invoices: Invoice[]
+  selectedInvoiceId: string | null
+  onSelect: (id: string) => void
+  search: string
+  setSearch: (v: string) => void
   totals: { grandBalance: number; overdueTotal: number; count: number }
   t: (key: string, params?: Record<string, string | number>) => string
   fmtAmount: (invoice: Invoice, field: InvoiceMoneyField) => string
   formatAccountingAggregate: (accountingAmount: number) => string
 }) {
+  const [sorting, setSorting] = useState<SortingState>([])
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
+  const [denseMode, setDenseMode] = useState(false)
+
+  // تعريف الأعمدة مع دعم الفرز والعرض الاختياري
+  const columns = useMemo<ColumnDef<Invoice>[]>(
+    () => [
+      {
+        accessorKey: "invoiceNumber",
+        header: t("fin.invoiceNumber"),
+        cell: ({ row }) => (
+          <span className="font-mono text-[10px]">{row.original.invoiceNumber}</span>
+        ),
+        size: 120,
+        enableSorting: true,
+      },
+      {
+        accessorKey: "customerName",
+        header: t("common.name"),
+        cell: ({ row }) => (
+          <span className={cn("text-[10px]", row.original.status === "Overdue" && "font-medium text-status-sold")}>            {row.original.customerName}
+          </span>
+        ),
+        size: 150,
+        enableSorting: true,
+      },
+      {
+        accessorKey: "date",
+        header: t("common.date"),
+        cell: ({ row }) => (
+          <span className="text-[10px] text-muted-foreground">{formatDateShort(row.original.date)}</span>
+        ),
+        size: 100,
+        enableSorting: true,
+      },
+      {
+        accessorKey: "dueDate",
+        header: t("fin.newDueDate"),
+        cell: ({ row }) => (
+          <span className="text-[10px] text-muted-foreground">{formatDateShort(row.original.dueDate)}</span>
+        ),
+        size: 100,
+        enableSorting: true,
+      },
+      {
+        accessorKey: "totalNegotiated",
+        header: t("fin.invoiceType"),
+        cell: ({ row }) => (
+          <span className="text-[10px] tabular-nums">{fmtAmount(row.original, "totalNegotiated")}</span>
+        ),
+        size: 120,
+        enableSorting: false,
+      },
+      {
+        accessorKey: "totalPaid",
+        header: t("fin.paid"),
+        cell: ({ row }) => (
+          <span className="text-[10px] tabular-nums text-green-600">{fmtAmount(row.original, "totalPaid")}</span>
+        ),
+        size: 120,
+        enableSorting: false,
+      },
+      {
+        accessorKey: "balance",
+        header: t("fin.balance"),
+        cell: ({ row }) => (
+          <span className={cn("text-[10px] font-medium tabular-nums", row.original.balance > 0 && "text-status-sold")}>
+            {fmtAmount(row.original, "balance")}
+          </span>
+        ),
+        size: 120,
+        enableSorting: false,
+      },
+      {
+        accessorKey: "status",
+        header: t("common.status"),
+        cell: ({ row }) => {
+          const status = row.original.status
+          return (
+            <Badge variant="outline" className={cn("text-[9px]", invoiceStatusClass(status))}>
+              {t(`status.${status}`)}
+            </Badge>
+          )
+        },
+        size: 100,
+        enableSorting: true,
+      },
+    ],
+    [t, fmtAmount]
+  )
+
+  const table = useReactTable({
+    data: invoices,
+    columns,
+    state: {
+      sorting,
+      columnVisibility,
+    },
+    onSortingChange: setSorting,
+    onColumnVisibilityChange: setColumnVisibility,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    initialState: {
+      pagination: { pageSize: 15 },
+    },
+  })
+
+  const allColumnKeys = table.getAllLeafColumns().map(col => col.id)
+
   const grandBalanceDisplay = formatAccountingAggregate(totals.grandBalance)
   const overdueDisplay = formatAccountingAggregate(totals.overdueTotal)
+
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 min-w-[180px]">
-          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder={t("fin.searchInvoices")} value={search} onChange={(e) => setSearch(e.target.value)} className="h-8 ps-8 text-xs" />
-        </div>
-        <Badge variant="secondary" className="text-[10px]">{totals.count} — {grandBalanceDisplay}</Badge>
-        {totals.overdueTotal > 0 && <Badge variant="outline" className="text-[10px] text-status-sold">{overdueDisplay} {t("fin.overdue")}</Badge>}
+    <div className="flex flex-col gap-4">
+      {/* بطاقات إحصائية */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatBox label={t("fin.totalInvoices")} value={invoices.length.toString()} />
+        <StatBox label={t("fin.outstandingBalance")} value={grandBalanceDisplay} color={totals.grandBalance > 0 ? "text-red-500" : "text-green-600"} />
+        <StatBox label={t("fin.overdueBalance")} value={overdueDisplay} color="text-red-500" />
       </div>
 
-      <div className="rounded-lg border">
-        <div className="max-h-[400px] overflow-y-auto scrollbar-thin">
-          <Table>
-            <TableHeader className="sticky top-0">
-              <TableRow className="bg-muted/50">
-                <TableHead className="h-8 text-[10px]">{t("fin.invoiceNumber")}</TableHead>
-                <TableHead className="h-8 text-[10px]">{t("common.name")}</TableHead>
-                <TableHead className="h-8 text-[10px]">{t("common.date")}</TableHead>
-                <TableHead className="h-8 text-[10px]">{t("fin.newDueDate")}</TableHead>
-                <TableHead className="h-8 text-[10px] text-end">{t("fin.invoiceType")}</TableHead>
-                <TableHead className="h-8 text-[10px] text-end">{t("fin.paid")}</TableHead>
-                <TableHead className="h-8 text-[10px] text-end">{t("fin.balance")}</TableHead>
-                <TableHead className="h-8 text-[10px]">{t("fin.status")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {invoices.map((i) => {
-                const isOverdue = i.status === "Overdue"
-                return (
-                  <TableRow
-                    key={i.id}
-                    className={cn(
-                      "cursor-pointer",
-                      selectedInvoiceId === i.id && "bg-muted",
-                      isOverdue && "bg-status-sold/5",
-                    )}
-                    onClick={() => onSelect(i.id)}
+
+      {/* شريط البحث + الفلاتر المحفوظة */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder={t("fin.searchInvoices")}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
+        <SavedFiltersBar
+          entityType="financials"
+          currentFilterState={{}} // سنضبطها لاحقًا
+          onLoadFilter={() => { }}
+        />
+      </div>
+
+      {/* شريط الفلاتر (مثال – يمكن تخصيصه) */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* هنا يمكن إضافة أزرار فلاتر سريعة مثل الموجودة في الأعلى، وفلتر النوع، التاريخ، إلخ. */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-[11px] gap-1"
+          onClick={() => {/* فتح نافذة المزيد من الفلاتر */ }}
+        >
+          <SlidersHorizontal className="size-3" />
+          {t("inv.moreFilters")}
+        </Button>
+      </div>
+
+      {/* أدوات الجدول (إظهار الأعمدة + الكثافة) */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="xs" className="h-7 gap-1 text-[11px]">
+                <Columns className="size-3" /> {t("inv.columns")}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {allColumnKeys.map((key) => (
+                <DropdownMenuCheckboxItem
+                  key={key}
+                  checked={table.getColumn(key)?.getIsVisible() ?? true}
+                  onCheckedChange={(value) => table.getColumn(key)?.toggleVisibility(!!value)}
+                >
+                  {key === "invoiceNumber" ? t("fin.invoiceNumber") :
+                    key === "customerName" ? t("common.name") :
+                      key === "date" ? t("common.date") :
+                        key === "dueDate" ? t("fin.newDueDate") :
+                          key === "totalNegotiated" ? t("fin.invoiceType") :
+                            key === "totalPaid" ? t("fin.paid") :
+                              key === "balance" ? t("fin.balance") :
+                                key === "status" ? t("common.status") : key}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant="ghost"
+            size="xs"
+            className="h-7 text-[11px]"
+            onClick={() => setDenseMode(!denseMode)}
+          >
+            {denseMode ? <List className="size-3 mr-1" /> : <Columns className="size-3 mr-1" />}
+            {denseMode ? t("inv.comfortable") : t("inv.dense")}
+          </Button>
+        </div>
+        <span className="text-[10px] text-muted-foreground">
+          {t("inv.showingCount", {
+            shown: table.getRowModel().rows.length,
+            total: invoices.length,
+          })}
+        </span>
+      </div>
+
+      {/* الجدول */}
+      <div className="overflow-auto rounded-lg border">
+        <Table>
+          <TableHeader>
+            {table.getHeaderGroups().map((hg) => (
+              <TableRow key={hg.id} className="bg-muted/50">
+                {hg.headers.map((header) => (
+                  <TableHead
+                    key={header.id}
+                    className="h-8 px-2 relative"
+                    style={{ width: header.getSize() }}
                   >
-                    <TableCell className="py-1.5 font-mono text-[10px]">{i.invoiceNumber}</TableCell>
-                    <TableCell className={cn("py-1.5 text-[10px]", isOverdue && "text-status-sold font-medium")}>{i.customerName}</TableCell>
-                    <TableCell className="py-1.5 text-[10px] text-muted-foreground">{formatDateShort(i.date)}</TableCell>
-                    <TableCell className="py-1.5 text-[10px] text-muted-foreground">{formatDateShort(i.dueDate)}</TableCell>
-                    <TableCell className="py-1.5 text-end text-[10px] tabular-nums">{fmtAmount(i, "totalNegotiated")}</TableCell>
-                    <TableCell className="py-1.5 text-end text-[10px] tabular-nums">{fmtAmount(i, "totalPaid")}</TableCell>
-                    <TableCell className={cn("py-1.5 text-end text-[10px] font-medium tabular-nums", isOverdue && "text-status-sold")}>{fmtAmount(i, "balance")}</TableCell>
-                    <TableCell className="py-1.5">
-                      <Badge variant="outline" className={cn("text-[9px]", invoiceStatusClass(i.status), isOverdue && "text-status-sold")}>{t(`status.${i.status}`)}</Badge>
+                    {header.isPlaceholder ? null : (
+                      <div className="flex items-center gap-1">
+                        <button
+                          className="inline-flex items-center gap-1 text-[10px] font-medium"
+                          onClick={header.column.getToggleSortingHandler()}
+                          disabled={!header.column.getCanSort()}
+                        >
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          {header.column.getCanSort() && (
+                            <ArrowUpDown className="size-2.5 opacity-50" />
+                          )}
+                        </button>
+                        {header.column.getCanResize() && (
+                          <div
+                            onMouseDown={header.getResizeHandler()}
+                            onTouchStart={header.getResizeHandler()}
+                            className="absolute right-0 top-0 h-full w-1 cursor-col-resize select-none bg-border opacity-0 hover:opacity-100"
+                          />
+                        )}
+                      </div>
+                    )}
+                  </TableHead>
+                ))}
+              </TableRow>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {table.getRowModel().rows.length > 0 ? (
+              table.getRowModel().rows.map((row) => (
+                <TableRow
+                  key={row.id}
+                  className={cn(
+                    "cursor-pointer border-b hover:bg-accent/50",
+                    selectedInvoiceId === row.original.id && "bg-muted",
+                    row.original.status === "Overdue" && "bg-status-sold/5", // خلفية خفيفة جداً
+                  )}
+                  onClick={() => onSelect(row.original.id)}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell
+                      key={cell.id}
+                      className={denseMode ? "py-1" : "py-2"}
+                      style={{ width: cell.column.getSize() }}
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
-                  </TableRow>
-                )
-              })}
-              {invoices.length === 0 && <TableRow><TableCell colSpan={8} className="h-16 text-center text-xs text-muted-foreground">{t("fin.noInvoices")}</TableCell></TableRow>}
-            </TableBody>
-          </Table>
+                  ))}
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={allColumnKeys.length} className="h-24 text-center text-muted-foreground">
+                  <div className="flex flex-col items-center gap-1">
+                    <Receipt className="size-8" />
+                    <span className="text-xs">{t("fin.noInvoices")}</span>
+                  </div>
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between px-1">
+        <span className="text-[10px] text-muted-foreground">
+          {t("inv.showingCount", {
+            shown: table.getRowModel().rows.length,
+            total: invoices.length,
+          })}
+        </span>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+          >
+            <ChevronLeft className="size-3" /> {t("common.prev")}
+          </Button>
+          <span className="text-[10px] text-muted-foreground">
+            {table.getState().pagination.pageIndex + 1} / {table.getPageCount() || 1}
+          </span>
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+          >
+            {t("common.next")} <ChevronRight className="size-3" />
+          </Button>
         </div>
       </div>
     </div>
   )
 }
+
 
 function StatBox({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
@@ -627,4 +1127,10 @@ function TimelineEntry({ icon, label, date, detail, color }: { icon: React.React
       <span className="text-[10px] tabular-nums">{detail}</span>
     </div>
   )
+}
+
+function LifecycleIcon({ status }: { status: "Paid" | "Overdue" | "Pending" }) {
+  if (status === "Paid") return <CheckCircle className="size-3.5 text-green-600 dark:text-green-400" />
+  if (status === "Overdue") return <AlertCircle className="size-3.5 text-status-sold" />
+  return <Clock className="size-3.5 text-amber-500 dark:text-amber-400" />
 }

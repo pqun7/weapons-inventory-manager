@@ -15,6 +15,7 @@ import { useI18n } from "@/lib/i18n"
 import { formatDateTime } from "@/lib/format"
 import type { NotificationType } from "@/lib/types"
 import { toast } from "sonner"
+import { manifestClient } from "@/lib/manifest-client"
 
 const NOTIF_ICONS: Record<NotificationType, typeof Bell> = {
   OverdueDebt: AlertTriangle,
@@ -60,9 +61,8 @@ export function NotificationCenter() {
   const [arrivalBusy, setArrivalBusy] = useState<string | null>(null)
 
   const confirmArrival = async (shipmentId: string, importId: string) => {
-    if (!window.electronAPI?.manifest) return
     setArrivalBusy(shipmentId)
-    const result = await window.electronAPI.manifest.confirmArrival(importId, { id: currentUser.id, name: currentUser.name })
+    const result = await manifestClient.confirmArrival(importId, { id: currentUser.id, name: currentUser.name })
     if (result.success) { await refreshFromDb(); toast.success("Shipment received into inventory") }
     else toast.error(result.error ?? "Unable to confirm shipment arrival")
     setArrivalBusy(null)

@@ -2,6 +2,9 @@ import { useEffect, useState } from "react"
 import { useStore } from "@/lib/store"
 import { useAppBootstrap } from "@/hooks/use-app-bootstrap"
 import type { AppProps } from "./App.tsx"
+import { useSupabaseAuth } from "@/hooks/use-supabase-auth"
+import { AuthScreen } from "@/components/auth-screen"
+import { useSupabaseSync } from "@/hooks/use-supabase-sync"
 
 type Language = "en" | "ar"
 
@@ -35,7 +38,9 @@ async function loadAppModules(): Promise<LoadedModules> {
 
 export function AppRoot() {
     const [modules, setModules] = useState<LoadedModules | null>(null)
-    const { ready, error } = useAppBootstrap()
+    const auth = useSupabaseAuth()
+    const { ready, error } = useAppBootstrap(!auth.loading && auth.session !== null)
+    useSupabaseSync(ready && auth.session !== null)
     const settings = useStore((state) => state.settings)
     const userPreferences = useStore((state) => state.userPreferences)
     const updateSettings = useStore((state) => state.updateSettings)
@@ -59,8 +64,19 @@ export function AppRoot() {
         }
     }, [])
 
-    if (!modules) {
-        return null
+    if (!modules || auth.loading) {
+        return (
+            <div className="flex h-screen items-center justify-center bg-background text-foreground">
+                <div className="space-y-2 text-center">
+                    <div className="mx-auto size-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+                    <p className="text-sm font-medium">Loading application...</p>
+                </div>
+            </div>
+        )
+    }
+
+    if (!auth.session) {
+        return <AuthScreen error={auth.error} onSignIn={auth.signIn} />
     }
 
     if (error) {
@@ -69,6 +85,17 @@ export function AppRoot() {
                 <div className="text-center space-y-2">
                     <p className="text-destructive font-medium">Database initialization failed</p>
                     <p className="text-muted-foreground text-sm">{error}</p>
+                </div>
+            </div>
+        )
+    }
+
+    if (!ready) {
+        return (
+            <div className="flex h-screen items-center justify-center bg-background text-foreground">
+                <div className="space-y-2 text-center">
+                    <div className="mx-auto size-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+                    <p className="text-sm font-medium">Loading inventory...</p>
                 </div>
             </div>
         )

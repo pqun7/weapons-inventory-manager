@@ -139,7 +139,7 @@
   --status-sold: oklch(0.5 0.2 25);
   --status-sold-fg: oklch(0.985 0 0);
   --status-reserved: oklch(0.7 0.15 85);
-  --status-reserved-fg: oklch(0.28 0.08 70);
+  --status-reserved-fg: oklch(0.92 0.06 70);
   --status-damaged: oklch(0.4 0 0);
   --status-damaged-fg: oklch(0.985 0 0);
   --status-returned: oklch(0.45 0.15 240);

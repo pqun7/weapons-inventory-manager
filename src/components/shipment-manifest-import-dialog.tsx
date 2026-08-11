@@ -72,6 +72,7 @@ import {
 } from "@/lib/shipment-manifest"
 import { useStore } from "@/lib/store"
 import { useCurrency } from "@/lib/currency-context"
+import { manifestClient } from "@/lib/manifest-client"
 
 interface Props {
   open: boolean
@@ -381,8 +382,7 @@ export function ShipmentManifestImportDialog({
   }
 
   const loadRecent = async () => {
-    const api = window.electronAPI?.manifest
-    if (!api) return
+    const api = manifestClient
 
     setLoadingRecent(true)
 
@@ -408,11 +408,11 @@ export function ShipmentManifestImportDialog({
   }
 
   useEffect(() => {
-    if (!open || !window.electronAPI?.manifest) return
+    if (!open) return
 
     void loadRecent()
 
-    return window.electronAPI.manifest.onProgress(setProgress)
+    return manifestClient.onProgress(setProgress)
 
     // actor is intentionally resolved when the dialog opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -458,8 +458,7 @@ export function ShipmentManifestImportDialog({
   }
 
   const openSavedReview = async (importId: string) => {
-    const api = window.electronAPI?.manifest
-    if (!api) return
+    const api = manifestClient
 
     setSaving(true)
 
@@ -483,14 +482,13 @@ export function ShipmentManifestImportDialog({
   }
 
   useEffect(() => {
-    const api = window.electronAPI?.manifest
+    const api = manifestClient
 
     if (
       !open ||
       !review ||
       review.status !== "pending_review" ||
-      !detailsLoaded.current ||
-      !api
+      !detailsLoaded.current
     ) {
       return
     }
@@ -559,14 +557,7 @@ export function ShipmentManifestImportDialog({
 
     if (!file) return
 
-    const api = window.electronAPI?.manifest
-
-    if (!api) {
-      toast.error(
-        "Manifest import is available in the desktop application only",
-      )
-      return
-    }
+    const api = manifestClient
 
     setReview(null)
     setProgress({
@@ -685,9 +676,9 @@ export function ShipmentManifestImportDialog({
     item: ManifestReviewItem,
     patch: ManifestItemPatch,
   ) => {
-    const api = window.electronAPI?.manifest
+    const api = manifestClient
 
-    if (!review || !api) return
+    if (!review) return
 
     const result = await api.updateItem(
       review.id,
@@ -741,9 +732,9 @@ export function ShipmentManifestImportDialog({
   }
 
   const applyBulk = async () => {
-    const api = window.electronAPI?.manifest
+    const api = manifestClient
 
-    if (!review || !api || selected.size === 0) return
+    if (!review || selected.size === 0) return
 
     const patch: ManifestItemPatch = {}
 
@@ -836,10 +827,7 @@ export function ShipmentManifestImportDialog({
   }
 
   const deleteReview = async () => {
-    if (
-      !deleteTarget ||
-      !window.electronAPI?.manifest
-    ) {
+    if (!deleteTarget) {
       return
     }
 
@@ -847,7 +835,7 @@ export function ShipmentManifestImportDialog({
 
     try {
       const result =
-        await window.electronAPI.manifest.deleteReview(
+        await manifestClient.deleteReview(
           deleteTarget.id,
           actor,
         )
@@ -934,10 +922,7 @@ export function ShipmentManifestImportDialog({
       ) ?? 0
 
   const confirm = async () => {
-    if (
-      !review ||
-      !window.electronAPI?.manifest
-    ) {
+    if (!review) {
       return
     }
 
@@ -945,7 +930,7 @@ export function ShipmentManifestImportDialog({
 
     try {
       const result =
-        await window.electronAPI.manifest.confirm(
+        await manifestClient.confirm(
           {
             importId: review.id,
             shipmentNumber,

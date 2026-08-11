@@ -42,6 +42,7 @@ export interface AllData {
   notifications: AppNotification[]
   users: User[]
   settings: SystemSettings
+  savedFilters: SavedFilter[]
 }
 
 export interface MasterDataAll {
@@ -60,7 +61,7 @@ export interface CurrencyRow {
   name: string
   symbol: string
   decimal_precision: number
-  is_active: number
+  is_active: number | boolean
   last_known_rate: string | number
   last_rate_updated_at: string | null
 }
@@ -85,15 +86,7 @@ export interface AuditLogEntry {
   source?: "manual" | "api" | "cache" | "default"
 }
 
-export interface DatabaseBackupInfo {
-  fileName: string
-  createdAt: string
-  sizeBytes: number
-}
-
-// Row shapes as they come back from SQLite (snake_case, integers for booleans)
-
-// Row shapes as they come back from SQLite (snake_case, integers for booleans)
+// Explicit PostgreSQL row shapes returned by the typed Supabase queries.
 interface WeaponRow {
   id: string
   serial_number: string
@@ -109,19 +102,19 @@ interface WeaponRow {
   date_added: string
   batch_id: string | null
   notes: string
-  images: string
-  movement_history: string
+  images: unknown
+  movement_history: unknown
   condition: string
   status: string
   purchase_price: number
   retail_price: number
   wholesale_price: number
   actual_final_price: number | null
-  purchase_price_valuation: string | null
-  retail_price_valuation: string | null
-  wholesale_price_valuation: string | null
-  actual_final_price_valuation: string | null
-  sale_price_valuation: string | null
+  purchase_price_valuation: unknown
+  retail_price_valuation: unknown
+  wholesale_price_valuation: unknown
+  actual_final_price_valuation: unknown
+  sale_price_valuation: unknown
   deleted_at: string | null
   // aliased labels from the LEFT JOIN (still snake_case as they appear in the query)
   weapon_type: string
@@ -141,10 +134,10 @@ interface ShipmentRow {
   shipment_date: string
   expected_arrival_date: string
   total_expected_items: number
-  attachments: string
+  attachments: unknown
   notes: string
   status: string
-  timeline: string
+  timeline: unknown
   purchase_order_number: string | null
   invoice_number: string | null
   shipping_carrier: string | null
@@ -152,9 +145,9 @@ interface ShipmentRow {
   currency: string | null
   purchase_date: string | null
   actual_arrival_date: string | null
-  line_items: string
-  documents: string
-  total_cost_valuation: string | null
+  line_items: unknown
+  documents: unknown
+  total_cost_valuation: unknown
   workflow_status?: Shipment["workflowStatus"] | null
   import_id?: string | null
   arrival_note?: string | null
@@ -176,17 +169,17 @@ interface InvoiceRow {
   total_paid: number
   balance: number
   status: string
-  weapon_ids: string
-  line_items: string
+  weapon_ids: unknown
+  line_items: unknown
   sale_mode: string
   employee_id: string
   employee_name: string
-  attachments: string
+  attachments: unknown
   shipment_id: string | null
   notes: string
-  voided: number
+  voided: number | boolean
   tax_amount: number
-  total_valuation: string | null
+  total_valuation: unknown
   currency: string | null
   accounting_currency: string | null
   exchange_rate: string | number | null
@@ -225,7 +218,7 @@ interface AccessoryRow {
   safety_threshold: number
   price: number
   price_currency: string | null
-  price_valuation: string | null
+  price_valuation: unknown
   date_added: string
   warehouse: string
   shelf: string
@@ -234,6 +227,7 @@ interface AccessoryRow {
 
 interface AmmoRow {
   id: string
+  name?: string
   caliber: string
   package_type: string
   units_per_package: number
@@ -242,7 +236,7 @@ interface AmmoRow {
   safety_threshold: number
   price: number
   price_currency: string | null
-  price_valuation: string | null
+  price_valuation: unknown
   date_added: string
   warehouse: string
   shelf: string
@@ -255,7 +249,7 @@ interface CustomerRow {
   phone: string
   email: string
   address: string
-  is_wholesale_buyer: number
+  is_wholesale_buyer: number | boolean
   wholesale_discount_percent: number
   date_added: string
 }
@@ -277,7 +271,7 @@ interface AuditRow {
   user_id: string
   action_type: string
   description: string
-  metadata: string
+  metadata: unknown
 }
 
 interface NotificationRow {
@@ -286,7 +280,7 @@ interface NotificationRow {
   title: string
   message: string
   date: string
-  is_read: number
+  is_read: number | boolean
   entity_id: string | null
 }
 
@@ -295,9 +289,9 @@ interface UserRow {
   username: string
   name: string
   role: string
-  permissions: string
-  password_set: number
-  password_hash: string
+  permissions: unknown
+  password_set: number | boolean
+  password_hash?: string
 }
 
 interface SettingsRow {
@@ -306,17 +300,17 @@ interface SettingsRow {
   currency_code: string
   accounting_currency_code: string
   rate_base_currency_code: string
-  supported_currencies: string
-  currency_frequency: string
+  supported_currencies: unknown
+  currency_frequency: unknown
   tax_percent: number
   invoice_header: string
   invoice_footer: string
   store_logo: string
   thermal_printer_width: number
   label_format: string
-  hourly_snapshot: number
-  daily_closing_prompt: number
-  weekly_verification: number
+  hourly_snapshot: number | boolean
+  daily_closing_prompt: number | boolean
+  weekly_verification: number | boolean
   min_profit_margin_percent: number
   theme: string | null
   preferred_display_currency: string | null
@@ -343,11 +337,12 @@ interface SavedFilterRow {
   id: string
   name: string
   entity_type: string
-  filter_state: string
+  filter_state: unknown
 }
 
-function parseJSON<T>(value: string | null, fallback: T): T {
-  if (!value) return fallback
+function parseJSON<T>(value: unknown, fallback: T): T {
+  if (value == null || value === "") return fallback
+  if (typeof value !== "string") return value as T
   try {
     return JSON.parse(value) as T
   } catch {
@@ -355,7 +350,7 @@ function parseJSON<T>(value: string | null, fallback: T): T {
   }
 }
 
-function parseValuation(value: string | null): MoneyValuation | undefined {
+function parseValuation(value: unknown): MoneyValuation | undefined {
   if (!value) return undefined
   const parsed = parseJSON<Partial<MoneyValuation>>(value, {})
   if (!parsed.originalCurrency || parsed.originalAmount == null || parsed.exchangeRate == null || !parsed.exchangeRateDate) {
@@ -454,13 +449,13 @@ function weaponToRow(w: Weapon): Record<string, unknown> {
     date_added: w.dateAdded,
     batch_id: w.batchId ?? null,
     notes: w.notes,
-    images: JSON.stringify(w.images),
-    movement_history: JSON.stringify(w.movementHistory),
-    purchase_price_valuation: w.purchasePriceValuation ? JSON.stringify(w.purchasePriceValuation) : null,
-    retail_price_valuation: w.retailPriceValuation ? JSON.stringify(w.retailPriceValuation) : null,
-    wholesale_price_valuation: w.wholesalePriceValuation ? JSON.stringify(w.wholesalePriceValuation) : null,
-    actual_final_price_valuation: w.actualFinalPriceValuation ? JSON.stringify(w.actualFinalPriceValuation) : null,
-    sale_price_valuation: w.salePriceValuation ? JSON.stringify(w.salePriceValuation) : null,
+    images: w.images,
+    movement_history: w.movementHistory,
+    purchase_price_valuation: w.purchasePriceValuation ?? null,
+    retail_price_valuation: w.retailPriceValuation ?? null,
+    wholesale_price_valuation: w.wholesalePriceValuation ?? null,
+    actual_final_price_valuation: w.actualFinalPriceValuation ?? null,
+    sale_price_valuation: w.salePriceValuation ?? null,
     deleted_at: null,
   }
 }
@@ -503,10 +498,10 @@ function shipmentToRow(s: Shipment): Record<string, unknown> {
     shipment_date: s.shipmentDate,
     expected_arrival_date: s.expectedArrivalDate,
     total_expected_items: s.totalExpectedItems,
-    attachments: JSON.stringify(s.attachments),
+    attachments: s.attachments,
     notes: s.notes,
     status: s.status,
-    timeline: JSON.stringify(s.timeline),
+    timeline: s.timeline,
     purchase_order_number: s.purchaseOrderNumber ?? null,
     invoice_number: s.invoiceNumber ?? null,
     shipping_carrier: s.shippingCarrier ?? null,
@@ -514,9 +509,9 @@ function shipmentToRow(s: Shipment): Record<string, unknown> {
     currency: s.currency ?? null,
     purchase_date: s.purchaseDate ?? null,
     actual_arrival_date: s.actualArrivalDate ?? null,
-    line_items: JSON.stringify(s.lineItems ?? []),
-    documents: JSON.stringify(s.documents ?? []),
-    total_cost_valuation: s.totalCostValuation ? JSON.stringify(s.totalCostValuation) : null,
+    line_items: s.lineItems ?? [],
+    documents: s.documents ?? [],
+    total_cost_valuation: s.totalCostValuation ?? null,
   }
 }
 
@@ -543,7 +538,7 @@ function rowToInvoice(r: InvoiceRow): Invoice {
     attachments: parseJSON(r.attachments, []),
     shipmentId: r.shipment_id,
     notes: r.notes,
-    voided: r.voided === 1,
+    voided: r.voided === true || r.voided === 1,
     taxAmount: r.tax_amount,
     currency: r.currency ?? undefined,
     accountingCurrency: r.accounting_currency ?? undefined,
@@ -574,15 +569,15 @@ function invoiceToRow(inv: Invoice): Record<string, unknown> {
     total_paid: inv.totalPaid,
     balance: inv.balance,
     status: inv.status,
-    weapon_ids: JSON.stringify(inv.weaponIds),
-    line_items: JSON.stringify(inv.lineItems),
+    weapon_ids: inv.weaponIds,
+    line_items: inv.lineItems,
     sale_mode: inv.saleMode,
     employee_id: inv.employeeId,
     employee_name: inv.employeeName,
-    attachments: JSON.stringify(inv.attachments),
+    attachments: inv.attachments,
     shipment_id: inv.shipmentId,
     notes: inv.notes,
-    voided: inv.voided ? 1 : 0,
+    voided: inv.voided,
     tax_amount: inv.taxAmount,
     currency: inv.currency ?? null,
     accounting_currency: inv.accountingCurrency ?? null,
@@ -594,7 +589,7 @@ function invoiceToRow(inv: Invoice): Record<string, unknown> {
     total_paid_accounting: inv.totalPaidAccounting == null ? null : String(inv.totalPaidAccounting),
     balance_accounting: inv.balanceAccounting == null ? null : String(inv.balanceAccounting),
     tax_amount_accounting: inv.taxAmountAccounting == null ? null : String(inv.taxAmountAccounting),
-    total_valuation: inv.totalValuation ? JSON.stringify(inv.totalValuation) : null,
+    total_valuation: inv.totalValuation ?? null,
   }
 }
 
@@ -663,7 +658,7 @@ function accessoryToRow(a: Accessory): Record<string, unknown> {
     safety_threshold: a.safetyThreshold,
     price: a.price,
     price_currency: a.priceCurrency ?? null,
-    price_valuation: a.priceValuation ? JSON.stringify(a.priceValuation) : null,
+    price_valuation: a.priceValuation ?? null,
     date_added: a.dateAdded,
     warehouse: loc.warehouse,
     shelf: loc.shelf,
@@ -674,6 +669,7 @@ function accessoryToRow(a: Accessory): Record<string, unknown> {
 function rowToAmmo(r: AmmoRow): Ammunition {
   return {
     id: r.id,
+    name: r.name ?? r.caliber,
     caliber: r.caliber,
     packageType: r.package_type as PackageType,
     unitsPerPackage: r.units_per_package,
@@ -700,7 +696,7 @@ function ammoToRow(a: Ammunition): Record<string, unknown> {
     safety_threshold: a.safetyThreshold,
     price: a.price,
     price_currency: a.priceCurrency ?? null,
-    price_valuation: a.priceValuation ? JSON.stringify(a.priceValuation) : null,
+    price_valuation: a.priceValuation ?? null,
     date_added: a.dateAdded,
     warehouse: loc.warehouse,
     shelf: loc.shelf,
@@ -715,7 +711,7 @@ function rowToCustomer(r: CustomerRow): Customer {
     phone: r.phone,
     email: r.email,
     address: r.address,
-    isWholesaleBuyer: r.is_wholesale_buyer === 1,
+    isWholesaleBuyer: r.is_wholesale_buyer === true || r.is_wholesale_buyer === 1,
     wholesaleDiscountPercent: r.wholesale_discount_percent,
     dateAdded: r.date_added,
   }
@@ -728,7 +724,7 @@ function customerToRow(c: Customer): Record<string, unknown> {
     phone: c.phone,
     email: c.email,
     address: c.address,
-    is_wholesale_buyer: c.isWholesaleBuyer ? 1 : 0,
+    is_wholesale_buyer: c.isWholesaleBuyer,
     wholesale_discount_percent: c.wholesaleDiscountPercent,
     date_added: c.dateAdded,
   }
@@ -766,7 +762,7 @@ function rowToAuditLog(r: AuditRow): AuditLog {
     userId: r.user_id,
     actionType: r.action_type as AuditLog["actionType"],
     description: r.description,
-    metadata: r.metadata,
+    metadata: typeof r.metadata === "string" ? r.metadata : JSON.stringify(r.metadata ?? {}),
   }
 }
 
@@ -778,7 +774,7 @@ function auditLogToRow(a: AuditLog): Record<string, unknown> {
     user_id: a.userId,
     action_type: a.actionType,
     description: a.description,
-    metadata: a.metadata,
+    metadata: parseJSON(a.metadata, {}),
   }
 }
 
@@ -789,7 +785,7 @@ function rowToNotification(r: NotificationRow): AppNotification {
     title: r.title,
     message: r.message,
     date: r.date,
-    read: r.is_read === 1,
+    read: r.is_read === true || r.is_read === 1,
     entityId: r.entity_id,
   }
 }
@@ -801,7 +797,7 @@ function notificationToRow(n: AppNotification): Record<string, unknown> {
     title: n.title,
     message: n.message,
     date: n.date,
-    is_read: n.read ? 1 : 0,
+    is_read: n.read,
     entity_id: n.entityId,
   }
 }
@@ -813,8 +809,8 @@ function rowToUser(r: UserRow): User {
     name: r.name,
     role: r.role as User["role"],
     permissions: parseJSON<Partial<UserPermissions>>(r.permissions, {}) as UserPermissions,
-    passwordSet: r.password_set === 1,
-    passwordHash: r.password_hash,
+    passwordSet: r.password_set === true || r.password_set === 1,
+    passwordHash: "",
   }
 }
 
@@ -824,9 +820,8 @@ function userToRow(u: User): Record<string, unknown> {
     username: u.username,
     name: u.name,
     role: u.role,
-    permissions: JSON.stringify(u.permissions),
-    password_set: u.passwordSet ? 1 : 0,
-    password_hash: u.passwordHash,
+    permissions: u.permissions,
+    password_set: u.passwordSet,
   }
 }
 
@@ -844,9 +839,9 @@ function rowToSettings(r: SettingsRow): SystemSettings {
     storeLogo: r.store_logo,
     thermalPrinterWidth: r.thermal_printer_width,
     labelFormat: r.label_format,
-    hourlySnapshot: r.hourly_snapshot === 1,
-    dailyClosingPrompt: r.daily_closing_prompt === 1,
-    weeklyVerification: r.weekly_verification === 1,
+    hourlySnapshot: r.hourly_snapshot === true || r.hourly_snapshot === 1,
+    dailyClosingPrompt: r.daily_closing_prompt === true || r.daily_closing_prompt === 1,
+    weeklyVerification: r.weekly_verification === true || r.weekly_verification === 1,
     minProfitMarginPercent: r.min_profit_margin_percent,
     theme: (r.theme as SystemSettings["theme"]) ?? "system",
     preferredDisplayCurrency: r.preferred_display_currency ?? undefined,
@@ -868,17 +863,17 @@ function settingsToRow(s: SystemSettings): Record<string, unknown> {
     currency_code: s.currencyCode,
     accounting_currency_code: s.accountingCurrencyCode,
     rate_base_currency_code: s.rateBaseCurrencyCode,
-    supported_currencies: JSON.stringify(s.supportedCurrencies),
-    currency_frequency: JSON.stringify(s.currencyFrequency),
+    supported_currencies: s.supportedCurrencies,
+    currency_frequency: s.currencyFrequency,
     tax_percent: s.taxPercent,
     invoice_header: s.invoiceHeader,
     invoice_footer: s.invoiceFooter,
     store_logo: s.storeLogo,
     thermal_printer_width: s.thermalPrinterWidth,
     label_format: s.labelFormat,
-    hourly_snapshot: s.hourlySnapshot ? 1 : 0,
-    daily_closing_prompt: s.dailyClosingPrompt ? 1 : 0,
-    weekly_verification: s.weeklyVerification ? 1 : 0,
+    hourly_snapshot: s.hourlySnapshot,
+    daily_closing_prompt: s.dailyClosingPrompt,
+    weekly_verification: s.weeklyVerification,
     min_profit_margin_percent: s.minProfitMarginPercent,
     theme: s.theme ?? "system",
     preferred_display_currency: s.preferredDisplayCurrency ?? null,
@@ -927,7 +922,7 @@ function savedFilterToRow(f: SavedFilter): Record<string, unknown> {
     id: f.id,
     name: f.name,
     entity_type: f.entityType,
-    filter_state: JSON.stringify(f.filterState),
+    filter_state: f.filterState,
   }
 }
 

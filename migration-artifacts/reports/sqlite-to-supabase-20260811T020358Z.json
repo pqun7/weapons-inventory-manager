@@ -1,0 +1,370 @@
+{
+  "status": "verified",
+  "startedAt": "2026-08-11T02:04:34.334498+00:00",
+  "source": "C:\\Users\\Guest1\\Desktop\\weapon_store_rebuild\\migration-artifacts\\sqlite-backups\\armory_store_pre_supabase_2026-08-11.db",
+  "backup": "C:\\Users\\Guest1\\Desktop\\weapon_store_rebuild\\migration-artifacts\\sqlite-backups\\armory_store_pre_migration_20260811T020358Z.db",
+  "sourceSha256": "5edec00000a5f422cce90cea0dd1ac1a89e41b53882271c055a8c9e0a2312c73",
+  "sourceSchemaVersion": 8,
+  "sourceValidation": {
+    "integrity": "ok",
+    "foreignKeyErrors": [],
+    "duplicateSerials": []
+  },
+  "sourceCounts": {
+    "currencies": 6,
+    "weapon_types": 5,
+    "calibers": 19,
+    "brands": 9,
+    "warehouses": 3,
+    "weapon_subtypes": 16,
+    "models": 9,
+    "storage_locations": 5,
+    "subtype_calibers": 22,
+    "users": 1,
+    "suppliers": 8,
+    "customers": 19,
+    "exchange_rate_history": 2,
+    "exchange_rate_overrides": 6,
+    "exchange_rate_audit_log": 2,
+    "shipments": 12,
+    "weapons": 140,
+    "accessories": 6,
+    "ammunition": 7,
+    "accessory_weapon_compatibility": 0,
+    "ammunition_weapon_compatibility": 0,
+    "invoices": 65,
+    "payment_records": 55,
+    "system_settings": 1,
+    "saved_filters": 0,
+    "user_preferences": 1,
+    "audit_logs": 94,
+    "app_notifications": 26,
+    "financial_data_issues": 0,
+    "inventory_transactions": 0,
+    "shipment_items": 0,
+    "product_costs": 0,
+    "shipment_costs": 0,
+    "shipment_cost_scope_items": 0,
+    "shipment_cost_allocations": 0,
+    "inventory_cost_snapshots": 0,
+    "shipment_imports": 4,
+    "shipment_documents": 4,
+    "shipment_import_items": 158,
+    "shipment_validation_issues": 314,
+    "shipment_item_changes": 131,
+    "shipment_status_history": 10
+  },
+  "tables": {
+    "currencies": {
+      "source": 6,
+      "uploaded": 6
+    },
+    "weapon_types": {
+      "source": 5,
+      "uploaded": 5
+    },
+    "calibers": {
+      "source": 19,
+      "uploaded": 19
+    },
+    "brands": {
+      "source": 9,
+      "uploaded": 9
+    },
+    "warehouses": {
+      "source": 3,
+      "uploaded": 3
+    },
+    "weapon_subtypes": {
+      "source": 16,
+      "uploaded": 16
+    },
+    "models": {
+      "source": 9,
+      "uploaded": 9
+    },
+    "storage_locations": {
+      "source": 5,
+      "uploaded": 5
+    },
+    "subtype_calibers": {
+      "source": 22,
+      "uploaded": 22
+    },
+    "users": {
+      "source": 1,
+      "uploaded": 1
+    },
+    "suppliers": {
+      "source": 8,
+      "uploaded": 8
+    },
+    "customers": {
+      "source": 19,
+      "uploaded": 19
+    },
+    "exchange_rate_history": {
+      "source": 2,
+      "uploaded": 2
+    },
+    "exchange_rate_overrides": {
+      "source": 6,
+      "uploaded": 6
+    },
+    "exchange_rate_audit_log": {
+      "source": 2,
+      "uploaded": 2
+    },
+    "shipments": {
+      "source": 12,
+      "uploaded": 12
+    },
+    "weapons": {
+      "source": 140,
+      "uploaded": 140
+    },
+    "accessories": {
+      "source": 6,
+      "uploaded": 6
+    },
+    "ammunition": {
+      "source": 7,
+      "uploaded": 7
+    },
+    "accessory_weapon_compatibility": {
+      "source": 0,
+      "uploaded": 0
+    },
+    "ammunition_weapon_compatibility": {
+      "source": 0,
+      "uploaded": 0
+    },
+    "invoices": {
+      "source": 65,
+      "uploaded": 65
+    },
+    "payment_records": {
+      "source": 55,
+      "uploaded": 55
+    },
+    "system_settings": {
+      "source": 1,
+      "uploaded": 1
+    },
+    "saved_filters": {
+      "source": 0,
+      "uploaded": 0
+    },
+    "user_preferences": {
+      "source": 1,
+      "uploaded": 1
+    },
+    "audit_logs": {
+      "source": 94,
+      "uploaded": 94
+    },
+    "app_notifications": {
+      "source": 26,
+      "uploaded": 26
+    },
+    "financial_data_issues": {
+      "source": 0,
+      "uploaded": 0
+    },
+    "inventory_transactions": {
+      "source": 0,
+      "uploaded": 0
+    },
+    "shipment_items": {
+      "source": 0,
+      "uploaded": 0
+    },
+    "product_costs": {
+      "source": 0,
+      "uploaded": 0
+    },
+    "shipment_costs": {
+      "source": 0,
+      "uploaded": 0
+    },
+    "shipment_cost_scope_items": {
+      "source": 0,
+      "uploaded": 0
+    },
+    "shipment_cost_allocations": {
+      "source": 0,
+      "uploaded": 0
+    },
+    "inventory_cost_snapshots": {
+      "source": 0,
+      "uploaded": 0
+    },
+    "shipment_imports": {
+      "source": 4,
+      "uploaded": 4
+    },
+    "shipment_documents": {
+      "source": 4,
+      "uploaded": 4
+    },
+    "shipment_import_items": {
+      "source": 158,
+      "uploaded": 158
+    },
+    "shipment_validation_issues": {
+      "source": 314,
+      "uploaded": 314
+    },
+    "shipment_item_changes": {
+      "source": 131,
+      "uploaded": 131
+    },
+    "shipment_status_history": {
+      "source": 10,
+      "uploaded": 10
+    }
+  },
+  "targetCounts": {
+    "currencies": 6,
+    "weapon_types": 5,
+    "calibers": 19,
+    "brands": 9,
+    "warehouses": 3,
+    "weapon_subtypes": 16,
+    "models": 9,
+    "storage_locations": 5,
+    "subtype_calibers": 22,
+    "users": 1,
+    "suppliers": 8,
+    "customers": 19,
+    "exchange_rate_history": 2,
+    "exchange_rate_overrides": 6,
+    "exchange_rate_audit_log": 2,
+    "shipments": 12,
+    "weapons": 140,
+    "accessories": 6,
+    "ammunition": 7,
+    "accessory_weapon_compatibility": 0,
+    "ammunition_weapon_compatibility": 0,
+    "invoices": 65,
+    "payment_records": 55,
+    "system_settings": 1,
+    "saved_filters": 0,
+    "user_preferences": 1,
+    "audit_logs": 94,
+    "app_notifications": 26,
+    "financial_data_issues": 0,
+    "inventory_transactions": 0,
+    "shipment_items": 0,
+    "product_costs": 0,
+    "shipment_costs": 0,
+    "shipment_cost_scope_items": 0,
+    "shipment_cost_allocations": 0,
+    "inventory_cost_snapshots": 0,
+    "shipment_imports": 4,
+    "shipment_documents": 4,
+    "shipment_import_items": 158,
+    "shipment_validation_issues": 314,
+    "shipment_item_changes": 131,
+    "shipment_status_history": 10
+  },
+  "validation": {
+    "countDifferences": {},
+    "keyFailures": {},
+    "relationshipChecks": {
+      "shipments": {
+        "columns": [
+          "id",
+          "supplier_id",
+          "import_id"
+        ],
+        "missing": [],
+        "extra": [],
+        "ok": true
+      },
+      "weapons": {
+        "columns": [
+          "id",
+          "weapon_type_id",
+          "weapon_subtype_id",
+          "caliber_id",
+          "brand_id",
+          "model_id",
+          "storage_location_id",
+          "supplier_id",
+          "shipment_id"
+        ],
+        "missing": [],
+        "extra": [],
+        "ok": true
+      },
+      "invoices": {
+        "columns": [
+          "id",
+          "customer_id",
+          "supplier_id",
+          "shipment_id",
+          "employee_id"
+        ],
+        "missing": [],
+        "extra": [],
+        "ok": true
+      },
+      "payment_records": {
+        "columns": [
+          "id",
+          "invoice_id"
+        ],
+        "missing": [],
+        "extra": [],
+        "ok": true
+      },
+      "shipment_items": {
+        "columns": [
+          "id",
+          "shipment_id"
+        ],
+        "missing": [],
+        "extra": [],
+        "ok": true
+      },
+      "shipment_import_items": {
+        "columns": [
+          "id",
+          "import_id",
+          "weapon_type_id",
+          "weapon_subtype_id",
+          "brand_id",
+          "model_id",
+          "caliber_id",
+          "storage_location_id"
+        ],
+        "missing": [],
+        "extra": [],
+        "ok": true
+      }
+    },
+    "relationshipFailures": {},
+    "weaponStatusSource": {
+      "Available": 67,
+      "Reserved": 13,
+      "Returned": 19,
+      "Sold": 41
+    },
+    "weaponStatusTarget": {
+      "Sold": 41,
+      "Available": 67,
+      "Returned": 19,
+      "Reserved": 13
+    },
+    "weaponStatusMatches": true,
+    "serialNumbersUnique": true,
+    "coreCounts": {
+      "weapons": 140,
+      "invoices": 65,
+      "payment_records": 55,
+      "shipments": 12
+    }
+  },
+  "completedAt": "2026-08-11T02:05:44.782388+00:00"
+}

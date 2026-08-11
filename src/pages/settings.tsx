@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import {
   Settings as SettingsIcon,
   Database,
@@ -10,7 +10,6 @@ import {
   Crosshair,
   Coins,
   Layers,
-  Trash2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -50,17 +49,10 @@ import { useCurrency } from "@/lib/currency-context"
 import type { UserRole, UserPermissions } from "@/lib/types"
 import { CurrencyManagementPanel } from "@/components/currency-management-panel"
 import { MasterDataPanel } from "@/components/master-data-panel"
-import {
-  dbCreateBackup,
-  dbDeleteBackup,
-  dbListBackups,
-  dbRestoreBackup,
-  isDbReady,
-  type DatabaseBackupInfo,
-} from "@/lib/db"
+import { downloadSnapshot } from "@/lib/excel"
 import { toast } from "sonner"
 
-const ROLE_VALUES: UserRole[] = ["Admin", "Manager"]
+const ROLE_VALUES: UserRole[] = ["Admin", "Employee", "Manager", "Sales", "Inventory", "Accountant", "Read-Only"]
 
 export function SettingsPage() {
   const { t } = useI18n()
@@ -78,9 +70,7 @@ export function SettingsPage() {
   const [newUsername, setNewUsername] = useState("")
   const [newName, setNewName] = useState("")
   const [newRole, setNewRole] = useState<UserRole>("Manager")
-  const [backups, setBackups] = useState<DatabaseBackupInfo[]>([])
   const [backupLoading, setBackupLoading] = useState(false)
-  const [pendingBackup, setPendingBackup] = useState<{ fileName: string; action: "restore" | "delete" } | null>(null)
   const [companyName, setCompanyName] = useState(settings.companyName ?? "")
   const [companyAddress, setCompanyAddress] = useState(settings.companyAddress ?? "")
 
@@ -89,30 +79,16 @@ export function SettingsPage() {
     setCompanyAddress(settings.companyAddress ?? "")
   }, [settings.companyName, settings.companyAddress])
 
-  const loadBackups = async () => {
-    if (!isDbReady()) {
-      setBackups([])
-      return
-    }
-    try {
-      const items = await dbListBackups()
-      setBackups(items)
-    } catch (error) {
-      console.error("Failed to load database backups:", error)
-      toast.error(t("settings.backupListFailed"))
-    }
-  }
-
   useEffect(() => {
-    void refreshFromDb().then(() => loadBackups())
+    void refreshFromDb()
   }, [refreshFromDb])
 
   const roleLabel = (role: UserRole): string => {
-    const map: Record<UserRole, string> = {
+    const map: Partial<Record<UserRole, string>> = {
       Admin: t("role.Admin"),
       Manager: t("role.Manager"),
     }
-    return map[role]
+    return map[role] ?? role
   }
 
   const PERMISSION_LABELS: Record<keyof UserPermissions, string> = {
@@ -133,63 +109,16 @@ export function SettingsPage() {
   }
 
   const handleSnapshotDownload = () => {
-    if (!isDbReady()) {
-      toast.error(t("settings.backupListFailed"))
-      return
-    }
-
     setBackupLoading(true)
-    dbCreateBackup()
-      .then(async () => {
-        toast.success(t("settings.backupCreated"))
-        await loadBackups()
-      })
-      .catch((error) => {
-        console.error("Failed to create backup:", error)
-        toast.error(t("settings.backupCreateFailed"))
-      })
-      .finally(() => {
-        setBackupLoading(false)
-      })
-  }
-
-  const handleBackupAction = async () => {
-    if (!pendingBackup) return
-    if (!isDbReady()) {
-      toast.error(t("settings.backupListFailed"))
-      return
-    }
-
-    const { fileName, action } = pendingBackup
     try {
-      if (action === "restore") {
-        await dbRestoreBackup(fileName)
-        await refreshFromDb()
-        toast.success(t("settings.backupRestored"))
-      } else {
-        await dbDeleteBackup(fileName)
-        toast.success(t("settings.backupDeleted"))
-      }
-      await loadBackups()
-      setPendingBackup(null)
+      downloadSnapshot()
+      toast.success(t("settings.backupCreated"))
     } catch (error) {
-      console.error(`Failed to ${action} backup:`, error)
-      toast.error(action === "restore" ? t("settings.backupRestoreFailed") : t("settings.backupDeleteFailed"))
+      console.error("Failed to export portable snapshot:", error)
+      toast.error(t("settings.backupCreateFailed"))
+    } finally {
+      setBackupLoading(false)
     }
-  }
-
-  const formattedBackups = useMemo(() => backups, [backups])
-
-  const formatBytes = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`
-    const units = ["KB", "MB", "GB"]
-    let size = bytes / 1024
-    let unitIndex = 0
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024
-      unitIndex += 1
-    }
-    return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unitIndex]}`
   }
 
   return (
@@ -378,6 +307,8 @@ export function SettingsPage() {
                           {t("settings.username")}
                         </Label>
                         <Input
+                          type="email"
+                          autoComplete="email"
                           value={newUsername}
                           onChange={(e) => setNewUsername(e.target.value)}
                           className="h-8 text-xs"
@@ -425,6 +356,10 @@ export function SettingsPage() {
                         onClick={async () => {
                           if (!newUsername.trim() || !newName.trim()) {
                             toast.error(t("settings.usernameNameRequired"))
+                            return
+                          }
+                          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newUsername.trim())) {
+                            toast.error(t("settings.validEmailRequired"))
                             return
                           }
                           const defaultPerms: UserPermissions = {
@@ -613,7 +548,7 @@ export function SettingsPage() {
                 <div className="grid gap-1 text-[11px]">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">{t("settings.backupCount")}</span>
-                    <span className="tabular-nums">{formattedBackups.length}</span>
+                    <span>Supabase</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">{t("settings.weapons")}</span>
@@ -633,54 +568,9 @@ export function SettingsPage() {
                   <Database className="size-4" /> {t("settings.backupHistory")}
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="rounded-lg border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/50">
-                        <TableHead className="h-8 text-[10px]">{t("settings.fileName")}</TableHead>
-                        <TableHead className="h-8 text-[10px]">{t("common.date")}</TableHead>
-                        <TableHead className="h-8 text-[10px]">{t("settings.size")}</TableHead>
-                        <TableHead className="h-8 text-[10px]"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {formattedBackups.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={4} className="py-6 text-center text-xs text-muted-foreground">
-                            {t("settings.noBackups")}
-                          </TableCell>
-                        </TableRow>
-                      ) : formattedBackups.map((backup) => (
-                        <TableRow key={backup.fileName}>
-                          <TableCell className="py-1.5 text-[11px] font-mono">{backup.fileName}</TableCell>
-                          <TableCell className="py-1.5 text-[11px] text-muted-foreground">{new Date(backup.createdAt).toLocaleString()}</TableCell>
-                          <TableCell className="py-1.5 text-[11px] tabular-nums">{formatBytes(backup.sizeBytes)}</TableCell>
-                          <TableCell className="py-1.5">
-                            <div className="flex items-center gap-1">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-6 text-[10px]"
-                                onClick={() => setPendingBackup({ fileName: backup.fileName, action: "restore" })}
-                              >
-                                <RotateCcw className="size-3" /> {t("settings.restore")}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 text-[10px] text-destructive hover:text-destructive"
-                                onClick={() => setPendingBackup({ fileName: backup.fileName, action: "delete" })}
-                              >
-                                <Trash2 className="size-3" /> {t("common.delete")}
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+              <CardContent className="space-y-2 text-[11px] text-muted-foreground">
+                <p>{t("settings.noBackups")}</p>
+                <p>{t("settings.restoreBackupConfirm")}</p>
               </CardContent>
             </Card>
 
@@ -696,7 +586,7 @@ export function SettingsPage() {
                 </p>
                 <Dialog open={resetOpen} onOpenChange={setResetOpen}>
                   <DialogTrigger asChild>
-                    <Button size="sm" variant="destructive">
+                    <Button size="sm" variant="outline">
                       <RotateCcw className="size-3.5" />{" "}
                       {t("settings.resetToMock")}
                     </Button>
@@ -720,7 +610,7 @@ export function SettingsPage() {
                       </Button>
                       <Button
                         size="sm"
-                        variant="destructive"
+                        variant="default"
                         onClick={async () => {
                           await refreshFromDb()
                           setResetOpen(false)
@@ -735,33 +625,6 @@ export function SettingsPage() {
               </CardContent>
             </Card>
           </div>
-
-          <Dialog open={pendingBackup !== null} onOpenChange={(open) => !open && setPendingBackup(null)}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle className="text-sm">
-                  {pendingBackup?.action === "restore" ? t("settings.restoreBackup") : t("settings.deleteBackup")}
-                </DialogTitle>
-                <DialogDescription className="text-xs">
-                  {pendingBackup?.action === "restore"
-                    ? t("settings.restoreBackupConfirm")
-                    : t("settings.deleteBackupConfirm")}
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button size="sm" variant="outline" onClick={() => setPendingBackup(null)}>
-                  {t("common.cancel")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant={pendingBackup?.action === "delete" ? "destructive" : "default"}
-                  onClick={handleBackupAction}
-                >
-                  {pendingBackup?.action === "restore" ? t("settings.restore") : t("common.delete")}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
         </TabsContent>
       </Tabs>
     </div>

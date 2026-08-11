@@ -504,6 +504,18 @@ export function SalesPage() {
 
   const goBack = () => setStep((s) => Math.max(1, s - 1) as WizardStep)
 
+  // ---------- Dynamic Dialog Width based on step ----------
+  const dialogMaxWidthClass = useMemo(() => {
+    switch (step) {
+      case 1: return "sm:max-w-xl md:max-w-2xl"
+      case 2: return "sm:max-w-5xl md:max-w-6xl lg:max-w-7xl"
+      case 3: return "sm:max-w-2xl md:max-w-3xl lg:max-w-4xl"
+      case 4: return "sm:max-w-2xl md:max-w-3xl lg:max-w-4xl"
+      case 5: return "sm:max-w-4xl md:max-w-5xl lg:max-w-6xl xl:max-w-7xl"
+      default: return "sm:max-w-5xl"
+    }
+  }, [step])
+
   // ---------- Render ----------
   return (
     <div className="flex flex-col gap-3 p-3 lg:p-4">
@@ -571,7 +583,10 @@ export function SalesPage() {
 
       {/* Wizard modal */}
       <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) resetForm() }}>
-        <DialogContent className="sm:max-w-5xl max-h-[95vh] flex flex-col">
+        <DialogContent className={cn(
+          "max-h-[95vh] flex flex-col transition-all duration-300",
+          dialogMaxWidthClass
+        )}>
           <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2 text-sm">
               <ShoppingCart className="size-4" /> {t('sales.createSale')}
@@ -612,7 +627,7 @@ export function SalesPage() {
           <Separator className="shrink-0" />
 
           {/* Scrollable content */}
-          <div className="flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar" style={{ maxHeight: "calc(85vh - 220px)" }}>
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar" style={{ maxHeight: "calc(95vh - 13rem)" }}>
             {/* STEP 1: Customer */}
             {step === 1 && (
               <div className="space-y-6">

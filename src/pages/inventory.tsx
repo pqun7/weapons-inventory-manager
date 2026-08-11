@@ -182,8 +182,8 @@ export function InventoryPage() {
   const addStock = useStore((s) => s.addStock)
   const { setSelectedWeaponId, selectedWeaponId } = useNav()
 
-  // SQLite is the source of truth. Refresh once when the store is ready so
-  // this page never relies on stale renderer-only state after navigation.
+  // Supabase is the source of truth. Refresh once when the store is ready so
+  // this page never relies on stale renderer state after navigation.
   useEffect(() => {
     if (!ready) return
     void refreshFromDb()
@@ -1044,16 +1044,19 @@ export function InventoryPage() {
                           >
                             {header.isPlaceholder ? null : (
                               <div className="flex items-center gap-1">
-                                <button
-                                  className="inline-flex items-center gap-1 text-[10px] font-medium"
-                                  onClick={header.column.getToggleSortingHandler()}
-                                  disabled={!header.column.getCanSort()}
-                                >
-                                  {flexRender(header.column.columnDef.header, header.getContext())}
-                                  {header.column.getCanSort() && (
+                                {header.column.getCanSort() ? (
+                                  <button
+                                    className="inline-flex items-center gap-1 text-[10px] font-medium"
+                                    onClick={header.column.getToggleSortingHandler()}
+                                  >
+                                    {flexRender(header.column.columnDef.header, header.getContext())}
                                     <ArrowUpDown className="size-2.5 opacity-50" />
-                                  )}
-                                </button>
+                                  </button>
+                                ) : (
+                                  <div className="inline-flex items-center gap-1 text-[10px] font-medium">
+                                    {flexRender(header.column.columnDef.header, header.getContext())}
+                                  </div>
+                                )}
                                 {header.column.getCanResize() && (
                                   <div
                                     onMouseDown={header.getResizeHandler()}

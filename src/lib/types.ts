@@ -14,7 +14,7 @@ export type PaymentMethod = "cash" | "card" | "bank_transfer" | "check" | "other
 
 export type SaleMode = "Retail" | "Wholesale"
 
-export type UserRole = "Admin" | "Manager"
+export type UserRole = "Admin" | "Employee" | "Manager" | "Sales" | "Inventory" | "Accountant" | "Read-Only"
 
 export type ShipmentStatus = "Pending" | "In Transit" | "Delayed" | "Arrived" | "Cancelled" | "Partial"
 
@@ -622,7 +622,7 @@ export interface SystemSettings {
   theme?: "dark" | "light" | "system"
   // Multi-currency display preferences
   preferredDisplayCurrency?: string
-  // Application-wide preferences (stored in SQLite, not localStorage)
+  // Application-wide preferences persisted for the authenticated Supabase user.
   appLanguage?: string
   dateFormat?: string
   numberFormat?: string

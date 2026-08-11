@@ -15,10 +15,8 @@ export function DisplayCurrencySelector() {
   const { displayCurrency, setDisplayCurrency, currencies, isLoaded, currencyPresentation } = useCurrency();
   const { t } = useI18n();
 
-  // 🟢 تصفية العملات النشطة فقط
   const activeCurrencies = currencies.filter((c) => c.isActive);
 
-  // إذا لم تُحمَّل البيانات بعد، أو لا توجد عملات نشطة → إخفاء المُكوّن
   if (!isLoaded || activeCurrencies.length === 0) return null;
   const selected = currencyPresentation(displayCurrency)
 
@@ -39,18 +37,18 @@ export function DisplayCurrencySelector() {
         {activeCurrencies.map((c) => {
           const presentation = currencyPresentation(c.isoCode)
           return (
-          <DropdownMenuItem
-            key={c.isoCode}
-            onClick={() => setDisplayCurrency(c.isoCode)}
-            className={displayCurrency === c.isoCode ? "bg-accent" : ""}
-          >
-            <span className="w-12 font-mono text-xs">{presentation.code}</span>
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-xs font-medium">{presentation.symbol}</span>
-              <span className="truncate text-[10px] text-muted-foreground">{presentation.name}</span>
-            </span>
-            {displayCurrency === c.isoCode && <Check className="size-3.5 text-primary" />}
-          </DropdownMenuItem>
+            <DropdownMenuItem
+              key={c.isoCode}
+              onClick={() => setDisplayCurrency(c.isoCode)}
+              className={displayCurrency === c.isoCode ? "bg-accent" : ""}
+            >
+              <span className="w-12 font-mono text-xs">{presentation.code}</span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-xs font-medium">{presentation.symbol}</span>
+                <span className="truncate text-[10px] text-muted-foreground">{presentation.name}</span>
+              </span>
+              {displayCurrency === c.isoCode && <Check className="size-3.5 text-primary" />}
+            </DropdownMenuItem>
           )
         })}
       </DropdownMenuContent>

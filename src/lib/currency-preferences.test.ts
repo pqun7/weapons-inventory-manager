@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { useStore } from "@/lib/store"
+import * as db from "@/lib/db"
 
 describe("display currency user preference", () => {
   const originalState = useStore.getState()
@@ -18,15 +19,11 @@ describe("display currency user preference", () => {
 
   afterEach(() => {
     useStore.setState(originalState, true)
-    delete (window as typeof window & { electronAPI?: unknown }).electronAPI
     vi.restoreAllMocks()
   })
 
   it("persists the header selection as the current user's display preference", async () => {
-    const upsert = vi.fn().mockResolvedValue({ success: true, data: {} })
-    ;(window as typeof window & { electronAPI?: unknown }).electronAPI = {
-      userPreferences: { upsert },
-    }
+    const upsert = vi.spyOn(db, "dbUpsertUserPreferences").mockResolvedValue()
 
     const result = await useStore.getState().updateUserPreferences({ displayCurrency: "SAR" })
 
@@ -42,9 +39,7 @@ describe("display currency user preference", () => {
   it("rolls back the visible preference when persistence fails", async () => {
     const previous = { userId: "U001", displayCurrency: "SDG", reportViewMode: "display" as const }
     useStore.setState({ userPreferences: previous })
-    ;(window as typeof window & { electronAPI?: unknown }).electronAPI = {
-      userPreferences: { upsert: vi.fn().mockResolvedValue({ success: false, error: "write failed" }) },
-    }
+    vi.spyOn(db, "dbUpsertUserPreferences").mockRejectedValue(new Error("write failed"))
 
     const result = await useStore.getState().updateUserPreferences({ displayCurrency: "USD" })
 

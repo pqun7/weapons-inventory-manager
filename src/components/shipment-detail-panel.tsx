@@ -26,6 +26,7 @@ import { multiplyMoney, sumMoney, valuationAccountingAmount } from "@/lib/money-
 import { formatDate, formatDateTime, shipmentStatusClass, shipmentDelayDays } from "@/lib/format"
 import type { ShipmentStatus, Shipment, ShipmentLineItem } from "@/lib/types"
 import { toast } from "sonner"
+import { manifestClient } from "@/lib/manifest-client"
 
 const SHIPMENT_STATUSES: ShipmentStatus[] = ["Pending", "In Transit", "Delayed", "Arrived", "Cancelled", "Partial"]
 
@@ -41,6 +42,7 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
   const { formatValuation, formatAccountingAggregate } = useCurrency()
   const setShipmentStatus = useStore((s) => s.setShipmentStatus)
   const updateShipment = useStore((s) => s.updateShipment)
+  const deleteShipment = useStore((s) => s.deleteShipment)
   const addShipmentDocument = useStore((s) => s.addShipmentDocument)
   const deleteShipmentDocument = useStore((s) => s.deleteShipmentDocument)
   const refreshFromDb = useStore((s) => s.refreshFromDb)
@@ -57,6 +59,7 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
   const [newExpectedDate, setNewExpectedDate] = useState(shipment.expectedArrivalDate)
   const [delayReason, setDelayReason] = useState("")
   const [arrivalBusy, setArrivalBusy] = useState(false)
+  const [deleteBusy, setDeleteBusy] = useState(false)
 
   const supplier = suppliers.find((s) => s.id === shipment.supplierId)
   const shipmentWeapons = useMemo(() => weapons.filter((w) => w.shipmentId === shipment.id), [weapons, shipment.id])
@@ -117,11 +120,26 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
     else toast.success(t("toast.shipmentUpdated"))
   }
 
+  const handleDeleteShipment = async () => {
+    const confirmed = window.confirm(t("ship.deleteConfirm"))
+    if (!confirmed) return
+    setDeleteBusy(true)
+    try {
+      const result = await deleteShipment(shipment.id)
+      if (!result.success) throw new Error(result.error ?? t("ship.deleteFailed"))
+      toast.success(t("ship.deleted"))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("ship.deleteFailed"))
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
+
   const confirmManifestArrival = async () => {
-    if (!shipment.importId || !window.electronAPI?.manifest) return
+    if (!shipment.importId) return
     setArrivalBusy(true)
     try {
-      const result = await window.electronAPI.manifest.confirmArrival(shipment.importId, { id: currentUser.id, name: currentUser.name })
+      const result = await manifestClient.confirmArrival(shipment.importId, { id: currentUser.id, name: currentUser.name })
       if (!result.success) throw new Error(result.error ?? "Unable to confirm arrival")
       await refreshFromDb()
       toast.success("Shipment arrival confirmed and inventory received")
@@ -130,10 +148,10 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
   }
 
   const rescheduleManifestArrival = async () => {
-    if (!shipment.importId || !window.electronAPI?.manifest) return
+    if (!shipment.importId) return
     setArrivalBusy(true)
     try {
-      const result = await window.electronAPI.manifest.reschedule(shipment.importId, newExpectedDate, delayReason, { id: currentUser.id, name: currentUser.name })
+      const result = await manifestClient.reschedule(shipment.importId, newExpectedDate, delayReason, { id: currentUser.id, name: currentUser.name })
       if (!result.success) throw new Error(result.error ?? "Unable to reschedule shipment")
       await refreshFromDb(); setRescheduleOpen(false); setDelayReason("")
       toast.success("Shipment remains pending with a new expected date")
@@ -162,9 +180,24 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
             <Truck className="size-4" />
             <span className="font-mono">{shipment.shipmentNumber}</span>
           </span>
-          <Badge variant="outline" className={`text-[9px] ${shipmentStatusClass(shipment.status)}`}>
-            {t(statusKey[shipment.status])}
-          </Badge>
+          <span className="flex items-center gap-1">
+            {currentUser.role === "Admin" && (
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                className="text-destructive hover:text-destructive"
+                disabled={deleteBusy}
+                aria-label={t("ship.delete")}
+                onClick={() => void handleDeleteShipment()}
+              >
+                <Trash2 className="size-3.5" />
+              </Button>
+            )}
+            <Badge variant="outline" className={`text-[9px] ${shipmentStatusClass(shipment.status)}`}>
+              {t(statusKey[shipment.status])}
+            </Badge>
+          </span>
         </CardTitle>
         <p className="text-[10px] text-muted-foreground">
           {supplier?.name ?? shipment.supplierId} — {formatDate(shipment.shipmentDate)}

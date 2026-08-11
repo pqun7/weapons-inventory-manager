@@ -1,5 +1,7 @@
-import "@testing-library/jest-dom/vitest"
+import * as domMatchers from "@testing-library/jest-dom/matchers"
 import { afterEach, beforeEach, vi } from "vitest"
+
+expect.extend(domMatchers)
 
 let cleanup: (() => void) | null = null
 
