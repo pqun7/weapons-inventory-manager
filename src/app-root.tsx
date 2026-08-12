@@ -76,7 +76,14 @@ export function AppRoot() {
     }
 
     if (!auth.session) {
-        return <AuthScreen error={auth.error} onSignIn={auth.signIn} />
+        return (
+            <AuthScreen
+                error={auth.error}
+                onResolve={auth.resolveAccount}
+                onSignIn={auth.signIn}
+                onCompleteFirstLogin={auth.completeFirstLogin}
+            />
+        )
     }
 
     if (error) {

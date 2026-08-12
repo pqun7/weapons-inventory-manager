@@ -1406,6 +1406,14 @@ export const en: Record<string, string> = {
   "cust.wholesaleBuyer": "Wholesale Buyer",
   "cust.wholesale": "Wholesale",
   "cust.wholesaleBuyerDesc": "Enables wholesale pricing and discount.",
+  "cust.customFields": "Additional customer information",
+  "cust.customFieldsDesc": "Add information with your own field name and value.",
+  "cust.addCustomField": "Add field",
+  "cust.customFieldName": "Field name",
+  "cust.customFieldValue": "Value",
+  "cust.customFieldNameRequired": "Enter a name for each additional field.",
+  "cust.customFieldTooLong": "The additional field name or value is too long.",
+  "cust.customFieldDuplicate": "Additional field names must be unique.",
   "cust.customersList": "Customers",
   "cust.selectCustomer": "Select a customer to view details",
   "cust.since": "Since",
@@ -1437,6 +1445,8 @@ export const en: Record<string, string> = {
   "ship.selectShipmentHint": "Click on any shipment in the list to view its details",
   "ship.sortedBy": "Sorted by",
   "ship.delayedStatus": "Delayed",
+  "role.Employee": "Employee  ",
+  "role.admin": "Administrator",
 
 
 }
@@ -2844,6 +2854,14 @@ export const ar: Record<string, string> = {
   "cust.wholesaleBuyer": "مشتري جملة",
   "cust.wholesale": "جملة",
   "cust.wholesaleBuyerDesc": "يتيح أسعار الجملة والخصم.",
+  "cust.customFields": "معلومات إضافية عن الزبون",
+  "cust.customFieldsDesc": "أضف معلومة باسم الحقل والقيمة التي تريدها.",
+  "cust.addCustomField": "إضافة حقل",
+  "cust.customFieldName": "اسم المعلومة",
+  "cust.customFieldValue": "القيمة",
+  "cust.customFieldNameRequired": "أدخل اسماً لكل معلومة إضافية.",
+  "cust.customFieldTooLong": "اسم المعلومة أو قيمتها طويلة جداً.",
+  "cust.customFieldDuplicate": "يجب ألا تتكرر أسماء المعلومات الإضافية.",
   "cust.customersList": "العملاء",
   "cust.selectCustomer": "اختر عميلاً لعرض التفاصيل",
   "cust.since": "منذ",
@@ -2872,6 +2890,13 @@ export const ar: Record<string, string> = {
   "ship.sortByAddedDate": "تاريخ الإضافة",
   "ship.sortByExpectedDate": "تاريخ الوصول المتوقع",
   "ship.sortByArrivalDate": "تاريخ الوصول",
+  "role.Employee": "موظف",
+  "role.admin": "مسؤول",
+
+  "role.SalesManager": "مدير المبيعات",
+  "role.InventoryManager": "مدير المخزون",
+  "role.AccountingManager": "مدير المحاسبة",
+  "role.ReadOnlyManager": "مدير للقراءة فقط"
 
 }
 

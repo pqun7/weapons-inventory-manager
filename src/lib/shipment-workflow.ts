@@ -272,7 +272,7 @@ export function manifestItemToLineInput(item: ManifestReviewItem, fallbackCurren
 }
 
 export function canEditShipmentContents(shipment: Shipment, user: User): boolean {
-  const permitted = ["Admin", "Manager", "Inventory"].includes(user.role)
+  const permitted = user.role === "Admin"
     || user.permissions["shipment.edit"] === true
     || user.permissions["shipment.import"] === true
     || user.permissions.canImportExcel

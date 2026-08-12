@@ -16,7 +16,7 @@ import {
 import { toast } from "sonner"
 import { useI18n } from "@/lib/i18n"
 
-export function MasterDataPanel() {
+export function MasterDataPanel({ readOnly = false }: { readOnly?: boolean }) {
   const md = useDynamicMasterData()
   const { t } = useI18n()
 
@@ -68,10 +68,13 @@ export function MasterDataPanel() {
         {t("master.description")}
       </p>
       <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] text-muted-foreground">
-        Reviewed shipment values are matched automatically. New weapon types, manufacturers, models, calibers, and subtypes are saved here once the shipment is confirmed, and remain editable for future use.
+        {readOnly
+          ? "Master data is visible to every user. Only an administrator can add, change, or delete types."
+          : "Reviewed shipment values are matched automatically. New weapon types, manufacturers, models, calibers, and subtypes are saved here once the shipment is confirmed."}
       </div>
       <Separator />
 
+      <fieldset disabled={readOnly} className="contents">
       <Accordion type="multiple" className="flex flex-col gap-1">
 
         {/* ── Weapon Types ── */}
@@ -434,6 +437,7 @@ export function MasterDataPanel() {
         </AccordionItem>
 
       </Accordion>
+      </fieldset>
     </div>
   )
 }

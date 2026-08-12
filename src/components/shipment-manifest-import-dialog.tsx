@@ -67,6 +67,7 @@ import {
 } from "@/lib/shipment-manifest"
 import { useStore } from "@/lib/store"
 import { useCurrency } from "@/lib/currency-context"
+import { generateShipmentNumber } from "@/lib/format"
 import { manifestClient } from "@/lib/manifest-client"
 import { ShipmentCostEditor } from "./shipment-cost-editor"
 import type { Shipment, ShipmentAdditionalCostInput } from "@/lib/types"
@@ -120,6 +121,7 @@ function SummaryCard({ label, value, tone = "default" }: { label: string; value:
 export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, editShipment }: Props) {
   const currentUser = useStore((s) => s.getCurrentUser())
   const suppliers = useStore((s) => s.suppliers)
+  const shipments = useStore((s) => s.shipments)
   const refreshFromDb = useStore((s) => s.refreshFromDb)
   const updateScheduledShipment = useStore((s) => s.updateScheduledShipment)
   const md = useDynamicMasterData()
@@ -191,8 +193,8 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
   const loadReview = (next: ShipmentManifestReview) => {
     detailsLoaded.current = false
     setReview(next)
-    setShipmentNumber(next.shipmentNumber ?? "")
     const supplier = suppliers.find(c => c.id === next.supplierId || c.name.toLowerCase() === next.supplierName?.toLowerCase())
+    setShipmentNumber(next.shipmentNumber?.trim() || (supplier ? generateShipmentNumber(shipments) : ""))
     setSupplierId(supplier?.id ?? "")
     setInvoiceNumber(next.invoiceNumber ?? "")
     setManifestNumber(next.manifestNumber ?? "")
@@ -223,6 +225,14 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to open review")
     } finally { setSaving(false) }
+  }
+
+  const selectSupplier = (value: string) => {
+    const nextSupplierId = value === "__none" ? "" : value
+    setSupplierId(nextSupplierId)
+    if (nextSupplierId && !shipmentNumber.trim()) {
+      setShipmentNumber(generateShipmentNumber(shipments))
+    }
   }
 
   useEffect(() => {
@@ -813,7 +823,7 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
                         <div className="grid gap-4 md:grid-cols-2">
                           <div><Label className="text-xs font-medium">Shipment number *</Label><Input className={`mt-1 h-9 text-xs ${!shipmentNumber ? "border-amber-500/60" : ""}`} value={shipmentNumber} onChange={e => setShipmentNumber(e.target.value)} /></div>
                           <div><Label className="text-xs font-medium">Supplier *</Label>
-                            <Select value={supplierId || "__none"} onValueChange={v => setSupplierId(v === "__none" ? "" : v)}>
+                            <Select value={supplierId || "__none"} onValueChange={selectSupplier}>
                               <SelectTrigger className={`mt-1 h-9 text-xs ${!supplierId ? "border-amber-500/60" : ""}`}><SelectValue placeholder={review.supplierName ?? "Select supplier"} /></SelectTrigger>
                               <SelectContent><SelectItem value="__none">Select supplier</SelectItem>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
                             </Select>

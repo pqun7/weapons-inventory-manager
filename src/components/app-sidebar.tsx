@@ -25,6 +25,7 @@ import {
 import { useNav, type PageKey } from "@/lib/nav"
 import { useStore } from "@/lib/store"
 import { useI18n } from "@/lib/i18n"
+import { canAccessPage } from "@/lib/rbac"
 
 const NAV_GROUPS: { labelKey: string; items: { key: PageKey; labelKey: string; icon: typeof LayoutDashboard }[] }[] = [
   {
@@ -79,7 +80,9 @@ export function AppSidebar() {
       </SidebarHeader> */}
 
       <SidebarContent>
-        {NAV_GROUPS.map((group) => (
+        {NAV_GROUPS.map((group) => ({ ...group, items: group.items.filter((item) => canAccessPage(currentUser, item.key)) }))
+          .filter((group) => group.items.length > 0)
+          .map((group) => (
           <SidebarGroup key={group.labelKey}>
             <SidebarGroupLabel>{t(group.labelKey)}</SidebarGroupLabel>
             <SidebarGroupContent>

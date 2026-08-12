@@ -11,6 +11,7 @@ import type {
 import { ammoTotalRounds } from "./types.js"
 import * as db from "./db/index.js"
 import { optimisticShipment } from "./shipment-workflow.js"
+import { permissionsForRole } from "./rbac.js"
 
 // ============ Input Types ============
 
@@ -273,9 +274,10 @@ export interface StoreState {
   updateSettings: (updates: Partial<SystemSettings>) => Promise<{ success: boolean; error?: string }>
   updateUserPreferences: (updates: Partial<UserPreferences>) => Promise<{ success: boolean; error?: string }>
   trackCurrencyUsage: (code: string) => void
-  addUser: (user: Omit<User, "id" | "passwordSet" | "passwordHash">) => Promise<{ success: boolean; error?: string }>
+  addUser: (user: Omit<User, "id" | "passwordSet" | "passwordHash">) => Promise<{ success: boolean; activationCode?: string; error?: string }>
   updateUser: (id: string, updates: Partial<User>) => Promise<{ success: boolean; error?: string }>
   deleteUser: (id: string) => Promise<{ success: boolean; error?: string }>
+  resetUserActivation: (id: string) => Promise<{ success: boolean; activationCode?: string; error?: string }>
   setCurrentUser: (userId: string) => void
 
   markNotificationRead: (id: string) => Promise<{ success: boolean; error?: string }>
@@ -340,7 +342,7 @@ const UNLINKED_USER: User = {
   id: "UNLINKED",
   username: "",
   name: "Unlinked User",
-  role: "Read-Only",
+  role: "Employee",
   permissions: {
     canImportExcel: false,
     canExportData: false,
@@ -981,17 +983,35 @@ export const useStore = create<StoreState>()(
     },
 
     addUser: async (user) => {
-      const newUser: User = { ...user, id: generateId("U", get().users), passwordSet: false, passwordHash: "" }
+      const newUser: User = {
+        ...user,
+        username: user.email ?? user.name,
+        permissions: permissionsForRole(user.role, user.permissions),
+        id: `TMP-USER-${crypto.randomUUID()}`,
+        passwordSet: false,
+        passwordHash: "",
+      }
       set((state) => ({ users: [...state.users, newUser] }))
-      try { await db.dbInsertUser(newUser) } catch (e) {
+      try {
+        const created = await db.dbInsertUser(newUser)
+        set((state) => ({
+          users: state.users.map((item) => item.id === newUser.id ? { ...item, id: created.userId } : item),
+        }))
+        return { success: true, activationCode: created.activationCode }
+      } catch (e) {
         set((state) => ({ users: state.users.filter((item) => item.id !== newUser.id) }))
         return { success: false, error: String(e) }
       }
-      return { success: true }
     },
 
     updateUser: async (id, updates) => {
-      set((state) => ({ users: state.users.map((u) => u.id === id ? { ...u, ...updates } : u) }))
+      const { name: _name, username: _username, ...allowedUpdates } = updates
+      set((state) => ({ users: state.users.map((u) => u.id === id ? {
+        ...u,
+        ...allowedUpdates,
+        username: allowedUpdates.email ?? u.name,
+        permissions: permissionsForRole(allowedUpdates.role ?? u.role, allowedUpdates.permissions ?? u.permissions),
+      } : u) }))
       const u = get().users.find((u) => u.id === id)
       if (u) {
         try { await db.dbUpdateUser(u) } catch (e) {
@@ -1010,6 +1030,14 @@ export const useStore = create<StoreState>()(
         return { success: false, error: String(e) }
       }
       return { success: true }
+    },
+
+    resetUserActivation: async (id) => {
+      try {
+        return { success: true, activationCode: await db.dbResetUserActivation(id) }
+      } catch (e) {
+        return { success: false, error: String(e) }
+      }
     },
 
     setCurrentUser: (userId) => { set({ currentUserId: userId }) },

@@ -17,6 +17,7 @@ import { useStore } from "@/lib/store"
 import { useI18n } from "@/lib/i18n"
 import { useCurrency } from "@/lib/currency-context"
 import { toast } from "sonner"
+import { hasPermission } from "@/lib/rbac"
 
 export function CurrencyManagementPanel() {
   const { t } = useI18n()
@@ -24,6 +25,10 @@ export function CurrencyManagementPanel() {
   const store = useStore()
   const currentUser = store.getCurrentUser()
   const isAdmin = currentUser?.role === "Admin"
+  const canView = isAdmin || hasPermission(currentUser, "currencies.view")
+  const canEdit = isAdmin || hasPermission(currentUser, "currencies.edit")
+  const canAdd = isAdmin || hasPermission(currentUser, "currencies.add")
+  const canDelete = isAdmin || hasPermission(currentUser, "currencies.delete")
   const [currencies, setCurrencies] = useState<CurrencyInfo[]>([])
   const [overrides, setOverrides] = useState<ExchangeRateOverride[]>([])
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([])
@@ -62,6 +67,7 @@ export function CurrencyManagementPanel() {
   }, [refreshData])
 
   const handleSync = async () => {
+    if (!canEdit) return toast.error(t("settings.accessDenied"))
     setSyncing(true)
     try {
       const result = await CurrencyService.syncRatesFromAPI(currentUser.name)
@@ -79,6 +85,7 @@ export function CurrencyManagementPanel() {
   }
 
   const handleSetManual = async (code: string) => {
+    if (!canEdit) return toast.error(t("settings.accessDenied"))
     const rate = Number(manualRateInput)
     if (isNaN(rate) || rate <= 0) {
       toast.error(t("settings.invalidRate"))
@@ -97,6 +104,7 @@ export function CurrencyManagementPanel() {
   }
 
   const handleSetAutomatic = async (code: string) => {
+    if (!canEdit) return toast.error(t("settings.accessDenied"))
     try {
       await CurrencyService.setAutomaticMode(code, currentUser.name, currentUser.role)
       toast.success(`${code} ${t("settings.switchedToAutomatic")}`)
@@ -107,6 +115,7 @@ export function CurrencyManagementPanel() {
   }
 
   const handleAddCurrency = async () => {
+    if (!canAdd) return toast.error(t("settings.accessDenied"))
     const code = newCode.trim().toUpperCase()
     if (!code || code.length !== 3) {
       toast.error(t("settings.invalidCurrencyCode"))
@@ -138,6 +147,7 @@ export function CurrencyManagementPanel() {
   }
 
   const handleToggleActive = async (code: string, isActive: boolean) => {
+    if (!canEdit) return toast.error(t("settings.accessDenied"))
     try {
       await CurrencyService.toggleCurrencyActive(code, !isActive)
       toast.success(`${code} ${isActive ? t("settings.currencyDeactivated") : t("settings.currencyActivated")}`)
@@ -149,6 +159,7 @@ export function CurrencyManagementPanel() {
 
   // ✅ معالج فتح نافذة تأكيد الحذف
   const handleDeleteRequest = (currency: CurrencyInfo) => {
+    if (!canDelete) return toast.error(t("settings.accessDenied"))
     if (currency.isoCode === accountingCurrency) {
       toast.error(t("settings.cannotDeleteUSD"))
       return
@@ -176,7 +187,7 @@ export function CurrencyManagementPanel() {
 
   const getOverride = (code: string) => overrides.find((o) => o.currencyCode === code)
 
-  if (!isAdmin) {
+  if (!canView) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 p-8 text-center border border-destructive/30 rounded-lg bg-destructive/5">
         <AlertTriangle className="size-8 text-destructive" />
@@ -203,7 +214,7 @@ export function CurrencyManagementPanel() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm">{t("settings.currencyRegistry")}</CardTitle>
                 <Dialog open={addCurrencyOpen} onOpenChange={setAddCurrencyOpen}>
-                  <Button size="sm" className="h-7" onClick={() => setAddCurrencyOpen(true)}>
+                  <Button size="sm" className="h-7" disabled={!canAdd} onClick={() => setAddCurrencyOpen(true)}>
                     <Plus className="size-3.5" /> {t("settings.addCurrency")}
                   </Button>
                   <DialogContent>
@@ -279,6 +290,7 @@ export function CurrencyManagementPanel() {
                             <div className="flex items-center gap-1.5">
                               <Switch
                                 checked={c.isActive}
+                                disabled={!canEdit}
                                 onCheckedChange={() => handleToggleActive(c.isoCode, c.isActive)}
                               />
                               {c.isActive ? (
@@ -301,6 +313,7 @@ export function CurrencyManagementPanel() {
                                   variant="ghost"
                                   size="icon-sm"
                                   className="size-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                  disabled={!canDelete}
                                   onClick={() => handleDeleteRequest(c)}
                                   title={t("common.delete")}
                                 >
@@ -325,7 +338,7 @@ export function CurrencyManagementPanel() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm">{t("settings.exchangeRateManagement")}</CardTitle>
-                <Button size="sm" className="h-7" onClick={handleSync} disabled={syncing}>
+                <Button size="sm" className="h-7" onClick={handleSync} disabled={syncing || !canEdit}>
                   <RefreshCw className={`size-3.5 ${syncing ? "animate-spin" : ""}`} />
                   {syncing ? t("settings.syncing") : t("settings.syncNow")}
                 </Button>
@@ -415,6 +428,7 @@ export function CurrencyManagementPanel() {
                                         size="sm"
                                         variant="outline"
                                         className="h-6 text-[10px]"
+                                        disabled={!canEdit}
                                         onClick={() => {
                                           setEditingRate(c.isoCode)
                                           setManualRateInput(String(rate))

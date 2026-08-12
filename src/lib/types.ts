@@ -15,7 +15,7 @@ export type PaymentMethod = "cash" | "card" | "bank_transfer" | "check" | "other
 
 export type SaleMode = "Retail" | "Wholesale"
 
-export type UserRole = "Admin" | "Employee" | "Manager" | "Sales" | "Inventory" | "Accountant" | "Read-Only"
+export type UserRole = "Admin" | "Employee"
 
 export type ShipmentStatus = "Pending" | "In Transit" | "Delayed" | "Arrived" | "Cancelled" | "Partial"
 
@@ -574,6 +574,7 @@ export interface Customer {
   isWholesaleBuyer: boolean
   wholesaleDiscountPercent: number
   notes?: string
+  customFields?: Record<string, string>
   dateAdded: string
 }
 
@@ -621,9 +622,12 @@ export interface AppNotification {
 
 export interface User {
   id: string
+  /** Login identifier shown in legacy views. Prefer email when it exists, otherwise name. */
   username: string
+  email?: string
   name: string
   role: UserRole
+  isPrimaryAdmin?: boolean
   permissions: UserPermissions
   passwordSet: boolean
   passwordHash: string
@@ -638,6 +642,19 @@ export interface UserPermissions {
   canVoidInvoices: boolean
   canExtendDueDates: boolean
   canDeleteRecords: boolean
+  "inventory.view"?: boolean
+  "inventory.edit"?: boolean
+  "sales.create"?: boolean
+  "customers.manage"?: boolean
+  "suppliers.manage"?: boolean
+  "currencies.view"?: boolean
+  "currencies.edit"?: boolean
+  "currencies.add"?: boolean
+  "currencies.delete"?: boolean
+  "backups.view"?: boolean
+  "backups.personal.create"?: boolean
+  "backups.personal.restore"?: boolean
+  "backups.system.create"?: boolean
   "shipment.import"?: boolean
   "shipment.review"?: boolean
   "shipment.edit"?: boolean

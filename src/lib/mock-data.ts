@@ -474,7 +474,7 @@ function generateNotifications(invoices: Invoice[], accessories: Accessory[], am
 
 const DEFAULT_USERS: User[] = [
   { id: "U001", username: "admin", name: "Admin User", role: "Admin", permissions: { canImportExcel: true, canExportData: true, canViewReports: true, canManageUsers: true, canRegisterPayments: true, canVoidInvoices: true, canExtendDueDates: true, canDeleteRecords: true }, passwordSet: true, passwordHash: "admin123" },
-  { id: "U002", username: "sarah", name: "Sarah Chen", role: "Manager", permissions: { canImportExcel: true, canExportData: true, canViewReports: true, canManageUsers: false, canRegisterPayments: true, canVoidInvoices: true, canExtendDueDates: true, canDeleteRecords: false }, passwordSet: true, passwordHash: "sarah123" },
+  { id: "U002", username: "sarah", name: "Sarah Chen", role: "Employee", permissions: { canImportExcel: true, canExportData: true, canViewReports: false, canManageUsers: false, canRegisterPayments: true, canVoidInvoices: true, canExtendDueDates: true, canDeleteRecords: false, "inventory.view": true, "shipment.edit": true }, passwordSet: true, passwordHash: "sarah123" },
 ]
 
 const DEFAULT_SETTINGS: SystemSettings = {

@@ -17,7 +17,7 @@ describe("current user snapshot stability", () => {
     const second = useStore.getState().getCurrentUser()
 
     expect(second).toBe(first)
-    expect(first.role).toBe("Read-Only")
+    expect(first.role).toBe("Employee")
   })
 
   it("keeps the React store selector snapshot stable before bootstrap", () => {
@@ -26,6 +26,6 @@ describe("current user snapshot stability", () => {
     const { result } = renderHook(() => useStore((state) => state.getCurrentUser()))
 
     expect(result.current.id).toBe("UNLINKED")
-    expect(result.current.role).toBe("Read-Only")
+    expect(result.current.role).toBe("Employee")
   })
 })

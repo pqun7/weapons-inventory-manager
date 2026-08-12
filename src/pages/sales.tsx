@@ -100,6 +100,7 @@ export function SalesPage() {
   // Invoice settings
   const [invoiceDate, setInvoiceDate] = useState(todayDate())
   const [invoiceNumber, setInvoiceNumber] = useState("")
+  const [invoiceNumberError, setInvoiceNumberError] = useState(false)
   const [notes, setNotes] = useState("")
 
   // Payment & debt
@@ -398,7 +399,7 @@ export function SalesPage() {
     setSelectedWeapons([]); setCustomPrices({})
     setAmmoLines([]); setAmmoPicker("")
     setAccessoryLines([]); setAccessoryPicker("")
-    setInvoiceDate(todayDate()); setInvoiceNumber(""); setNotes("")
+    setInvoiceDate(todayDate()); setInvoiceNumber(""); setInvoiceNumberError(false); setNotes("")
     setPaymentMethod("cash"); setIsDebt(false); setPaidAmount(""); setDebtDueDate(todayDate())
     setDocuments([]); setNewDocName("")
     setPendingFile(null);
@@ -412,8 +413,19 @@ export function SalesPage() {
 
   const openWizard = () => { resetForm(); setOpen(true) }
 
+  const requestSaleConfirmation = () => {
+    if (!invoiceNumber.trim()) {
+      setInvoiceNumberError(true)
+      toast.error(t('sales.invoiceNum'))
+      return
+    }
+    setInvoiceNumberError(false)
+    setConfirmOpen(true)
+  }
+
   const handleConfirmSale = async () => {
     setConfirmOpen(false)
+    if (!invoiceNumber.trim()) { setInvoiceNumberError(true); toast.error(t('sales.invoiceNum')); return }
     if (hasStockIssues) { toast.error(t('sales.stockExceedsAvailable')); return }
     if (hasPricingIssues) { toast.error("One or more items have no authoritative currency valuation"); return }
     if (marginViolation && !approved) { toast.error(t('sales.managerApprovalReq')); return }
@@ -462,7 +474,7 @@ export function SalesPage() {
       customerId,
       customerName,
       mode,
-      invoiceNumber: previewInvoiceNumber,
+      invoiceNumber: invoiceNumber.trim(),
       totalNegotiated: finalSubtotal,
       totalOriginal,
       dueDate,
@@ -1943,11 +1955,21 @@ export function SalesPage() {
                   <div>
                     <Label className="text-xs">{t('sales.invoiceNum')}</Label>
                     <div className="flex gap-1.5">
-                      <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder={previewInvoiceNumber} className="h-8 text-xs font-mono" />
-                      <Button size="sm" variant="outline" className="h-8" onClick={() => setInvoiceNumber(generateInvoiceNumber(invoices))}>
+                      <Input
+                        value={invoiceNumber}
+                        onChange={(e) => {
+                          setInvoiceNumber(e.target.value)
+                          if (e.target.value.trim()) setInvoiceNumberError(false)
+                        }}
+                        placeholder={previewInvoiceNumber}
+                        aria-invalid={invoiceNumberError}
+                        className={cn("h-8 text-xs font-mono", invoiceNumberError && "border-destructive focus-visible:ring-destructive")}
+                      />
+                      <Button size="sm" variant="outline" className="h-8" onClick={() => { setInvoiceNumber(generateInvoiceNumber(invoices)); setInvoiceNumberError(false) }}>
                         {t('sales.auto')}
                       </Button>
                     </div>
+                    {invoiceNumberError && <p className="mt-1 text-[10px] text-destructive">{t('common.required')}</p>}
                   </div>
                 </div>
 
@@ -1996,7 +2018,7 @@ export function SalesPage() {
                 </Button>
               )}
               {step === 5 && (
-                <Button onClick={() => setConfirmOpen(true)} disabled={!canComplete}>
+                <Button onClick={requestSaleConfirmation} disabled={!canComplete}>
                   <Check className="size-3.5" /> {t('sales.completeSaleAmount', { amount: formatTransactionMoney(grandTotal) })}
                 </Button>
               )}

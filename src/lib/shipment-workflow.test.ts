@@ -112,7 +112,7 @@ describe("shipment list workflow", () => {
   })
 
   it("allows authorized pre-receipt edits but protects arrived records", () => {
-    const user = { role: "Inventory", permissions: { canImportExcel: false } } as User
+    const user = { role: "Employee", permissions: { canImportExcel: false, "shipment.edit": true } } as User
     expect(canEditShipmentContents(shipment("scheduled", "2026-08-12"), user)).toBe(true)
     expect(canEditShipmentContents(shipment("failed", "2026-08-12", { workflowStatus: "failed" }), user)).toBe(true)
     expect(canEditShipmentContents(shipment("arrived", "2026-08-12", { status: "Arrived" }), user)).toBe(false)

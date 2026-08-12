@@ -11,6 +11,8 @@ import { I18nProvider } from "@/lib/i18n"
 // <-- new import
 
 import { ErrorBoundary } from "@/components/ErrorBoundary"
+import { useStore } from "@/lib/store"
+import { canAccessPage } from "@/lib/rbac"
 
 const DashboardPage = lazy(() => import("@/pages/dashboard").then((m) => ({ default: m.DashboardPage })))
 const InventoryPage = lazy(() => import("@/pages/inventory").then((m) => ({ default: m.InventoryPage })))
@@ -34,7 +36,15 @@ function RouteLoadingFallback() {
 }
 
 function PageRouter() {
-  const { currentPage } = useNav()
+  const { currentPage, navigate } = useNav()
+  const currentUser = useStore((state) => state.getCurrentUser())
+  const allowed = canAccessPage(currentUser, currentPage)
+
+  useEffect(() => {
+    if (!allowed) navigate("inventory")
+  }, [allowed, navigate])
+
+  if (!allowed) return <RouteLoadingFallback />
   let PageComponent: React.ComponentType
 
   switch (currentPage) {

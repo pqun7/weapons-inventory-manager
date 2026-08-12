@@ -271,6 +271,7 @@ interface CustomerRow {
   wholesale_discount_percent: number
   date_added: string
   notes: string
+  custom_fields: Record<string, unknown> | null
 }
 
 interface SupplierRow {
@@ -311,9 +312,11 @@ interface NotificationRow {
 
 interface UserRow {
   id: string
-  username: string
+  username: string | null
+  email?: string | null
   name: string
   role: string
+  is_primary_admin?: number | boolean
   permissions: unknown
   password_set: number | boolean
   password_hash?: string
@@ -775,6 +778,10 @@ function ammoToRow(a: Ammunition): Record<string, unknown> {
 }
 
 function rowToCustomer(r: CustomerRow): Customer {
+  const customFields = Object.fromEntries(
+    Object.entries(r.custom_fields ?? {})
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  )
   return {
     id: r.id,
     name: r.name,
@@ -784,6 +791,7 @@ function rowToCustomer(r: CustomerRow): Customer {
     isWholesaleBuyer: r.is_wholesale_buyer === true || r.is_wholesale_buyer === 1,
     wholesaleDiscountPercent: r.wholesale_discount_percent,
     notes: r.notes,
+    customFields,
     dateAdded: r.date_added,
   }
 }
@@ -798,6 +806,7 @@ function customerToRow(c: Customer): Record<string, unknown> {
     is_wholesale_buyer: c.isWholesaleBuyer,
     wholesale_discount_percent: c.wholesaleDiscountPercent,
     notes: c.notes ?? "",
+    custom_fields: c.customFields ?? {},
     date_added: c.dateAdded,
   }
 }
@@ -889,9 +898,11 @@ function notificationToRow(n: AppNotification): Record<string, unknown> {
 function rowToUser(r: UserRow): User {
   return {
     id: r.id,
-    username: r.username,
+    username: r.email ?? r.username ?? r.name,
+    email: r.email ?? undefined,
     name: r.name,
     role: r.role as User["role"],
+    isPrimaryAdmin: r.is_primary_admin === true || r.is_primary_admin === 1,
     permissions: parseJSON<Partial<UserPermissions>>(r.permissions, {}) as UserPermissions,
     passwordSet: r.password_set === true || r.password_set === 1,
     passwordHash: "",
@@ -901,7 +912,8 @@ function rowToUser(r: UserRow): User {
 function userToRow(u: User): Record<string, unknown> {
   return {
     id: u.id,
-    username: u.username,
+    username: u.email ?? u.name,
+    email: u.email ?? null,
     name: u.name,
     role: u.role,
     permissions: u.permissions,

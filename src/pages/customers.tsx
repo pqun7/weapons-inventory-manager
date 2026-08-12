@@ -37,6 +37,18 @@ type CustomerSummary = {
   lastPaymentDate: string | null
 }
 
+type CustomerFormData = {
+  name: string
+  phone: string
+  email: string
+  address: string
+  isWholesaleBuyer: boolean
+  notes: string
+  customFields: Record<string, string>
+}
+
+type CustomFieldDraft = { id: string; label: string; value: string }
+
 // نموذج عميل موحد للإضافة والتعديل
 function CustomerForm({
   initialValues,
@@ -45,7 +57,7 @@ function CustomerForm({
   t,
 }: {
   initialValues?: Partial<Customer>
-  onSave: (data: { name: string; phone: string; email: string; address: string; isWholesaleBuyer: boolean; notes: string }) => Promise<void>
+  onSave: (data: CustomerFormData) => Promise<void>
   onCancel: () => void
   t: (key: string) => string
 }) {
@@ -55,6 +67,11 @@ function CustomerForm({
   const [address, setAddress] = useState(initialValues?.address ?? "")
   const [isWholesale, setIsWholesale] = useState(initialValues?.isWholesaleBuyer ?? false)
   const [notes, setNotes] = useState(initialValues?.notes ?? "")
+  const [customFields, setCustomFields] = useState<CustomFieldDraft[]>(() =>
+    Object.entries(initialValues?.customFields ?? {}).map(([label, value]) => ({
+      id: crypto.randomUUID(), label, value,
+    })),
+  )
   const [saving, setSaving] = useState(false)
 
   const handleSubmit = async () => {
@@ -67,9 +84,21 @@ function CustomerForm({
       return
     }
     if (saving) return
+    const normalizedCustomFields: Record<string, string> = {}
+    for (const field of customFields) {
+      const label = field.label.trim()
+      const value = field.value.trim()
+      if (!label && !value) continue
+      if (!label) return toast.error(t("cust.customFieldNameRequired"))
+      if (label.length > 80 || value.length > 1000) return toast.error(t("cust.customFieldTooLong"))
+      if (Object.keys(normalizedCustomFields).some((existing) => existing.toLocaleLowerCase() === label.toLocaleLowerCase())) {
+        return toast.error(t("cust.customFieldDuplicate"))
+      }
+      normalizedCustomFields[label] = value
+    }
     setSaving(true)
     try {
-      await onSave({ name: name.trim(), phone: phone.trim(), email: email.trim(), address: address.trim(), isWholesaleBuyer: isWholesale, notes: notes.trim() })
+      await onSave({ name: name.trim(), phone: phone.trim(), email: email.trim(), address: address.trim(), isWholesaleBuyer: isWholesale, notes: notes.trim(), customFields: normalizedCustomFields })
     } finally {
       setSaving(false)
     }
@@ -105,6 +134,24 @@ function CustomerForm({
       <div className="space-y-2">
         <Label className="text-xs">{t("common.notes")}</Label>
         <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="min-h-[60px] text-xs" />
+      </div>
+      <div className="space-y-2 rounded-md border p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <Label className="text-xs font-medium">{t("cust.customFields")}</Label>
+            <p className="text-[10px] text-muted-foreground">{t("cust.customFieldsDesc")}</p>
+          </div>
+          <Button type="button" variant="outline" size="xs" onClick={() => setCustomFields((fields) => [...fields, { id: crypto.randomUUID(), label: "", value: "" }])}>
+            <Plus className="size-3" /> {t("cust.addCustomField")}
+          </Button>
+        </div>
+        {customFields.map((field) => (
+          <div key={field.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto] gap-2">
+            <Input value={field.label} maxLength={80} placeholder={t("cust.customFieldName")} className="h-8 text-xs" onChange={(event) => setCustomFields((fields) => fields.map((item) => item.id === field.id ? { ...item, label: event.target.value } : item))} />
+            <Input value={field.value} maxLength={1000} placeholder={t("cust.customFieldValue")} className="h-8 text-xs" onChange={(event) => setCustomFields((fields) => fields.map((item) => item.id === field.id ? { ...item, value: event.target.value } : item))} />
+            <Button type="button" variant="ghost" size="icon-sm" className="text-destructive" aria-label={t("common.delete")} onClick={() => setCustomFields((fields) => fields.filter((item) => item.id !== field.id))}><Trash2 className="size-3.5" /></Button>
+          </div>
+        ))}
       </div>
       <DialogFooter className="gap-2">
         <Button variant="outline" size="sm" onClick={onCancel}>
@@ -216,7 +263,7 @@ export function CustomersPage() {
     toast.success(`Loaded filter "${filter.name}"`)
   }, [])
 
-  const handleAdd = async (data: { name: string; phone: string; email: string; address: string; isWholesaleBuyer: boolean; notes: string }) => {
+  const handleAdd = async (data: CustomerFormData) => {
     const result = await addCustomer({
       ...data,
       wholesaleDiscountPercent: data.isWholesaleBuyer ? 10 : 0,
@@ -230,7 +277,7 @@ export function CustomersPage() {
     }
   }
 
-  const handleUpdate = async (id: string, data: { name: string; phone: string; email: string; address: string; isWholesaleBuyer: boolean; notes: string }) => {
+  const handleUpdate = async (id: string, data: CustomerFormData) => {
     const result = await updateCustomer(id, {
       ...data,
       wholesaleDiscountPercent: data.isWholesaleBuyer ? 10 : 0,
@@ -434,6 +481,12 @@ export function CustomersPage() {
                       {t("cust.lastPayment")}: {selected.daysSinceLastPayment} {t("common.days")}
                     </div>
                   )}
+                  {Object.entries(selected.customFields ?? {}).map(([label, value]) => (
+                    <div key={label} className="grid grid-cols-[minmax(8rem,auto)_1fr] gap-3 rounded-md border bg-muted/20 px-3 py-2">
+                      <span className="font-medium text-foreground">{label}</span>
+                      <span className="break-words text-muted-foreground">{value || "—"}</span>
+                    </div>
+                  ))}
                 </div>
 
                 <Separator />

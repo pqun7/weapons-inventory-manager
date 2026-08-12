@@ -1,0 +1,9 @@
+project_id = "weapon-store"
+
+[functions.admin-users]
+verify_jwt = true
+
+# This function must be callable before sign-in. It requires the one-time
+# activation code and applies a database/IP rate limit itself.
+[functions.account-auth]
+verify_jwt = false

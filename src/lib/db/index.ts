@@ -71,11 +71,11 @@ const AMMUNITION_COLUMNS = "id,name,caliber,package_type,units_per_package,full_
 const SHIPMENT_COLUMNS = "id,shipment_number,supplier_id,shipment_date,expected_arrival_date,total_expected_items,attachments,notes,status,timeline,purchase_order_number,invoice_number,shipping_carrier,container_number,currency,purchase_date,actual_arrival_date,line_items,documents,total_cost_valuation,workflow_status,import_id,arrival_note,delay_reason,last_arrival_prompt_at,planned_costs,created_at"
 const INVOICE_COLUMNS = "id,invoice_number,type,customer_id,supplier_id,customer_name,date,due_date,total_original,total_negotiated,total_paid,balance,status,weapon_ids,line_items,sale_mode,employee_id,employee_name,attachments,shipment_id,notes,voided,tax_amount,total_valuation,currency,accounting_currency,exchange_rate,exchange_rate_date,rate_source,total_original_accounting,total_negotiated_accounting,total_paid_accounting,balance_accounting,tax_amount_accounting"
 const PAYMENT_COLUMNS = "id,invoice_id,invoice_number,date,amount,currency,accounting_amount,accounting_currency,exchange_rate,exchange_rate_date,rate_source,rate_id,method,employee,notes"
-const CUSTOMER_COLUMNS = "id,name,phone,email,address,is_wholesale_buyer,wholesale_discount_percent,notes,date_added"
+const CUSTOMER_COLUMNS = "id,name,phone,email,address,is_wholesale_buyer,wholesale_discount_percent,notes,custom_fields,date_added"
 const SUPPLIER_COLUMNS = "id,name,contact_person,phone,email,address,date_added"
 const AUDIT_COLUMNS = "id,timestamp,date,user_id,action_type,description,metadata,entity_type,entity_id,entity_name,previous_values,new_values,reason"
 const NOTIFICATION_COLUMNS = "id,type,title,message,date,is_read,entity_id"
-const USER_COLUMNS = "id,username,name,role,permissions,password_set"
+const USER_COLUMNS = "id,username,email,name,role,is_primary_admin,permissions,password_set"
 const SETTINGS_COLUMNS = "id,currency_symbol,currency_code,accounting_currency_code,rate_base_currency_code,supported_currencies,currency_frequency,tax_percent,invoice_header,invoice_footer,store_logo,thermal_printer_width,label_format,hourly_snapshot,daily_closing_prompt,weekly_verification,min_profit_margin_percent,target_retail_margin_percent,target_wholesale_margin_percent,maximum_markup_percent,psychological_pricing,theme,preferred_display_currency,show_demo_data,app_language,date_format,number_format,company_name,company_address,company_phone,company_email,company_tax_id"
 const PRODUCT_COST_COLUMNS = "id,product_type,product_id,name,calculation_type,input_amount,percentage_rate,calculation_base,calculated_amount,currency_code,exchange_rate,base_amount,base_currency_code,exchange_rate_date,rate_source,source,created_by,created_at,updated_at"
 const INVENTORY_COST_COLUMNS = "product_type,product_id,shipment_id,shipment_item_id,original_amount,original_currency_code,original_exchange_rate,original_base_amount,product_costs_base_amount,shipment_costs_base_amount,final_landed_base_amount,base_currency_code,exchange_rate_date,rate_source,finalized_at"
@@ -378,13 +378,73 @@ export async function dbWriteAuditEvent(actionType: string, description: string,
   if (error) throw new Error(error.message)
 }
 
-async function invokeAdminUsers(body: Record<string, Json>): Promise<void> {
-  const { error } = await getSupabaseClient().functions.invoke("admin-users", { body })
-  if (error) throw new Error(`User administration failed: ${error.message}`)
+async function invokeAdminUsers(body: Record<string, Json>): Promise<Record<string, Json>> {
+  const { data, error } = await getSupabaseClient().rpc("admin_users_action", { p_request: body })
+  if (error) {
+    throw new Error(`User administration failed: ${error.message}`)
+  }
+  return (data ?? {}) as Record<string, Json>
 }
-export async function dbInsertUser(user: User): Promise<void> { await invokeAdminUsers({ action: "create", user: toJsonRecord(mappers.userToRow(user)) as Json }) }
+export async function dbInsertUser(user: User): Promise<{ activationCode: string; userId: string }> {
+  const result = await invokeAdminUsers({ action: "create", user: toJsonRecord(mappers.userToRow(user)) as Json })
+  if (typeof result.userId !== "string" || !result.userId) {
+    throw new Error("User administration failed: the server did not return a user ID")
+  }
+  return {
+    activationCode: typeof result.activationCode === "string" ? result.activationCode : "",
+    userId: result.userId,
+  }
+}
 export async function dbUpdateUser(user: User): Promise<void> { await invokeAdminUsers({ action: "update", user: toJsonRecord(mappers.userToRow(user)) as Json }) }
 export async function dbDeleteUser(id: string): Promise<void> { await invokeAdminUsers({ action: "delete", userId: id }) }
+export async function dbResetUserActivation(id: string): Promise<string> {
+  const result = await invokeAdminUsers({ action: "reset-activation", userId: id })
+  return typeof result.activationCode === "string" ? result.activationCode : ""
+}
+
+export async function dbUpdateOwnEmail(email: string | null): Promise<void> {
+  const { error } = await getSupabaseClient().rpc("update_own_email", { p_email: email })
+  if (error) throw new Error(`Update email: ${error.message}`)
+}
+
+export interface BackupRecord {
+  id: string
+  scope: "system" | "personal"
+  owner_user_id: string | null
+  created_by_name: string
+  label: string
+  created_at: string
+  restored_at: string | null
+  item_count: number
+  size_bytes: number
+  status: "creating" | "completed" | "restoring" | "failed"
+  completed_at: string | null
+  error_message: string | null
+}
+
+export async function dbListBackups(): Promise<BackupRecord[]> {
+  const { data, error } = await getSupabaseClient().from("app_backups")
+    .select("id,scope,owner_user_id,created_by_name,label,created_at,restored_at,item_count,size_bytes,status,completed_at,error_message")
+    .order("created_at", { ascending: false })
+  if (error) throw new Error(`Load backups: ${error.message}`)
+  return (data ?? []) as unknown as BackupRecord[]
+}
+
+export async function dbCreateSystemBackup(label: string): Promise<void> {
+  const { error } = await getSupabaseClient().rpc("create_system_backup", { p_label: label })
+  if (error) throw new Error(`Create system backup: ${error.message}`)
+}
+
+export async function dbRestoreSystemBackup(id: string): Promise<string | null> {
+  const { data, error } = await getSupabaseClient().rpc("restore_system_backup", { p_backup_id: id })
+  if (error) throw new Error(`Restore system backup: ${error.message}`)
+  return typeof data === "string" ? data : null
+}
+
+export async function dbDeleteBackup(id: string): Promise<void> {
+  const { error } = await getSupabaseClient().rpc("delete_backup", { p_backup_id: id })
+  if (error) throw new Error(`Delete backup: ${error.message}`)
+}
 
 export async function dbInsertSavedFilter(filter: SavedFilter): Promise<void> {
   const { data: userId, error: userError } = await getSupabaseClient().rpc("current_app_user_id", {})

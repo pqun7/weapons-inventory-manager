@@ -1,702 +1,352 @@
-import { useEffect, useState } from "react"
-import {
-  Settings as SettingsIcon,
-  Database,
-  Download,
-  RotateCcw,
-  Shield,
-  Users,
-  Info,
-  Crosshair,
-  Coins,
-  Layers,
-} from "lucide-react"
+import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { AlertTriangle, Coins, Database, KeyRound, Layers, Lock, Plus, RotateCcw, Shield, Trash2, UserRound, Users } from "lucide-react"
+import { toast } from "sonner"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
+import { PasswordInput } from "@/components/ui/password-input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { Separator } from "@/components/ui/separator"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/ui/dialog"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { useStore } from "@/lib/store"
-import { useI18n } from "@/lib/i18n"
-import { useCurrency } from "@/lib/currency-context"
-import type { UserRole, UserPermissions } from "@/lib/types"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CurrencyManagementPanel } from "@/components/currency-management-panel"
 import { MasterDataPanel } from "@/components/master-data-panel"
-import { downloadSnapshot } from "@/lib/excel"
-import { toast } from "sonner"
+import { getSupabaseClient } from "@/lib/supabase/client"
+import * as db from "@/lib/db"
+import { useStore } from "@/lib/store"
+import type { User, UserPermissions, UserRole } from "@/lib/types"
+import { EDITABLE_EMPLOYEE_PERMISSIONS, EMPLOYEE_DEFAULT_PERMISSIONS, hasPermission, isAdmin, permissionsForRole } from "@/lib/rbac"
 
-const ROLE_VALUES: UserRole[] = ["Admin", "Employee", "Manager", "Sales", "Inventory", "Accountant", "Read-Only"]
+const EMPTY_NEW_USER = { name: "", email: "", role: "Employee" as UserRole }
 
 export function SettingsPage() {
-  const { t } = useI18n()
-  const { currencies, accountingCurrency, transactionCurrency, displayCurrency, setDisplayCurrency, currencyPresentation } = useCurrency()
   const store = useStore()
-  const settings = store.settings
-  const users = store.users
-  const updateSettings = store.updateSettings
-  const addUser = store.addUser
-  const updateUser = store.updateUser
-  const deleteUser = store.deleteUser
-  const refreshFromDb = store.refreshFromDb
-  const [resetOpen, setResetOpen] = useState(false)
-  const [addUserOpen, setAddUserOpen] = useState(false)
-  const [newUsername, setNewUsername] = useState("")
-  const [newName, setNewName] = useState("")
-  const [newRole, setNewRole] = useState<UserRole>("Manager")
-  const [backupLoading, setBackupLoading] = useState(false)
-  const [companyName, setCompanyName] = useState(settings.companyName ?? "")
-  const [companyAddress, setCompanyAddress] = useState(settings.companyAddress ?? "")
-  const [pricingDraft, setPricingDraft] = useState(() => ({
-    retail: String(settings.targetRetailMarginPercent),
-    wholesale: String(settings.targetWholesaleMarginPercent),
-    minimum: String(settings.minProfitMarginPercent),
-    maximumMarkup: String(settings.maximumMarkupPercent),
-  }))
+  const currentUser = store.getCurrentUser()
+  const admin = isAdmin(currentUser)
+  const canViewCurrencies = admin || hasPermission(currentUser, "currencies.view")
+  const [addOpen, setAddOpen] = useState(false)
+  const [newUser, setNewUser] = useState(EMPTY_NEW_USER)
+  const [selectedUser, setSelectedUser] = useState<User | null>(null)
+  const [createdActivationCode, setCreatedActivationCode] = useState("")
 
-  useEffect(() => {
-    setCompanyName(settings.companyName ?? "")
-    setCompanyAddress(settings.companyAddress ?? "")
-  }, [settings.companyName, settings.companyAddress])
+  const tabs = useMemo(() => [
+    { value: "general", label: "General", icon: UserRound, visible: true },
+    { value: "currencies", label: "Currencies", icon: Coins, visible: canViewCurrencies },
+    { value: "master", label: "Master Data", icon: Layers, visible: true },
+    { value: "users", label: "Users", icon: Users, visible: admin },
+    { value: "backup", label: "Backup / Data", icon: Database, visible: true },
+  ].filter((tab) => tab.visible), [admin, canViewCurrencies])
 
-  useEffect(() => {
-    setPricingDraft({
-      retail: String(settings.targetRetailMarginPercent),
-      wholesale: String(settings.targetWholesaleMarginPercent),
-      minimum: String(settings.minProfitMarginPercent),
-      maximumMarkup: String(settings.maximumMarkupPercent),
+  const createUser = async (event: FormEvent) => {
+    event.preventDefault()
+    const name = newUser.name.trim().replace(/\s+/g, " ")
+    const email = newUser.email.trim().toLowerCase()
+    if (!name) return toast.error("Name is required")
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return toast.error("Enter a valid email or leave it blank")
+    const result = await store.addUser({
+      name,
+      email: email || undefined,
+      username: email || name,
+      role: newUser.role,
+      permissions: permissionsForRole(newUser.role),
     })
-  }, [settings.maximumMarkupPercent, settings.minProfitMarginPercent, settings.targetRetailMarginPercent, settings.targetWholesaleMarginPercent])
-
-  const savePricingRules = async () => {
-    const retail = Number(pricingDraft.retail)
-    const wholesale = Number(pricingDraft.wholesale)
-    const minimum = Number(pricingDraft.minimum)
-    const maximumMarkup = Number(pricingDraft.maximumMarkup)
-    if (![retail, wholesale, minimum, maximumMarkup].every(Number.isFinite)
-      || retail <= 0 || retail >= 100 || wholesale <= 0 || wholesale >= retail
-      || minimum < 0 || minimum >= wholesale || maximumMarkup < 0) {
-      toast.error(t("pricing.invalidPrice"))
-      return
-    }
-    const result = await updateSettings({
-      targetRetailMarginPercent: retail,
-      targetWholesaleMarginPercent: wholesale,
-      minProfitMarginPercent: minimum,
-      maximumMarkupPercent: maximumMarkup,
-    })
-    if (!result.success) toast.error(result.error ?? t("settings.saveFailed"))
+    if (!result.success) return toast.error(result.error ?? "Could not create user")
+    setCreatedActivationCode(result.activationCode ?? "")
+    setNewUser(EMPTY_NEW_USER)
+    setAddOpen(false)
+    toast.success("Account created. The user will choose a password on first login.")
   }
 
-  useEffect(() => {
-    void refreshFromDb()
-  }, [refreshFromDb])
+  return (
+    <div className="flex flex-col gap-4 p-4 md:p-6">
+      <div>
+        <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
+        <p className="text-sm text-muted-foreground">Account, access control, reference data, and backups.</p>
+      </div>
 
-  const roleLabel = (role: UserRole): string => {
-    const map: Partial<Record<UserRole, string>> = {
-      Admin: t("role.Admin"),
-      Manager: t("role.Manager"),
-    }
-    return map[role] ?? role
+      <Tabs defaultValue="general" className="space-y-4">
+        <TabsList className="h-auto flex-wrap justify-start">
+          {tabs.map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value} className="gap-1.5 text-xs">
+              <tab.icon className="size-3.5" />{tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+
+        <TabsContent value="general"><GeneralSettings user={currentUser} /></TabsContent>
+        {canViewCurrencies && <TabsContent value="currencies"><CurrencyManagementPanel /></TabsContent>}
+        <TabsContent value="master"><MasterDataPanel readOnly={!admin} /></TabsContent>
+        {admin && (
+          <TabsContent value="users">
+            <Card>
+              <CardHeader className="flex-row items-start justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base"><Shield className="size-4" />Users & RBAC</CardTitle>
+                  <CardDescription>Only administrators can create accounts or edit employee capabilities.</CardDescription>
+                </div>
+                <Button size="sm" onClick={() => setAddOpen(true)}><Plus className="size-4" />Add account</Button>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-hidden rounded-md border">
+                  <Table>
+                    <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Email</TableHead><TableHead>Role</TableHead><TableHead>Password</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {store.users.map((user) => (
+                        <TableRow key={user.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedUser(user)}>
+                          <TableCell className="font-medium">{user.name}{user.isPrimaryAdmin && <Badge variant="outline" className="ms-2">Primary admin</Badge>}</TableCell>
+                          <TableCell>{user.email ?? <span className="text-muted-foreground">Name login only</span>}</TableCell>
+                          <TableCell><Badge variant={user.role === "Admin" ? "default" : "secondary"}>{user.role}</Badge></TableCell>
+                          <TableCell><Badge variant={user.passwordSet ? "secondary" : "outline"}>{user.passwordSet ? "Set" : "Pending first login"}</Badge></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+        <TabsContent value="backup"><BackupSettings user={currentUser} /></TabsContent>
+      </Tabs>
+
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="sm:max-w-md">
+          <form onSubmit={createUser} className="grid gap-4">
+            <DialogHeader>
+              <DialogTitle>Create account</DialogTitle>
+              <DialogDescription>The administrator does not set a password. The user creates it at first login.</DialogDescription>
+            </DialogHeader>
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-center text-sm font-semibold text-amber-800 dark:text-amber-300" dir="rtl">
+              الاسم لا يمكن تغييره لاحقاً
+            </div>
+            <div className="grid gap-1.5"><Label htmlFor="new-user-name">Name *</Label><Input id="new-user-name" required maxLength={120} value={newUser.name} onChange={(e) => setNewUser((value) => ({ ...value, name: e.target.value }))} /></div>
+            <div className="grid gap-1.5"><Label htmlFor="new-user-email">Email (optional)</Label><Input id="new-user-email" type="email" value={newUser.email} onChange={(e) => setNewUser((value) => ({ ...value, email: e.target.value }))} /></div>
+            <div className="grid gap-1.5">
+              <Label>Role</Label>
+              <Select value={newUser.role} onValueChange={(role) => setNewUser((value) => ({ ...value, role: role as UserRole }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Employee">Employee</SelectItem><SelectItem value="Admin">Admin</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <DialogFooter><Button type="button" variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button><Button type="submit">Create account</Button></DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <UserPermissionsDialog user={selectedUser} actor={currentUser} onActivationCode={setCreatedActivationCode} onClose={() => setSelectedUser(null)} />
+      <Dialog open={Boolean(createdActivationCode)} onOpenChange={(open) => { if (!open) setCreatedActivationCode("") }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>One-time activation code</DialogTitle><DialogDescription>Give this code to the new user through a trusted channel. It expires in 7 days and is shown only once.</DialogDescription></DialogHeader>
+          <div className="select-all rounded-md border bg-muted p-4 text-center font-mono text-2xl font-bold tracking-widest">{createdActivationCode}</div>
+          <DialogFooter><Button onClick={() => setCreatedActivationCode("")}>I saved the code</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function GeneralSettings({ user }: { user: User }) {
+  const refreshFromDb = useStore((state) => state.refreshFromDb)
+  const [email, setEmail] = useState(user.email ?? "")
+  const [emailSaving, setEmailSaving] = useState(false)
+  const [password, setPassword] = useState("")
+  const [confirmation, setConfirmation] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => setEmail(user.email ?? ""), [user.email])
+
+  const changePassword = async (event: FormEvent) => {
+    event.preventDefault()
+    if (password !== confirmation) return toast.error("Passwords do not match")
+    if (password.length < 8 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password)) return toast.error("Use at least 8 characters with upper-case, lower-case, and a number")
+    setSaving(true)
+    const { error } = await getSupabaseClient().auth.updateUser({ password })
+    setSaving(false)
+    if (error) return toast.error(error.message)
+    setPassword(""); setConfirmation("")
+    toast.success("Password changed")
   }
 
-  const PERMISSION_LABELS: Record<keyof UserPermissions, string> = {
-    canImportExcel: t("settings.canImportExcel"),
-    canExportData: t("settings.canExportData"),
-    canViewReports: t("settings.canViewReports"),
-    canManageUsers: t("settings.canManageUsers"),
-    canRegisterPayments: t("settings.canRegisterPayments"),
-    canVoidInvoices: t("settings.canVoidInvoices"),
-    canExtendDueDates: t("settings.canExtendDueDates"),
-    canDeleteRecords: t("settings.canDeleteRecords"),
-    "shipment.import": "Import shipment manifests",
-    "shipment.review": "Review shipment manifests",
-    "shipment.edit": "Edit shipment manifests",
-    "shipment.receive": "Receive shipments into inventory",
-    "shipment.cancel": "Cancel shipments",
-    "shipment.reschedule": "Reschedule shipments",
-  }
-
-  const handleSnapshotDownload = () => {
-    setBackupLoading(true)
+  const saveEmail = async (event: FormEvent) => {
+    event.preventDefault()
+    const normalized = email.trim().toLowerCase()
+    if (normalized && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) return toast.error("Enter a valid email or leave it empty")
+    setEmailSaving(true)
     try {
-      downloadSnapshot()
-      toast.success(t("settings.backupCreated"))
+      await db.dbUpdateOwnEmail(normalized || null)
+      await refreshFromDb()
+      toast.success(normalized ? "Email updated" : "Email removed")
     } catch (error) {
-      console.error("Failed to export portable snapshot:", error)
-      toast.error(t("settings.backupCreateFailed"))
+      toast.error(error instanceof Error ? error.message : "Could not update email")
     } finally {
-      setBackupLoading(false)
+      setEmailSaving(false)
     }
   }
 
   return (
-    <div className="flex flex-col gap-3 p-3 lg:p-4">
-      <Tabs defaultValue="general">
-        <TabsList className="h-8">
-          <TabsTrigger value="general" className="text-xs">
-            <SettingsIcon className="size-3" /> {t("settings.general")}
-          </TabsTrigger>
-          <TabsTrigger value="currency" className="text-xs">
-            <Coins className="size-3" /> {t("settings.currency")}
-          </TabsTrigger>
-          <TabsTrigger value="masterdata" className="text-xs">
-            <Layers className="size-3" /> {t("settings.masterData")}
-          </TabsTrigger>
-          <TabsTrigger value="users" className="text-xs">
-            <Users className="size-3" /> {t("settings.users")}
-          </TabsTrigger>
-          <TabsTrigger value="data" className="text-xs">
-            <Database className="size-3" /> {t("settings.data")}
-          </TabsTrigger>
-        </TabsList>
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><UserRound className="size-4" />Account information</CardTitle></CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="grid gap-1.5"><Label>Name</Label><Input value={user.name} readOnly aria-readonly="true" className="bg-muted" /><p className="flex items-center gap-1 text-xs text-muted-foreground"><Lock className="size-3" />Name cannot be changed after account creation.</p></div>
+          <form className="grid gap-1.5" onSubmit={saveEmail}><Label htmlFor="account-email">Email (optional)</Label><div className="flex gap-2"><Input id="account-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" /><Button type="submit" variant="outline" disabled={emailSaving}>{emailSaving ? "Saving…" : "Save email"}</Button></div><p className="text-xs text-muted-foreground">You can add, change, or remove your email at any time.</p></form>
+          <div className="grid gap-1.5"><Label>Role</Label><Input value={user.role} readOnly className="bg-muted" /></div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><KeyRound className="size-4" />Change password</CardTitle><CardDescription>Changing your password signs future sessions in with the new value.</CardDescription></CardHeader>
+        <CardContent><form className="grid gap-3" onSubmit={changePassword}><div className="grid gap-1.5"><Label>New password</Label><PasswordInput autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} /></div><div className="grid gap-1.5"><Label>Confirm password</Label><PasswordInput autoComplete="new-password" required value={confirmation} onChange={(e) => setConfirmation(e.target.value)} /></div><Button disabled={saving}>{saving ? "Saving…" : "Change password"}</Button></form></CardContent>
+      </Card>
+    </div>
+  )
+}
 
-        <TabsContent value="general">
-          <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <Info className="size-4" /> {t("settings.systemInfo")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                    <Crosshair className="size-6" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold">Weapon Store ERP</div>
-                    <div className="text-[10px] text-muted-foreground">
-                      {t("settings.versionInfo")}
-                    </div>
-                  </div>
-                </div>
-                <Separator />
-                <div className="grid gap-2 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">
-                      {t("settings.currentUser")}
-                    </span>
-                    <span>{store.getCurrentUser().name}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">
-                      {t("settings.role")}
-                    </span>
-                    <Badge variant="secondary">
-                      {roleLabel(store.getCurrentUser().role)}
-                    </Badge>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">
-                      {t("report.accountingCurrency")}
-                    </span>
-                    <span>{accountingCurrency}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t("settings.currency")}</span>
-                    <span>{transactionCurrency}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t("report.displayCurrency")}</span>
-                    <span>{displayCurrency}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">
-                      {t("settings.language")}
-                    </span>
-                    <span>{settings.appLanguage ?? "en"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">
-                      {t("settings.theme")}
-                    </span>
-                    <span>{settings.theme ?? "system"}</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+function UserPermissionsDialog({ user, actor, onActivationCode, onClose }: { user: User | null; actor: User; onActivationCode: (code: string) => void; onClose: () => void }) {
+  const updateUser = useStore((state) => state.updateUser)
+  const deleteUser = useStore((state) => state.deleteUser)
+  const resetUserActivation = useStore((state) => state.resetUserActivation)
+  const [role, setRole] = useState<UserRole>("Employee")
+  const [permissions, setPermissions] = useState<UserPermissions>(EMPLOYEE_DEFAULT_PERMISSIONS)
+  const [email, setEmail] = useState("")
+  const [saving, setSaving] = useState(false)
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">{t("settings.general")}</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                <div className="grid gap-3">
-                  <div>
-                    <Label className="text-xs">{t("settings.language")}</Label>
-                    <Select
-                      value={settings.appLanguage ?? "en"}
-                      onValueChange={(value) => updateSettings({ appLanguage: value })}
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="en">English</SelectItem>
-                        <SelectItem value="ar">العربية</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="text-xs">{t("settings.preferredDisplayCurrency")}</Label>
-                    <Select
-                      value={displayCurrency}
-                      onValueChange={setDisplayCurrency}
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {currencies.map((currency) => (
-                          <SelectItem key={currency.isoCode} value={currency.isoCode}>
-                            {currency.isoCode} — {currencyPresentation(currency.isoCode).name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="text-xs">{t("settings.companyName")}</Label>
-                    <Input
-                      value={companyName}
-                      onChange={(e) => setCompanyName(e.target.value)}
-                      onBlur={() => updateSettings({ companyName }).catch(() => { })}
-                      className="h-8 text-xs"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">{t("settings.companyAddress")}</Label>
-                    <Input
-                      value={companyAddress}
-                      onChange={(e) => setCompanyAddress(e.target.value)}
-                      onBlur={() => updateSettings({ companyAddress }).catch(() => { })}
-                      className="h-8 text-xs"
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+  useEffect(() => {
+    if (!user) return
+    setRole(user.role)
+    setEmail(user.email ?? "")
+    setPermissions(permissionsForRole(user.role, user.permissions))
+  }, [user])
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm"><Coins className="size-4" />{t("settings.pricingRules")}</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-3 sm:grid-cols-2">
-                {([
-                  ["retail", "settings.targetRetailMargin"],
-                  ["wholesale", "settings.targetWholesaleMargin"],
-                  ["minimum", "settings.minProfitMargin"],
-                  ["maximumMarkup", "settings.maximumMarkup"],
-                ] as const).map(([field, label]) => (
-                  <div key={field}>
-                    <Label className="text-xs">{t(label)}</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={field === "maximumMarkup" ? 10000 : 99.99}
-                      step="0.1"
-                      value={pricingDraft[field]}
-                      onChange={(event) => setPricingDraft((current) => ({ ...current, [field]: event.target.value }))}
-                      onBlur={() => void savePricingRules()}
-                      className="h-8 text-xs"
-                    />
-                  </div>
-                ))}
-                <div className="flex items-center justify-between gap-3 rounded-md border p-3 sm:col-span-2">
-                  <div>
-                    <Label className="text-xs">{t("settings.psychologicalPricing")}</Label>
-                    <p className="text-[10px] text-muted-foreground">{t("settings.psychologicalPricingHelp")}</p>
-                  </div>
-                  <Switch checked={settings.psychologicalPricing} onCheckedChange={(checked) => void updateSettings({ psychologicalPricing: checked })} />
-                </div>
-              </CardContent>
-            </Card>
+  const save = async () => {
+    if (!user) return
+    const normalizedEmail = email.trim().toLowerCase()
+    if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return toast.error("Enter a valid email or leave it empty")
+    setSaving(true)
+    const result = await updateUser(user.id, { email: normalizedEmail || undefined, role, permissions: permissionsForRole(role, permissions) })
+    setSaving(false)
+    if (!result.success) return toast.error(result.error ?? "Could not update user")
+    toast.success("User access updated")
+    onClose()
+  }
+
+  const deactivate = async () => {
+    if (!user || user.id === actor.id) return
+    const result = await deleteUser(user.id)
+    if (!result.success) return toast.error(result.error ?? "Could not deactivate user")
+    toast.success("User deleted")
+    onClose()
+  }
+
+  const resetActivation = async () => {
+    if (!user) return
+    const result = await resetUserActivation(user.id)
+    if (!result.success || !result.activationCode) return toast.error(result.error ?? "Could not create a new activation code")
+    onClose()
+    onActivationCode(result.activationCode)
+  }
+
+  return (
+    <Dialog open={Boolean(user)} onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader><DialogTitle>{user?.name}</DialogTitle><DialogDescription>The name is permanent. Role and employee permissions can be changed at any time.</DialogDescription></DialogHeader>
+        <div className="grid gap-4">
+          <div className="grid gap-1.5"><Label>Email (optional)</Label><Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" /></div>
+          <div className="grid gap-1.5"><Label>Role</Label><Select value={role} onValueChange={(value) => setRole(value as UserRole)} disabled={user?.id === actor.id || user?.isPrimaryAdmin}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Employee">Employee</SelectItem><SelectItem value="Admin">Admin</SelectItem></SelectContent></Select></div>
+          {role === "Employee" && <div className="grid gap-2 rounded-md border p-3">{EDITABLE_EMPLOYEE_PERMISSIONS.map(({ key, label }) => <div key={key} className="flex items-center justify-between gap-4"><Label htmlFor={`permission-${key}`} className="font-normal">{label}</Label><Switch id={`permission-${key}`} checked={permissions[key] === true} onCheckedChange={(checked) => setPermissions((value) => ({ ...value, [key]: checked }))} /></div>)}</div>}
+        </div>
+        <DialogFooter className="sm:justify-between"><div className="flex gap-2"><Button variant="destructive" onClick={deactivate} disabled={!user || user.id === actor.id || user.isPrimaryAdmin || (user.role === "Admin" && !actor.isPrimaryAdmin)}><Trash2 className="size-4" />Delete user</Button>{user && !user.passwordSet && <Button variant="outline" onClick={resetActivation}>New activation code</Button>}</div><div className="flex gap-2"><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save access"}</Button></div></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function BackupSettings({ user }: { user: User }) {
+  const [backups, setBackups] = useState<db.BackupRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [working, setWorking] = useState(false)
+  const [restoreTarget, setRestoreTarget] = useState<db.BackupRecord | null>(null)
+  const [warningAccepted, setWarningAccepted] = useState(false)
+  const admin = isAdmin(user)
+  const canCreateSystem = admin || hasPermission(user, "backups.system.create")
+
+  const refresh = async () => {
+    setLoading(true)
+    try { setBackups(await db.dbListBackups()) } catch (error) { toast.error(error instanceof Error ? error.message : "Could not load backups") } finally { setLoading(false) }
+  }
+  useEffect(() => { void refresh() }, [])
+
+  const createSystem = async () => {
+    setWorking(true)
+    try {
+      await db.dbCreateSystemBackup(`System backup ${new Date().toLocaleString()}`)
+      await refresh()
+      toast.success("Full system backup created")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Backup failed")
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  const restoreSystem = async () => {
+    if (!restoreTarget || !admin || !warningAccepted) return
+    setWorking(true)
+    try {
+      await db.dbRestoreSystemBackup(restoreTarget.id)
+      await useStore.getState().refreshFromDb()
+      await refresh()
+      setRestoreTarget(null)
+      setWarningAccepted(false)
+      toast.success("The complete system was restored. A safety backup of the previous state was created automatically.")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Restore failed")
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  const deleteBackup = async (backup: db.BackupRecord) => {
+    if (!admin) return
+    setWorking(true)
+    try {
+      await db.dbDeleteBackup(backup.id)
+      await refresh()
+      toast.success("Backup deleted")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete backup")
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  const formatSize = (bytes: number) => bytes < 1024
+    ? `${bytes} B`
+    : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`
+
+  return (
+    <div className="grid gap-4">
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Database className="size-4" />System backups</CardTitle><CardDescription>{admin ? "Create, view, restore, and delete complete database backups. Restoring also creates an automatic safety backup of the current state." : canCreateSystem ? "You may create and view complete system backups. Only an administrator can restore or delete them." : "Backup creation requires permission from an administrator."}</CardDescription></CardHeader>
+        <CardContent>{canCreateSystem && <Button onClick={createSystem} disabled={working}><Plus className="size-4" />{working ? "Working…" : "Create full system backup"}</Button>}</CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle className="text-base">Backup history</CardTitle></CardHeader>
+        <CardContent>{loading ? <p className="text-sm text-muted-foreground">Loading…</p> : backups.length === 0 ? <p className="text-sm text-muted-foreground">No backups available.</p> : <div className="overflow-hidden rounded-md border"><Table><TableHeader><TableRow><TableHead>Created</TableHead><TableHead>Name</TableHead><TableHead>Created by</TableHead><TableHead>Rows / Size</TableHead><TableHead>Status</TableHead><TableHead>Last restored</TableHead><TableHead /></TableRow></TableHeader><TableBody>{backups.filter((backup) => backup.scope === "system").map((backup) => <TableRow key={backup.id}><TableCell>{new Date(backup.created_at).toLocaleString()}</TableCell><TableCell className="font-medium">{backup.label}</TableCell><TableCell>{backup.created_by_name}</TableCell><TableCell>{backup.item_count.toLocaleString()} / {formatSize(backup.size_bytes)}</TableCell><TableCell><Badge variant={backup.status === "completed" ? "secondary" : backup.status === "failed" ? "destructive" : "outline"}>{backup.status}</Badge>{backup.error_message && <p className="mt-1 max-w-52 text-xs text-destructive">{backup.error_message}</p>}</TableCell><TableCell>{backup.restored_at ? new Date(backup.restored_at).toLocaleString() : "—"}</TableCell><TableCell><div className="flex gap-1">{admin && backup.status === "completed" && <Button size="sm" variant="outline" onClick={() => { setRestoreTarget(backup); setWarningAccepted(false) }} disabled={working}><RotateCcw className="size-3.5" />Restore</Button>}{admin && <Button size="icon-sm" variant="ghost" className="text-destructive" onClick={() => void deleteBackup(backup)} disabled={working}><Trash2 className="size-3.5" /></Button>}</div></TableCell></TableRow>)}</TableBody></Table></div>}</CardContent>
+      </Card>
+
+      <Dialog open={Boolean(restoreTarget)} onOpenChange={(open) => { if (!open && !working) { setRestoreTarget(null); setWarningAccepted(false) } }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle className="flex items-center gap-2 text-destructive"><AlertTriangle className="size-5" />Restore the complete system?</DialogTitle><DialogDescription>This operation replaces all application data and user state with the selected backup.</DialogDescription></DialogHeader>
+          <div className="grid gap-3">
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm" dir="rtl"><strong>تحذير:</strong> قم بحفظ نسخة احتياطية للحالة الحالية حتى تتمكن من الرجوع إليها. سيقوم النظام أيضاً بإنشاء نسخة أمان تلقائياً قبل الاستعادة.</div>
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm"><strong>Warning:</strong> Save a backup of the current state so you can return to it. The system will also create an automatic safety backup before restoring.</div>
+            <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={warningAccepted} onChange={(event) => setWarningAccepted(event.target.checked)} /><span>I understand that all current system data will be replaced / أفهم أنه سيتم استبدال جميع بيانات النظام الحالية</span></label>
           </div>
-        </TabsContent>
-
-        <TabsContent value="currency">
-          <CurrencyManagementPanel />
-        </TabsContent>
-
-        <TabsContent value="masterdata">
-          <MasterDataPanel />
-        </TabsContent>
-
-        <TabsContent value="users">
-          <Card>
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <Shield className="size-4" /> {t("settings.userMgmt")}
-                </CardTitle>
-                <Dialog open={addUserOpen} onOpenChange={setAddUserOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" className="h-7">
-                      <Users className="size-3.5" /> {t("settings.addUser")}
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle className="text-sm">
-                        {t("settings.addNewUser")}
-                      </DialogTitle>
-                    </DialogHeader>
-                    <DialogDescription className="text-xs">
-                      {t("settings.userFirstLogin")}
-                    </DialogDescription>
-                    <div className="grid gap-3">
-                      <div>
-                        <Label className="text-xs">
-                          {t("settings.username")}
-                        </Label>
-                        <Input
-                          type="email"
-                          autoComplete="email"
-                          value={newUsername}
-                          onChange={(e) => setNewUsername(e.target.value)}
-                          className="h-8 text-xs"
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-xs">
-                          {t("settings.displayName")}
-                        </Label>
-                        <Input
-                          value={newName}
-                          onChange={(e) => setNewName(e.target.value)}
-                          className="h-8 text-xs"
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-xs">{t("settings.role")}</Label>
-                        <Select
-                          value={newRole}
-                          onValueChange={(v) => setNewRole(v as UserRole)}
-                        >
-                          <SelectTrigger className="h-8 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {ROLE_VALUES.map((r) => (
-                              <SelectItem key={r} value={r}>
-                                {roleLabel(r)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setAddUserOpen(false)}
-                      >
-                        {t("common.cancel")}
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={async () => {
-                          if (!newUsername.trim() || !newName.trim()) {
-                            toast.error(t("settings.usernameNameRequired"))
-                            return
-                          }
-                          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newUsername.trim())) {
-                            toast.error(t("settings.validEmailRequired"))
-                            return
-                          }
-                          const defaultPerms: UserPermissions = {
-                            canImportExcel: newRole === "Admin" || newRole === "Manager",
-                            canExportData:
-                              newRole === "Admin" || newRole === "Manager" || newRole === "Accountant",
-                            canViewReports:
-                              newRole === "Admin" || newRole === "Manager" || newRole === "Accountant",
-                            canManageUsers: newRole === "Admin",
-                            canRegisterPayments:
-                              newRole === "Admin" || newRole === "Manager" || newRole === "Accountant",
-                            canVoidInvoices: newRole === "Admin" || newRole === "Manager",
-                            canExtendDueDates: newRole === "Admin" || newRole === "Manager",
-                            canDeleteRecords: newRole === "Admin",
-                          }
-                          const result = await addUser({
-                            username: newUsername.trim(),
-                            name: newName.trim(),
-                            role: newRole,
-                            permissions: defaultPerms,
-                          })
-                          if (!result.success) {
-                            toast.error(result.error ?? "Failed to add user")
-                            return
-                          }
-                          await refreshFromDb()
-                          toast.success(t("settings.userAdded"))
-                          setAddUserOpen(false)
-                          setNewUsername("")
-                          setNewName("")
-                        }}
-                      >
-                        {t("settings.addUser")}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <TableHead className="h-8 text-[10px]">
-                        {t("settings.username")}
-                      </TableHead>
-                      <TableHead className="h-8 text-[10px]">
-                        {t("settings.displayName")}
-                      </TableHead>
-                      <TableHead className="h-8 text-[10px]">
-                        {t("settings.role")}
-                      </TableHead>
-                      <TableHead className="h-8 text-[10px]">
-                        {t("settings.password")}
-                      </TableHead>
-                      <TableHead className="h-8 text-[10px]"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {users.map((u) => (
-                      <TableRow key={u.id}>
-                        <TableCell className="py-1.5 text-[11px] font-medium">
-                          {u.username}
-                        </TableCell>
-                        <TableCell className="py-1.5 text-[11px]">
-                          {u.name}
-                        </TableCell>
-                        <TableCell className="py-1.5">
-                          <Select
-                            value={u.role}
-                            onValueChange={async (v) => {
-                              const result = await updateUser(u.id, { role: v as UserRole })
-                              if (!result.success) toast.error(result.error ?? "Failed to update user")
-                              else await refreshFromDb()
-                            }}
-                          >
-                            <SelectTrigger
-                              size="sm"
-                              className="h-6 w-28 text-[10px]"
-                            >
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {ROLE_VALUES.map((r) => (
-                                <SelectItem key={r} value={r}>
-                                  {roleLabel(r)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell className="py-1.5">
-                          <Badge
-                            variant={
-                              u.passwordSet ? "secondary" : "outline"
-                            }
-                            className="text-[9px]"
-                          >
-                            {u.passwordSet
-                              ? t("settings.passwordSet")
-                              : t("settings.passwordPending")}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="py-1.5">
-                          {u.id !== store.currentUserId && (
-                            <Button
-                              size="icon-xs"
-                              variant="ghost"
-                              onClick={() => {
-                                deleteUser(u.id)
-                                toast.success(t("settings.userDeleted"))
-                              }}
-                            >
-                              <RotateCcw className="size-3" />
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              <Separator className="my-3" />
-
-              {/* Permission switches for current user */}
-              <div>
-                <h4 className="mb-2 text-xs font-medium">
-                  {t("settings.permissions")} — {store.getCurrentUser().name}
-                </h4>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {(
-                    Object.keys(PERMISSION_LABELS) as (keyof UserPermissions)[]
-                  ).map((perm) => (
-                    <div
-                      key={perm}
-                      className="flex items-center justify-between rounded-md border p-2"
-                    >
-                      <span className="text-[11px]">
-                        {PERMISSION_LABELS[perm]}
-                      </span>
-                      <Switch
-                        checked={store.getCurrentUser().permissions[perm]}
-                        onCheckedChange={(v) => {
-                          if (store.getCurrentUser().role === "Admin") {
-                            updateUser(store.getCurrentUser().id, {
-                              permissions: {
-                                ...store.getCurrentUser().permissions,
-                                [perm]: v,
-                              },
-                            })
-                          } else {
-                            toast.error(t("settings.onlyAdminPerms"))
-                          }
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="data">
-          <div className="grid gap-3 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <Database className="size-4" />{" "}
-                  {t("settings.backupEngine")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2">
-                <p className="text-[11px] text-muted-foreground">
-                  {t("settings.backupDesc")}
-                </p>
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={handleSnapshotDownload} disabled={backupLoading}>
-                    <Download className="size-3.5" />{" "}
-                    {backupLoading ? t("settings.backupCreating") : t("settings.createBackup")}
-                  </Button>
-                </div>
-                <Separator className="my-2" />
-                <div className="grid gap-1 text-[11px]">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t("settings.backupCount")}</span>
-                    <span>Supabase</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t("settings.weapons")}</span>
-                    <span className="tabular-nums">{store.weapons.length}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t("settings.invoices")}</span>
-                    <span className="tabular-nums">{store.invoices.length}</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <Database className="size-4" /> {t("settings.backupHistory")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-[11px] text-muted-foreground">
-                <p>{t("settings.noBackups")}</p>
-                <p>{t("settings.restoreBackupConfirm")}</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <RotateCcw className="size-4" /> {t("settings.dataReset")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2">
-                <p className="text-[11px] text-muted-foreground">
-                  {t("settings.resetDesc")}
-                </p>
-                <Dialog open={resetOpen} onOpenChange={setResetOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" variant="outline">
-                      <RotateCcw className="size-3.5" />{" "}
-                      {t("settings.resetToMock")}
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle className="text-sm">
-                        {t("settings.resetDatabase")}
-                      </DialogTitle>
-                      <DialogDescription>
-                        {t("settings.resetWarning")}
-                      </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setResetOpen(false)}
-                      >
-                        {t("common.cancel")}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="default"
-                        onClick={async () => {
-                          await refreshFromDb()
-                          setResetOpen(false)
-                          toast.success(t("settings.databaseReset"))
-                        }}
-                      >
-                        {t("settings.yesReset")}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
+          <DialogFooter><Button variant="outline" onClick={() => setRestoreTarget(null)} disabled={working}>Cancel</Button><Button variant="destructive" onClick={() => void restoreSystem()} disabled={!warningAccepted || working}>{working ? "Restoring…" : "Restore complete system"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
