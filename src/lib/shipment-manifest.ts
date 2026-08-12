@@ -13,7 +13,6 @@ export type ManifestWorkflowStatus =
 
 export type ManifestItemStatus = "valid" | "needs_review" | "invalid" | "duplicate" | "conflict"
 export type ManifestProductType = "weapon" | "ammunition" | "accessory"
-export type ConfidenceLevel = "high" | "medium" | "low"
 
 export interface ManifestSource {
   sheet?: string | null
@@ -49,6 +48,11 @@ export interface ManifestReviewItem {
   serialNumbers: string[]
   quantity: number | null
   unitPrice: number | null
+  retailPrice?: number | null
+  wholesalePrice?: number | null
+  retailPriceMode?: "auto" | "manual"
+  wholesalePriceMode?: "auto" | "manual"
+  additionalCosts?: import("./types.js").ProductAdditionalCostInput[]
   totalPrice: number | null
   currency: string | null
   countryOfOrigin: string | null
@@ -92,6 +96,7 @@ export interface ManifestDetailsPatch {
   destination?: string | null
   currency?: string | null
   reviewNote?: string | null
+  additionalCosts?: import("./types.js").ShipmentAdditionalCostInput[]
 }
 
 export interface ShipmentManifestReview {
@@ -114,6 +119,7 @@ export interface ShipmentManifestReview {
   destination: string | null
   currency: string | null
   reviewNote: string | null
+  additionalCosts: import("./types.js").ShipmentAdditionalCostInput[]
   aiProvider: string | null
   aiModel: string | null
   aiRequestId: string | null
@@ -200,6 +206,11 @@ export interface ManifestItemPatch {
   serialNumbers?: string[]
   quantity?: number | null
   unitPrice?: number | null
+  retailPrice?: number | null
+  wholesalePrice?: number | null
+  retailPriceMode?: "auto" | "manual"
+  wholesalePriceMode?: "auto" | "manual"
+  additionalCosts?: import("./types.js").ProductAdditionalCostInput[]
   totalPrice?: number | null
   currency?: string | null
   countryOfOrigin?: string | null
@@ -230,12 +241,6 @@ export function assertManifestTransition(from: ManifestWorkflowStatus, to: Manif
   if (!canTransitionManifest(from, to)) throw new Error(`Invalid shipment workflow transition: ${from} -> ${to}`)
 }
 
-export function confidenceLevel(value: number | null | undefined): ConfidenceLevel {
-  if ((value ?? 0) >= 0.85) return "high"
-  if ((value ?? 0) >= 0.6) return "medium"
-  return "low"
-}
-
 export function normalizeSerial(value: string): string {
   return value.trim().replace(/\s+/g, "").toUpperCase()
 }
@@ -246,8 +251,10 @@ export function normalizeCaliber(value: string | null | undefined): string | nul
   const compact = raw.toLowerCase().replace(/\s/g, "").replace(/,/g, ".")
   if (/^9(?:mm)?$/.test(compact)) return "9mm"
   if (/^9x19(?:mm)?$/.test(compact)) return "9x19mm"
-  if (/^(12ga|12gauge|12\/65|12\/70|12\/71|12\/76|12\/89)$/.test(compact)) return compact.includes("/76") ? "12 GA (12/76)" : "12 GA"
-  if (/^(20ga|20gauge|20\/70|20\/76)$/.test(compact)) return "20 GA"
+  if (/^(12ga|12gauge)$/.test(compact)) return "12 GA"
+  if (/^12\/(?:65|70|71|76|89)$/.test(compact)) return `12 GA (${compact})`
+  if (/^(20ga|20gauge)$/.test(compact)) return "20 GA"
+  if (/^20\/(?:70|76)$/.test(compact)) return `20 GA (${compact})`
   if (/^5\.5(?:mm)?$/.test(compact)) return "5.5mm"
   if (/^4\.5(?:mm)?$/.test(compact)) return "4.5mm"
   if (/^7\.62(?:mm)?$/.test(compact)) return "7.62mm"

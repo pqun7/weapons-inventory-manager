@@ -156,6 +156,8 @@ Hard rules:
 - A phrase such as "(60 PCS)" is an explicit quantity for an unserialized product. Carton/box numbers and dimensions are not product quantities.
 - "Magazine feed shotgun" and "10 round magazine shotgun" describe a weapon, not ammunition. Cases, grips, cleaning kits, pumps, zeroing apparatus, and spare tubes are accessories.
 - Extract manufacturer, model, weapon type, and caliber only from words visibly present in the product description or dedicated cells.
+- Split compound weapon descriptions into distinct business fields. Example: "HATSAN AIR RIFLE FLASH 5,5" means manufacturer "Hatsan", weaponType "Air rifle", model "FLASH", and caliber "5.5mm"; keep the complete original text in productName.
+- Store the action/feed mechanism in category (the weapon subtype), never in weaponType or model. Examples: "SEMI AUTO SHOTGUN" => weaponType "Shotgun", category "Semi auto"; "RADELLİ SEMI MAGAZİNE SHOTGUN" => manufacturer "Radelli", weaponType "Shotgun", category "Semi magazine".
 - Do not manufacture missing serials, prices, dates, suppliers, calibers, models, or manufacturers.
 - Split distinct products into distinct items. Keep multiple explicit serials in serialNumbers.
 - Confidence is 0..1 per field and measures direct support in the source, not plausibility.

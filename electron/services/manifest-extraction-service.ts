@@ -4,6 +4,11 @@ import {
   ALLOWED_MANIFEST_EXTENSIONS,
   MAX_MANIFEST_FILE_SIZE,
   heuristicSpreadsheetItems,
+  inferCaliber,
+  inferManufacturerAndModel,
+  inferProductType,
+  inferWeaponSubtype,
+  inferWeaponType,
   parseSpreadsheetBufferAsync,
   type NativeExtraction,
   type ParsedManifestItem,
@@ -19,6 +24,35 @@ import {
 } from "../../src/lib/shipment-manifest.js"
 
 type ProgressCallback = (progress: ManifestProgress) => void
+
+function canonicalizeProductFields(item: ParsedManifestItem): ParsedManifestItem {
+  if (!item.productName) return item
+  const inferredProductType = inferProductType(item.productName)
+  const productType = item.productType ?? inferredProductType
+  if (productType !== "weapon") return { ...item, productType }
+
+  const identity = inferManufacturerAndModel(item.productName)
+  const weaponType = inferWeaponType(item.productName)
+  const category = inferWeaponSubtype(item.productName)
+  const caliber = inferCaliber(item.productName)
+  return {
+    ...item,
+    productType,
+    weaponType: weaponType ?? item.weaponType,
+    category: category ?? item.category,
+    manufacturer: identity.manufacturer ?? item.manufacturer,
+    model: identity.model ?? item.model,
+    caliber: caliber ?? item.caliber,
+    confidence: {
+      ...item.confidence,
+      productType: inferredProductType === "weapon" ? Math.max(item.confidence.productType ?? 0, 0.94) : item.confidence.productType,
+      weaponType: weaponType ? Math.max(item.confidence.weaponType ?? 0, 0.92) : item.confidence.weaponType,
+      manufacturer: identity.manufacturer ? Math.max(item.confidence.manufacturer ?? 0, identity.manufacturerConfidence) : item.confidence.manufacturer,
+      model: identity.model ? Math.max(item.confidence.model ?? 0, identity.modelConfidence) : item.confidence.model,
+      caliber: caliber ? Math.max(item.confidence.caliber ?? 0, 0.91) : item.confidence.caliber,
+    },
+  }
+}
 
 function validateUpload(input: ManifestUploadInput): { extension: string; mimeType: string; bytes: Uint8Array } {
   if (typeof input?.fileName !== "string" || !input.fileName.trim() || /[\\/\0]/.test(input.fileName)) {
@@ -76,10 +110,11 @@ function mergeExtractedItems(nativeItems: ParsedManifestItem[], aiItems: ParsedM
       "productType", "productName", "category", "weaponType", "manufacturer", "model", "caliber",
       "sku", "productCode", "unitPrice", "totalPrice", "currency", "countryOfOrigin",
     ]
+    const deterministicNativeFields = new Set<keyof ParsedManifestItem>(["weaponType", "manufacturer", "model", "caliber"])
     for (const field of semanticFields) {
       const aiValue = aiItem[field]
       const nativeValue = nativeItem[field]
-      if (aiValue != null && aiValue !== "" && (nativeValue == null || nativeValue === "" || (aiItem.confidence[String(field)] ?? 0) > (nativeItem.confidence[String(field)] ?? 0) + 0.05)) {
+      if (aiValue != null && aiValue !== "" && (nativeValue == null || nativeValue === "" || (!deterministicNativeFields.has(field) && (aiItem.confidence[String(field)] ?? 0) > (nativeItem.confidence[String(field)] ?? 0) + 0.05))) {
         ;(combined as Record<string, unknown>)[field] = aiValue
       }
     }
@@ -153,7 +188,7 @@ export async function extractShipmentManifest(input: ManifestUploadInput, progre
   }
   if (!ai && !native) throw new Error("AI extraction is required for PDF and image manifests")
   const metadata = mergeMetadata(nativeMetadata(native), ai?.shipment)
-  const items = mergeExtractedItems(heuristicItems, ai?.items ?? [])
+  const items = mergeExtractedItems(heuristicItems, ai?.items ?? []).map(canonicalizeProductFields)
   if (items.length === 0) throw new Error("No shipment items could be extracted from this document")
   progress?.({ stage: "normalizing", percent: 80, message: "Normalizing extracted data" })
   progress?.({ stage: "complete", percent: 100, message: "Manifest is ready for review" })

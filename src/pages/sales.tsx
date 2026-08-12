@@ -512,22 +512,8 @@ export function SalesPage() {
   const goBack = () => setStep((s) => Math.max(1, s - 1) as WizardStep)
 
   // ---------- Dynamic Dialog Width based on step ----------
-  const dialogMaxWidthClass = useMemo(() => {
-    switch (step) {
-      case 1:
-        return "sm:max-w-xl md:max-w-2xl"
-      case 2:
-        return "w-[95vw] max-w-none"
-      case 3:
-      case 4:
-        // تم تكبير الخطوتين 3 و 4 لشاشات أكبر
-        return "w-[40vw] max-w-none"
-      case 5:
-        return "sm:max-w-4xl md:max-w-5xl lg:max-w-6xl xl:max-w-7xl"
-      default:
-        return "sm:max-w-5xl"
-    }
-  }, [step])
+  // Consistent dialog width across all steps
+  const dialogMaxWidthClass = "w-[95vw] max-w-5xl";
 
   // ---------- Render ----------
   return (

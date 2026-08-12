@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  assertManifestTransition, canTransitionManifest, confidenceLevel, normalizeCaliber, normalizeSerial, summarizeItemStatuses,
+  assertManifestTransition, canTransitionManifest, normalizeCaliber, normalizeSerial, summarizeItemStatuses,
 } from "./shipment-manifest"
 
 describe("shipment manifest domain rules", () => {
@@ -19,13 +19,12 @@ describe("shipment manifest domain rules", () => {
     expect(normalizeCaliber("9 MM")).toBe("9mm")
     expect(normalizeCaliber("5,5")).toBe("5.5mm")
     expect(normalizeCaliber("20 gauge")).toBe("20 GA")
+    expect(normalizeCaliber("12/71")).toBe("12 GA (12/71)")
+    expect(normalizeCaliber("20/76")).toBe("20 GA (20/76)")
     expect(normalizeCaliber(null)).toBeNull()
   })
 
-  it("classifies confidence and summarizes review states", () => {
-    expect(confidenceLevel(0.9)).toBe("high")
-    expect(confidenceLevel(0.7)).toBe("medium")
-    expect(confidenceLevel(0.3)).toBe("low")
+  it("summarizes review states", () => {
     expect(summarizeItemStatuses([
       { status: "valid" }, { status: "needs_review" }, { status: "duplicate" }, { status: "conflict" }, { status: "invalid" },
     ])).toEqual({ valid: 1, needsReview: 1, invalid: 1, duplicate: 1, conflict: 1 })

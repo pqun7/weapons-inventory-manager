@@ -41,14 +41,15 @@ const HEADER_ALIASES: Record<Field, readonly string[]> = {
 }
 
 const KNOWN_MANUFACTURERS = [
-  "Axor Arms", "Radelli Arms", "Arslan Silah", "Tokarev Arms", "Kral Arms", "Hatsan", "Retay", "Kuzey", "Castello", "Masai Mara", "Aksa", "Reximex",
+  "Axor Arms", "Radelli Arms", "Radelli", "Arslan Silah", "Tokarev Arms", "Kral Arms", "Ata Arms", "Hatsan", "Retay", "Kuzey", "Castello", "Masai Mara", "Gordion", "Aksa", "Reximex",
   "Beretta", "Browning", "Glock", "Winchester", "Benelli", "Stoeger", "Taurus", "Walther", "Ruger", "Sig Sauer",
 ].sort((a, b) => b.length - a.length)
 
 const GENERIC_MODEL_WORDS = new Set([
   "semi", "auto", "automatic", "pump", "action", "magazine", "feed", "fed", "folding", "blank", "air", "pcp",
-  "break", "barrel", "shotgun", "pistol", "rifle", "revolver", "firearm", "gun", "polymer", "box", "black",
+  "break", "barrel", "shotgun", "pumpshotgun", "pistol", "rifle", "revolver", "firearm", "gun", "polymer", "box", "black",
   "syn", "synthetic", "set", "with", "accessory", "accessories", "round", "rounds", "arms", "arm", "ga", "gauge",
+  "polymer", "box", "black", "magazine", "accesories", "pcs", "piece", "pieces", "mm",
 ])
 
 function columnName(index: number): string {
@@ -77,6 +78,7 @@ function fold(value: unknown): string {
   return text(value)
     .normalize("NFKD")
     .toLocaleLowerCase("en")
+    .replace(/\p{M}+/gu, "")
     .replace(/[أإآٱ]/g, "ا")
     .replace(/ة/g, "ه")
     .replace(/ى/g, "ي")
@@ -209,26 +211,51 @@ function quantityFromDescription(description: string): number | null {
   return match ? parseQuantity(match[1]) : null
 }
 
-function inferWeaponType(description: string): string | null {
+export function inferWeaponType(description: string): string | null {
   const normalized = fold(description)
   if (/\bblank pistol\b/.test(normalized)) return "Blank pistol"
   if (/\bair rifle\b/.test(normalized)) return "Air rifle"
-  if (/\bshotgun\b/.test(normalized)) return "Shotgun"
+  if (/\b(?:shotgun|pumpshotgun)\b/.test(normalized)) return "Shotgun"
   if (/\b(?:pistol|revolver)\b/.test(normalized)) return "Pistol"
   if (/\brifle\b/.test(normalized)) return "Rifle"
   return null
 }
 
-function inferManufacturerAndModel(description: string): { manufacturer: string | null; model: string | null; manufacturerConfidence: number; modelConfidence: number } {
+/** Extracts the action/feed mechanism independently from the main weapon type. */
+export function inferWeaponSubtype(description: string): string | null {
+  const normalized = fold(description)
+  if (/\bsemi magazine\b/.test(normalized)) return "Semi magazine"
+  if (/\bsemi auto(?:matic)?\b/.test(normalized)) return "Semi auto"
+  if (/\b(?:pump action|pumpshotgun|pump shotgun)\b/.test(normalized)) return "Pump action"
+  if (/\bmagazine (?:feed|fed)\b/.test(normalized)) return "Magazine feed"
+  if (/\bbreak barrel\b/.test(normalized)) return "Break barrel"
+  if (/\bpcp\b/.test(normalized)) return "PCP"
+  if (/\bfolding\b/.test(normalized)) return "Folding"
+  return null
+}
+
+export function inferManufacturerAndModel(description: string): { manufacturer: string | null; model: string | null; manufacturerConfidence: number; modelConfidence: number } {
   const cleaned = text(description).replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim()
   const manufacturer = KNOWN_MANUFACTURERS.find((candidate) => fold(cleaned).includes(fold(candidate))) ?? null
   if (!manufacturer) return { manufacturer: null, model: null, manufacturerConfidence: 0.15, modelConfidence: 0.15 }
-  const afterBrand = cleaned.slice(fold(cleaned).indexOf(fold(manufacturer)) + manufacturer.length).trim()
-  const tokens = afterBrand.split(/\s+/).filter((token) => {
+  const tokens = cleaned.split(/\s+/)
+  const foldedTokens = tokens.map(fold)
+  const makerTokens = fold(manufacturer).split(" ")
+  const makerStart = foldedTokens.findIndex((_, index) => makerTokens.every((token, offset) => foldedTokens[index + offset] === token))
+  const withoutMaker = tokens.filter((_, index) => makerStart < 0 || index < makerStart || index >= makerStart + makerTokens.length)
+  const modelTokens = withoutMaker.filter((token, index, source) => {
     const normalized = fold(token)
-    return normalized && !GENERIC_MODEL_WORDS.has(normalized) && !inferCaliber(token) && !/^\d+(?:[-/+,.]\d+)*$/.test(normalized)
+    if (!normalized || GENERIC_MODEL_WORDS.has(normalized) || inferCaliber(token)) return false
+    if (/^(?:semi|auto|automatic|pump|action|feed|fed|break|barrel|pcp|folding)$/.test(normalized)) return false
+    if (/^\d+(?:[-/+,.]\d+)+$/.test(text(token)) || /^\d+(?:\s+\d+)+$/.test(normalized)) return false
+    if (/^\d+$/.test(normalized)) {
+      const previous = fold(source[index - 1] ?? "")
+      const next = fold(source[index + 1] ?? "")
+      return previous === "mod" || !["ga", "gauge", "mm"].includes(next)
+    }
+    return true
   })
-  const model = tokens.slice(0, 3).join(" ") || null
+  const model = modelTokens.slice(0, 4).join(" ") || null
   return { manufacturer, model, manufacturerConfidence: 0.92, modelConfidence: model ? 0.72 : 0.15 }
 }
 
@@ -439,6 +466,7 @@ export function heuristicSpreadsheetItems(extraction: NativeExtraction): ParsedM
             productName,
             productType,
             weaponType: productType === "weapon" ? inferWeaponType(productName) : null,
+            category: productType === "weapon" ? inferWeaponSubtype(productName) : null,
             caliber,
             manufacturer: explicitManufacturer ?? identity.manufacturer,
             model: explicitModel ?? identity.model,

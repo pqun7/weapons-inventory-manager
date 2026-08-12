@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { toast } from "sonner"
 
+function labelsEqual(left: string, right: string): boolean {
+  return left.trim().localeCompare(right.trim(), undefined, { sensitivity: "accent" }) === 0
+}
+
 export interface MasterWeaponType {
   id: string
   label: string
@@ -137,15 +141,15 @@ export function useDynamicMasterData(): DynamicMasterData {
   const caliberLabels = useMemo(() => calibers.map(c => c.label), [calibers])
 
   const getSubtypesFor = useCallback((weaponTypeLabel: string): string[] => {
-    const wt = weaponTypes.find(t => t.label === weaponTypeLabel)
+    const wt = weaponTypes.find(t => labelsEqual(t.label, weaponTypeLabel))
     if (!wt) return []
     return weaponSubtypes.filter(s => s.weapon_type_id === wt.id).map(s => s.label)
   }, [weaponTypes, weaponSubtypes])
 
   const getCalibersFor = useCallback((weaponTypeLabel: string, subtypeLabel: string): string[] => {
-    const wt = weaponTypes.find(t => t.label === weaponTypeLabel)
+    const wt = weaponTypes.find(t => labelsEqual(t.label, weaponTypeLabel))
     if (!wt) return []
-    const st = weaponSubtypes.find(s => s.weapon_type_id === wt.id && s.label === subtypeLabel)
+    const st = weaponSubtypes.find(s => s.weapon_type_id === wt.id && labelsEqual(s.label, subtypeLabel))
     if (!st) return []
     const linkedIds = new Set(subtypeCalibers.filter(sc => sc.subtype_id === st.id).map(sc => sc.caliber_id))
     return calibers.filter(c => linkedIds.has(c.id)).map(c => c.label)
@@ -167,25 +171,25 @@ export function useDynamicMasterData(): DynamicMasterData {
 
   // ---------- Label → ID lookups ----------
   const getWeaponTypeIdByLabel = useCallback((label: string) => {
-    return weaponTypes.find(t => t.label === label)?.id
+    return weaponTypes.find(t => labelsEqual(t.label, label))?.id
   }, [weaponTypes])
 
   const getWeaponSubtypeIdByLabel = useCallback((label: string, typeId?: string) => {
-    const candidates = weaponSubtypes.filter(s => s.label === label)
+    const candidates = weaponSubtypes.filter(s => labelsEqual(s.label, label))
     if (typeId) return candidates.find(s => s.weapon_type_id === typeId)?.id
     return candidates[0]?.id
   }, [weaponSubtypes])
 
   const getCaliberIdByLabel = useCallback((label: string) => {
-    return calibers.find(c => c.label === label)?.id
+    return calibers.find(c => labelsEqual(c.label, label))?.id
   }, [calibers])
 
   const getBrandIdByLabel = useCallback((label: string) => {
-    return brands.find(b => b.label === label)?.id
+    return brands.find(b => labelsEqual(b.label, label))?.id
   }, [brands])
 
   const getModelIdByLabel = useCallback((label: string, brandId?: string) => {
-    const candidates = models.filter(m => m.label === label)
+    const candidates = models.filter(m => labelsEqual(m.label, label))
     if (brandId) return candidates.find(m => m.brand_id === brandId)?.id
     return candidates[0]?.id
   }, [models])
@@ -220,7 +224,7 @@ export function useDynamicMasterData(): DynamicMasterData {
 
   const createWeaponSubtype = useCallback((weaponTypeLabel: string, label: string) => wrap(async () => {
     const { dbInsertMasterWeaponSubtype, dbInsertMasterWeaponType } = await import("@/lib/db")
-    const existingType = weaponTypes.find(t => t.label === weaponTypeLabel)
+    const existingType = weaponTypes.find(t => labelsEqual(t.label, weaponTypeLabel))
     const maxSort = weaponTypes.reduce((maximum, type) => Math.max(maximum, type.sort_order), 0)
     const weaponTypeId = existingType?.id ?? await dbInsertMasterWeaponType(weaponTypeLabel.trim(), maxSort + 1)
     return dbInsertMasterWeaponSubtype(weaponTypeId, label.trim(), 99)
@@ -245,7 +249,7 @@ export function useDynamicMasterData(): DynamicMasterData {
     const { dbInsertMasterBrand, dbInsertMasterModel } = await import("@/lib/db")
     let brandId: string | null = null
     if (brandLabel) {
-      const b = brands.find(b => b.label === brandLabel)
+      const b = brands.find(b => labelsEqual(b.label, brandLabel))
       brandId = b?.id ?? await dbInsertMasterBrand(brandLabel.trim())
     }
     return dbInsertMasterModel(label.trim(), brandId)

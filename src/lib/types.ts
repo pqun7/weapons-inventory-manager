@@ -167,7 +167,14 @@ export interface ShipmentLineItem {
   wholesalePrice: number
   retailPriceMode?: PricingMode
   wholesalePriceMode?: PricingMode
-  location: StorageLocation
+  weaponTypeId?: string
+  weaponSubtypeId?: string
+  caliberId?: string
+  brandId?: string
+  modelId?: string
+  storageLocationId?: string
+  /** Optional for scheduled/imported shipment lines; inventory location is assigned on receipt. */
+  location?: StorageLocation
   serialNumbers: string[]
   received: number
   // Dual-valuation for purchase price
@@ -175,6 +182,7 @@ export interface ShipmentLineItem {
   retailPriceValuation?: MoneyValuation
   wholesalePriceValuation?: MoneyValuation
   productAdditionalCosts?: ProductAdditionalCostInput[]
+  additionalCosts?: ProductAdditionalCostInput[]
   landedUnitCostAccounting?: number
 }
 
@@ -196,6 +204,7 @@ export type NotificationType =
   | "LowStock"
   | "BackupOmission"
   | "ShipmentDelayed"
+  | "ShipmentArrivalDue"
   | "System"
 
 export type AuditActionType =
@@ -483,6 +492,11 @@ export interface Shipment {
   delayReason?: string
   lastArrivalPromptAt?: string
   additionalCosts?: PersistedShipmentCost[]
+  plannedCosts?: ShipmentAdditionalCostInput[]
+  /** Database creation timestamp; used as the default shipment-list ordering key. */
+  createdAt?: string
+  /** Client-only optimistic state while the backend is registering the shipment. */
+  isSaving?: boolean
 }
 
 export interface ShipmentTimelineEntry {

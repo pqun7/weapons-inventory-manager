@@ -10,6 +10,7 @@ import type {
 } from "./types.js"
 import { ammoTotalRounds } from "./types.js"
 import * as db from "./db/index.js"
+import { optimisticShipment } from "./shipment-workflow.js"
 
 // ============ Input Types ============
 
@@ -77,6 +78,8 @@ export interface ShipmentInput {
   currency?: string
   purchaseDate?: string
   actualArrivalDate?: string
+  status?: ShipmentStatus
+  additionalCosts?: ShipmentAdditionalCostInput[]
   lineItems?: ShipmentLineItemInput[]
 }
 
@@ -94,6 +97,8 @@ export interface ShipmentLineItemInput {
   purchasePrice: number
   retailPrice: number
   wholesalePrice: number
+  retailPriceMode?: PricingMode
+  wholesalePriceMode?: PricingMode
   serialNumbers: string[]
   currency?: string
   // Optional display labels – used by backend for audit/logs and shipment line item display
@@ -235,6 +240,9 @@ export interface StoreState {
   updateShipment: (shipmentId: string, updates: Partial<Shipment>) => Promise<{ success: boolean; error?: string }>
   deleteShipment: (shipmentId: string) => Promise<{ success: boolean; error?: string }>
   bulkCreateShipmentWithItems: (input: BulkShipmentCreateInput) => Promise<{ success: boolean; shipmentId?: string; error?: string }>
+  receiveScheduledShipment: (shipmentId: string) => Promise<{ success: boolean; shipmentId?: string; error?: string }>
+  rescheduleShipment: (shipmentId: string, expectedArrivalDate: string, reason: string) => Promise<{ success: boolean; error?: string }>
+  updateScheduledShipment: (shipmentId: string, input: ShipmentInput) => Promise<{ success: boolean; error?: string }>
   addShipmentDocument: (shipmentId: string, doc: ShipmentDocumentInput) => Promise<{ success: boolean; error?: string }>
   deleteShipmentDocument: (shipmentId: string, docId: string) => Promise<{ success: boolean; error?: string }>
   addShipmentTimelineEvent: (shipmentId: string, eventType: ShipmentEventType, notes: string) => Promise<{ success: boolean; error?: string }>
@@ -454,11 +462,11 @@ export const useStore = create<StoreState>()(
     refreshFromDb: async () => {
       try {
         const data = await db.dbGetAll()
-        set({
+        set((state) => ({
           weapons: data.weapons,
           accessories: data.accessories,
           ammunition: data.ammunition,
-          shipments: data.shipments,
+          shipments: [...state.shipments.filter((shipment) => shipment.isSaving), ...data.shipments],
           invoices: data.invoices,
           payments: data.payments,
           customers: data.customers,
@@ -469,7 +477,7 @@ export const useStore = create<StoreState>()(
           settings: data.settings,
           savedFilters: data.savedFilters,
           inventoryProductTypes: data.inventoryProductTypes ?? [],
-        })
+        }))
       } catch (e) {
         console.error("refreshFromDb failed:", e)
       }
@@ -574,11 +582,15 @@ export const useStore = create<StoreState>()(
     },
 
     createShipment: async (input) => {
+      const temporaryId = `TMP-SHIP-${crypto.randomUUID()}`
+      set((state) => ({ shipments: [optimisticShipment(input, temporaryId), ...state.shipments] }))
       try {
         const shipmentId = await db.dbCreateShipmentRpc(input)
         await get().refreshFromDb()
+        set((state) => ({ shipments: state.shipments.filter((shipment) => shipment.id !== temporaryId) }))
         return { success: true, shipmentId }
       } catch (error) {
+        set((state) => ({ shipments: state.shipments.filter((shipment) => shipment.id !== temporaryId) }))
         return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
     },
@@ -635,11 +647,20 @@ export const useStore = create<StoreState>()(
     },
 
     bulkCreateShipmentWithItems: async (input) => {
+      const temporaryId = `TMP-SHIP-${crypto.randomUUID()}`
+      const optimisticInput: ShipmentInput = {
+        ...input.shipment,
+        lineItems: input.lineItems,
+        additionalCosts: input.additionalCosts,
+      }
+      set((state) => ({ shipments: [optimisticShipment(optimisticInput, temporaryId), ...state.shipments] }))
       try {
         const shipmentId = await db.dbBulkCreateShipment(input)
         await get().refreshFromDb()
+        set((state) => ({ shipments: state.shipments.filter((shipment) => shipment.id !== temporaryId) }))
         return { success: true, shipmentId }
       } catch (error) {
+        set((state) => ({ shipments: state.shipments.filter((shipment) => shipment.id !== temporaryId) }))
         return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
       // Browser fallback omitted for brevity — IPC path is primary
@@ -651,6 +672,36 @@ export const useStore = create<StoreState>()(
       const newDoc: ShipmentDocument = { id: generateId("DOC", state.shipments.flatMap((s) => s.documents ?? [])), fileName: doc.fileName, fileType: doc.fileType, fileSize: doc.fileSize, uploadDate: new Date().toISOString(), uploadedBy: currentUser.name, category: doc.category, extractedText: doc.extractedText }
       try {
         await db.dbAddShipmentDocument(shipmentId, newDoc)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    },
+
+    receiveScheduledShipment: async (shipmentId) => {
+      try {
+        const receivedShipmentId = await db.dbReceiveScheduledShipment(shipmentId)
+        await get().refreshFromDb()
+        return { success: true, shipmentId: receivedShipmentId }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    },
+
+    rescheduleShipment: async (shipmentId, expectedArrivalDate, reason) => {
+      try {
+        await db.dbRescheduleShipment(shipmentId, expectedArrivalDate, reason)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    },
+
+    updateScheduledShipment: async (shipmentId, input) => {
+      try {
+        await db.dbUpdateScheduledShipment(shipmentId, input)
         await get().refreshFromDb()
         return { success: true }
       } catch (error) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { extractSerials, heuristicSpreadsheetItems, inferCaliber, inferProductType, parseSpreadsheetBuffer, type NativeExtraction } from "../../electron/services/manifest-parser"
+import { extractSerials, heuristicSpreadsheetItems, inferCaliber, inferManufacturerAndModel, inferProductType, inferWeaponSubtype, inferWeaponType, parseSpreadsheetBuffer, type NativeExtraction } from "../../electron/services/manifest-parser"
 
 function sheet(rows: Array<Array<string | number | null>>, name = "Manifest"): NativeExtraction {
   return {
@@ -77,6 +77,40 @@ describe("schema-flexible spreadsheet extraction", () => {
     expect(result).toHaveLength(2)
     expect(result.map((item) => item.quantity)).toEqual([10, 60])
     expect(inferCaliber("HATSAN AIR RIFLE FLASH 5,5")).toBe("5.5mm")
+  })
+
+  it("separates a Hatsan air-rifle description into the correct business fields", () => {
+    const description = "HATSAN AIR RIFLE FLASH 5,5"
+    const identity = inferManufacturerAndModel(description)
+    expect(inferProductType(description)).toBe("weapon")
+    expect(inferWeaponType(description)).toBe("Air rifle")
+    expect(identity.manufacturer).toBe("Hatsan")
+    expect(identity.model).toBe("FLASH")
+    expect(inferCaliber(description)).toBe("5.5mm")
+
+    const [item] = heuristicSpreadsheetItems(sheet([
+      ["Product", "Qty", "Serial Numbers"],
+      [description, 1, "HATSAN-2026-0001"],
+    ]))
+    expect(item).toMatchObject({
+      productName: description,
+      productType: "weapon",
+      weaponType: "Air rifle",
+      manufacturer: "Hatsan",
+      model: "FLASH",
+      caliber: "5.5mm",
+    })
+  })
+
+  it("separates shotgun type, subtype, manufacturer, and optional model", () => {
+    expect(inferWeaponType("SEMI AUTO SHOTGUN")).toBe("Shotgun")
+    expect(inferWeaponSubtype("SEMI AUTO SHOTGUN")).toBe("Semi auto")
+    expect(inferManufacturerAndModel("RADELLİ SEMI MAGAZİNE SHOTGUN")).toMatchObject({ manufacturer: "Radelli", model: null })
+    expect(inferWeaponSubtype("RADELLİ SEMI MAGAZİNE SHOTGUN")).toBe("Semi magazine")
+    expect(inferManufacturerAndModel("HATSAN AIR RIFLE MOD 55 5,5").model).toBe("MOD 55")
+    expect(inferManufacturerAndModel("Castello MP-6-R 12 Ga Magazine feed shotgun 2-5-10 Round Magazine").model).toBe("MP-6-R")
+    expect(inferWeaponType("Tokarev Arms 12 ga Pumpshotgun")).toBe("Shotgun")
+    expect(inferManufacturerAndModel("GORDION SEMI AUTO SHOTGUN SYN 12/76")).toMatchObject({ manufacturer: "Gordion", model: null })
   })
 
   it("preserves an explicit quantity when serial count differs", () => {

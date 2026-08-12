@@ -68,7 +68,7 @@ export type {
 const WEAPON_COLUMNS = "id,serial_number,weapon_type_id,weapon_subtype_id,brand_id,model_id,caliber_id,storage_location_id,supplier_id,shipment_id,condition,status,purchase_price,retail_price,wholesale_price,retail_price_mode,wholesale_price_mode,actual_final_price,date_added,batch_id,notes,images,movement_history,purchase_price_valuation,retail_price_valuation,wholesale_price_valuation,actual_final_price_valuation,sale_price_valuation,deleted_at"
 const ACCESSORY_COLUMNS = "id,name,type,quantity,safety_threshold,price,price_currency,price_valuation,retail_price,wholesale_price,retail_price_valuation,wholesale_price_valuation,retail_price_mode,wholesale_price_mode,date_added,warehouse,shelf,bin"
 const AMMUNITION_COLUMNS = "id,name,caliber,package_type,units_per_package,full_packages,loose_rounds,safety_threshold,price,price_currency,price_valuation,retail_price,wholesale_price,retail_price_valuation,wholesale_price_valuation,retail_price_mode,wholesale_price_mode,date_added,warehouse,shelf,bin"
-const SHIPMENT_COLUMNS = "id,shipment_number,supplier_id,shipment_date,expected_arrival_date,total_expected_items,attachments,notes,status,timeline,purchase_order_number,invoice_number,shipping_carrier,container_number,currency,purchase_date,actual_arrival_date,line_items,documents,total_cost_valuation,workflow_status,import_id,arrival_note,delay_reason,last_arrival_prompt_at"
+const SHIPMENT_COLUMNS = "id,shipment_number,supplier_id,shipment_date,expected_arrival_date,total_expected_items,attachments,notes,status,timeline,purchase_order_number,invoice_number,shipping_carrier,container_number,currency,purchase_date,actual_arrival_date,line_items,documents,total_cost_valuation,workflow_status,import_id,arrival_note,delay_reason,last_arrival_prompt_at,planned_costs,created_at"
 const INVOICE_COLUMNS = "id,invoice_number,type,customer_id,supplier_id,customer_name,date,due_date,total_original,total_negotiated,total_paid,balance,status,weapon_ids,line_items,sale_mode,employee_id,employee_name,attachments,shipment_id,notes,voided,tax_amount,total_valuation,currency,accounting_currency,exchange_rate,exchange_rate_date,rate_source,total_original_accounting,total_negotiated_accounting,total_paid_accounting,balance_accounting,tax_amount_accounting"
 const PAYMENT_COLUMNS = "id,invoice_id,invoice_number,date,amount,currency,accounting_amount,accounting_currency,exchange_rate,exchange_rate_date,rate_source,rate_id,method,employee,notes"
 const CUSTOMER_COLUMNS = "id,name,phone,email,address,is_wholesale_buyer,wholesale_discount_percent,notes,date_added"
@@ -134,7 +134,7 @@ export async function dbGetAll(): Promise<AllData> {
     client.from("weapons").select(WEAPON_COLUMNS).is("deleted_at", null).order("created_at", { ascending: false }).limit(5000),
     client.from("accessories").select(ACCESSORY_COLUMNS).order("date_added", { ascending: false }).limit(5000),
     client.from("ammunition").select(AMMUNITION_COLUMNS).order("date_added", { ascending: false }).limit(5000),
-    client.from("shipments").select(SHIPMENT_COLUMNS).order("shipment_date", { ascending: false }).limit(2000),
+    client.from("shipments").select(SHIPMENT_COLUMNS).order("created_at", { ascending: false }).limit(2000),
     client.from("invoices").select(INVOICE_COLUMNS).order("date", { ascending: false }).limit(5000),
     client.from("payment_records").select(PAYMENT_COLUMNS).order("date", { ascending: false }).limit(5000),
     client.from("customers").select(CUSTOMER_COLUMNS).order("date_added", { ascending: false }).limit(5000),
@@ -649,6 +649,30 @@ export async function dbBulkCreateShipment(input: BulkShipmentCreateInput): Prom
   if (error) throw new Error(error.message)
   if (typeof data !== "string") throw new Error("Bulk shipment RPC returned an invalid response")
   return data
+}
+
+export async function dbReceiveScheduledShipment(shipmentId: string): Promise<string> {
+  const { data, error } = await getSupabaseClient().rpc("receive_scheduled_shipment", { p_shipment_id: shipmentId })
+  if (error) throw new Error(error.message)
+  if (typeof data !== "string") throw new Error("Shipment receipt RPC returned an invalid response")
+  return data
+}
+
+export async function dbRescheduleShipment(shipmentId: string, expectedArrivalDate: string, reason: string): Promise<void> {
+  const { error } = await getSupabaseClient().rpc("reschedule_shipment", {
+    p_shipment_id: shipmentId,
+    p_expected_arrival_date: expectedArrivalDate,
+    p_reason: reason,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function dbUpdateScheduledShipment(shipmentId: string, patch: ShipmentInput): Promise<void> {
+  const { error } = await getSupabaseClient().rpc("update_scheduled_shipment", {
+    p_shipment_id: shipmentId,
+    p_patch: patch as unknown as Json,
+  })
+  if (error) throw new Error(error.message)
 }
 
 export async function dbAdjustInventoryStock(input: AddStockInput): Promise<void> {

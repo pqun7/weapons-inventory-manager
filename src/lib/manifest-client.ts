@@ -22,8 +22,8 @@ type CurrentUser = { id: string; name: string }
 type Row = Record<string, Json>
 type ManifestResult<T = void> = { success: boolean; data?: T; error?: string }
 
-const IMPORT_COLUMNS = "id,shipment_id,status,file_name,file_type,file_size,file_hash,shipment_number,supplier_name,supplier_id,supplier_reference,invoice_number,manifest_number,shipment_date,expected_arrival_date,origin,destination,currency,review_note,ai_provider,ai_model,ai_request_id,ai_processing_ms,prompt_version,schema_version,validation_summary,error_code,error_message,created_at,updated_at"
-const ITEM_COLUMNS = "id,import_id,row_index,product_type,product_name,category,weapon_type,manufacturer,model,caliber,sku,product_code,serial_number,serial_numbers_json,quantity,unit_price,total_price,currency,country_of_origin,weapon_type_id,weapon_subtype_id,brand_id,model_id,caliber_id,storage_location_id,confidence_json,source_json,raw_data_json,status"
+const IMPORT_COLUMNS = "id,shipment_id,status,file_name,file_type,file_size,file_hash,shipment_number,supplier_name,supplier_id,supplier_reference,invoice_number,manifest_number,shipment_date,expected_arrival_date,origin,destination,currency,review_note,additional_costs,ai_provider,ai_model,ai_request_id,ai_processing_ms,prompt_version,schema_version,validation_summary,error_code,error_message,created_at,updated_at"
+const ITEM_COLUMNS = "id,import_id,row_index,product_type,product_name,category,weapon_type,manufacturer,model,caliber,sku,product_code,serial_number,serial_numbers_json,quantity,unit_price,retail_price,wholesale_price,retail_price_mode,wholesale_price_mode,additional_costs,total_price,currency,country_of_origin,weapon_type_id,weapon_subtype_id,brand_id,model_id,caliber_id,storage_location_id,source_json,raw_data_json,status"
 const ISSUE_COLUMNS = "id,import_id,item_id,field_name,code,severity,message,details_json,created_at"
 
 function clean(value: Json | undefined): string | null {
@@ -55,11 +55,14 @@ function mapReview(row: Row, itemRows: Row[], issueRows: Row[]): ShipmentManifes
     model: clean(item.model), caliber: clean(item.caliber), sku: clean(item.sku), productCode: clean(item.product_code),
     serialNumber: clean(item.serial_number), serialNumbers: stringArray(item.serial_numbers_json),
     quantity: item.quantity == null ? null : Number(item.quantity), unitPrice: item.unit_price == null ? null : Number(item.unit_price),
+    retailPrice: item.retail_price == null ? null : Number(item.retail_price), wholesalePrice: item.wholesale_price == null ? null : Number(item.wholesale_price),
+    retailPriceMode: clean(item.retail_price_mode) === "manual" ? "manual" : "auto", wholesalePriceMode: clean(item.wholesale_price_mode) === "manual" ? "manual" : "auto",
+    additionalCosts: Array.isArray(item.additional_costs) ? item.additional_costs as unknown as ManifestReviewItem["additionalCosts"] : [],
     totalPrice: item.total_price == null ? null : Number(item.total_price), currency: clean(item.currency),
     countryOfOrigin: clean(item.country_of_origin), weaponTypeId: clean(item.weapon_type_id),
     weaponSubtypeId: clean(item.weapon_subtype_id), brandId: clean(item.brand_id), modelId: clean(item.model_id),
     caliberId: clean(item.caliber_id), storageLocationId: clean(item.storage_location_id),
-    confidence: objectValue(item.confidence_json) as Record<string, number>, source: objectValue(item.source_json),
+    confidence: {}, source: objectValue(item.source_json),
     rawData: objectValue(item.raw_data_json), status: String(item.status) as ManifestReviewItem["status"],
     issues: issues.filter((issue) => issue.itemId === String(item.id)),
   }))
@@ -71,6 +74,7 @@ function mapReview(row: Row, itemRows: Row[], issueRows: Row[]): ShipmentManifes
     supplierReference: clean(row.supplier_reference), invoiceNumber: clean(row.invoice_number), manifestNumber: clean(row.manifest_number),
     shipmentDate: clean(row.shipment_date), expectedArrivalDate: clean(row.expected_arrival_date), origin: clean(row.origin),
     destination: clean(row.destination), currency: clean(row.currency), reviewNote: clean(row.review_note),
+    additionalCosts: Array.isArray(row.additional_costs) ? row.additional_costs as unknown as ShipmentManifestReview["additionalCosts"] : [],
     aiProvider: clean(row.ai_provider), aiModel: clean(row.ai_model), aiRequestId: clean(row.ai_request_id),
     aiProcessingMs: row.ai_processing_ms == null ? null : Number(row.ai_processing_ms),
     processingWarning: row.error_code === "AI_FALLBACK" || row.error_code === "AI_PROVIDER_FALLBACK" ? clean(row.error_message) : null,
@@ -125,7 +129,12 @@ function enrichItem(item: ManifestExtractedItem, master: MasterDataAll): Manifes
 async function createReview(extraction: ManifestExtractionResult): Promise<ShipmentManifestReview> {
   const master = await dbGetMasterData()
   const items = extraction.items.map((item) => enrichItem(item, master))
-  const payload = { ...extraction, items, normalized: { shipmentNumber: extraction.shipmentNumber, itemCount: items.length }, errorCode: extraction.processingWarning ? "AI_FALLBACK" : null, errorMessage: extraction.processingWarning }
+  const persistedItems = items.map((item) => {
+    const persisted = { ...item } as Record<string, unknown>
+    delete persisted.confidence
+    return persisted
+  })
+  const payload = { ...extraction, items: persistedItems, normalized: { shipmentNumber: extraction.shipmentNumber, itemCount: items.length }, errorCode: extraction.processingWarning ? "AI_FALLBACK" : null, errorMessage: extraction.processingWarning }
   const { data, error } = await getSupabaseClient().rpc("create_manifest_review", { p_payload: payload as unknown as Json })
   if (error) throw new Error(error.message)
   if (typeof data !== "string") throw new Error("Manifest create RPC returned an invalid identifier")
@@ -135,7 +144,7 @@ async function createReview(extraction: ManifestExtractionResult): Promise<Shipm
 function success<T>(data: T): ManifestResult<T> { return { success: true, data } }
 function failure<T>(error: unknown): ManifestResult<T> { return { success: false, error: error instanceof Error ? error.message : String(error) } }
 
-type VoidRpc = "update_manifest_items" | "update_manifest_details" | "delete_manifest_review" | "confirm_manifest_arrival" | "reschedule_manifest" | "cancel_manifest"
+type VoidRpc = "update_manifest_items" | "bulk_update_manifest_items" | "update_manifest_details" | "delete_manifest_items" | "delete_manifest_review" | "confirm_manifest_arrival" | "reschedule_manifest" | "cancel_manifest"
 async function rpcVoid(name: VoidRpc, args: Record<string, Json>): Promise<void> {
   const { error } = await getSupabaseClient().rpc(name, args)
   if (error) throw new Error(error.message)
@@ -178,8 +187,14 @@ export const manifestClient = {
   async updateItems(importId: string, itemIds: string[], patch: ManifestItemPatch, _user: CurrentUser): Promise<ManifestResult<ShipmentManifestReview>> {
     try { await rpcVoid("update_manifest_items", { p_import_id: importId, p_item_ids: itemIds, p_patch: patch as unknown as Json }); return success(await getReview(importId)) } catch (error) { return failure(error) }
   },
+  async bulkUpdateItems(importId: string, updates: Array<{ itemId: string; patch: ManifestItemPatch }>, _user: CurrentUser): Promise<ManifestResult<ShipmentManifestReview>> {
+    try { await rpcVoid("bulk_update_manifest_items", { p_import_id: importId, p_updates: updates as unknown as Json }); return success(await getReview(importId)) } catch (error) { return failure(error) }
+  },
   async updateDetails(importId: string, patch: ManifestDetailsPatch, _user: CurrentUser): Promise<ManifestResult<ShipmentManifestReview>> {
     try { await rpcVoid("update_manifest_details", { p_import_id: importId, p_patch: patch as unknown as Json }); return success(await getReview(importId)) } catch (error) { return failure(error) }
+  },
+  async deleteItems(importId: string, itemIds: string[], _user: CurrentUser): Promise<ManifestResult<ShipmentManifestReview>> {
+    try { await rpcVoid("delete_manifest_items", { p_import_id: importId, p_item_ids: itemIds }); return success(await getReview(importId)) } catch (error) { return failure(error) }
   },
   async deleteReview(importId: string, _user: CurrentUser): Promise<ManifestResult<void>> {
     try { await rpcVoid("delete_manifest_review", { p_import_id: importId }); return success(undefined) } catch (error) { return failure(error) }

@@ -64,6 +64,7 @@ export const en: Record<string, string> = {
   "notif.title.duplicateSerial": "Duplicate Serial",
   "notif.title.incompleteShipment": "Incomplete Shipment",
   "notif.title.shipmentDelayed": "Shipment Delayed",
+  "notif.title.shipmentArrivalDue": "Shipment Expected Today",
   "notif.title.backup": "Backup Reminder",
   "notif.title.system": "System",
 
@@ -636,6 +637,9 @@ export const en: Record<string, string> = {
   "ship.totalItems": "Total Items",
   "ship.shipmentArrived": "Shipment Arrived",
   "ship.shipmentArrivedMsg": "Shipment {number} arrived with {count} items — inventory intake ready",
+  "ship.sortByAddedDate": "Sort by added date",
+  "ship.sortByExpectedDate": "Sort by expected date",
+  "ship.sortByArrivalDate": "Sort by arrival date",
 
   // ── Shipment Detail Panel ──
   "ship.tabOverview": "Overview",
@@ -1325,6 +1329,8 @@ export const en: Record<string, string> = {
   "common.max": "Max",
   "common.done": "Done",
   "common.clear": "Clear",
+  "common.clearFilters": "Clear filters",
+  "ship.allStatus": "All statuses",
   "common.prev": "Prev",
   "common.next": "Next",
   "weapon.subType": "Sub-Type",
@@ -1415,8 +1421,22 @@ export const en: Record<string, string> = {
 
   "common.update": "Update",
   "common.days": "days",
-  "toast.customerUpdateFailed": "Failed to update customer"
+  "toast.customerUpdateFailed": "Failed to update customer",
 
+  "common.required": "Required",
+  "common.requiredFieldsMissing": "Required fields are missing",
+  "common.invalidInput": "Invalid input",
+  "common.invalidNumber": "Must be a number",
+
+  "ship.manageAndTrack": "Manage and track shipments",
+  "ship.totalShipments": "Total Shipments",
+
+  "ship.sortByShipmentDate": "Shipment Date",
+  "ship.sortByExpectedArrival": "Expected Arrival Date",
+  "ship.sortByStatus": "Status",
+  "ship.selectShipmentHint": "Click on any shipment in the list to view its details",
+  "ship.sortedBy": "Sorted by",
+  "ship.delayedStatus": "Delayed",
 
 
 }
@@ -1478,6 +1498,7 @@ export const ar: Record<string, string> = {
   "notif.title.duplicateSerial": "رقم تسلسلي مكرر",
   "notif.title.incompleteShipment": "شحنة غير مكتملة",
   "notif.title.shipmentDelayed": "تأخر الشحنة",
+  "notif.title.shipmentArrivalDue": "الشحنة متوقع وصولها اليوم",
   "notif.title.backup": "تذكير النسخ الاحتياطي",
   "notif.title.system": "النظام",
 
@@ -2558,6 +2579,10 @@ export const ar: Record<string, string> = {
   "pricing.quantity": "الكمية",
   "pricing.additionalCosts": "تكاليف إضافية",
   "pricing.sellingPrices": "أسعار البيع",
+  "common.required": "مطلوب",
+  "common.requiredFieldsMissing": "الحقول المطلوبة غير مكتملة",
+  "common.invalidInput": "إدخال غير صالح",
+  "common.invalidNumber": "يجب أن يكون رقماً",
 
 
   // ── Excel toolbar ──
@@ -2735,6 +2760,8 @@ export const ar: Record<string, string> = {
   "common.max": "الحد الأقصى",
   "common.done": "تم",
   "common.clear": "مسح",
+  "common.clearFilters": "مسح عوامل التصفية",
+  "ship.allStatus": "كل الحالات",
   "common.prev": "السابق",
   "common.next": "التالي",
   "weapon.subType": "النوع الفرعي",
@@ -2831,7 +2858,21 @@ export const ar: Record<string, string> = {
   "cust.noCustomersFound": "لا يوجد عملاء مطابقين",
   "common.update": "تحديث",
   "common.days": "أيام",
-  "toast.customerUpdateFailed": "فشل تحديث العميل"
+  "toast.customerUpdateFailed": "فشل تحديث العميل",
+  "ship.manageAndTrack": "إدارة وتتبع الشحنات الواردة",
+  "ship.totalShipments": "إجمالي الشحنات",
+
+  "ship.sortByShipmentDate": "تاريخ الشحنة",
+  "ship.sortByExpectedArrival": "تاريخ الوصول المتوقع",
+  "ship.sortByStatus": "الحالة",
+  "ship.selectShipmentHint": "انقر على أي شحنة من القائمة لعرض تفاصيلها الكاملة",
+  "ship.sortedBy": "مرتبة حسب",
+  "ship.delayedStatus": "متأخرة",
+
+  "ship.sortByAddedDate": "تاريخ الإضافة",
+  "ship.sortByExpectedDate": "تاريخ الوصول المتوقع",
+  "ship.sortByArrivalDate": "تاريخ الوصول",
+
 }
 
 export const translations: Record<Language, Record<string, string>> = { en, ar }

@@ -26,9 +26,8 @@ import { multiplyMoney, sumMoney, valuationAccountingAmount } from "@/lib/money-
 import { formatDate, formatDateTime, shipmentStatusClass, shipmentDelayDays } from "@/lib/format"
 import type { ShipmentStatus, Shipment, ShipmentLineItem } from "@/lib/types"
 import { toast } from "sonner"
-import { manifestClient } from "@/lib/manifest-client"
-
-const SHIPMENT_STATUSES: ShipmentStatus[] = ["Pending", "In Transit", "Delayed", "Arrived", "Cancelled", "Partial"]
+import { ShipmentManifestImportDialog } from "./shipment-manifest-import-dialog"
+import { canEditShipmentContents } from "@/lib/shipment-workflow"
 
 interface ShipmentDetailPanelProps {
   shipment: Shipment
@@ -40,13 +39,13 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
   const suppliers = useStore((s) => s.suppliers)
   const weapons = useStore((s) => s.weapons)
   const { formatValuation, formatAccountingAggregate } = useCurrency()
-  const setShipmentStatus = useStore((s) => s.setShipmentStatus)
   const updateShipment = useStore((s) => s.updateShipment)
   const deleteShipment = useStore((s) => s.deleteShipment)
   const addShipmentDocument = useStore((s) => s.addShipmentDocument)
   const deleteShipmentDocument = useStore((s) => s.deleteShipmentDocument)
-  const refreshFromDb = useStore((s) => s.refreshFromDb)
   const currentUser = useStore((s) => s.getCurrentUser())
+  const receiveScheduledShipment = useStore((s) => s.receiveScheduledShipment)
+  const rescheduleShipment = useStore((s) => s.rescheduleShipment)
   const { setSelectedWeaponId, navigate } = useNav()
 
   const [activeTab, setActiveTab] = useState("overview")
@@ -60,6 +59,7 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
   const [delayReason, setDelayReason] = useState("")
   const [arrivalBusy, setArrivalBusy] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [contentsEditorOpen, setContentsEditorOpen] = useState(false)
 
   const supplier = suppliers.find((s) => s.id === shipment.supplierId)
   const shipmentWeapons = useMemo(() => weapons.filter((w) => w.shipmentId === shipment.id), [weapons, shipment.id])
@@ -76,6 +76,7 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
   }
 
   const lineItems = shipment.lineItems ?? []
+  const shipmentWarehouse = lineItems.find((item) => item.location?.warehouse)?.location?.warehouse ?? "—"
   const documents = shipment.documents ?? []
   const delayDays = shipmentDelayDays(shipment.expectedArrivalDate, shipment.status)
 
@@ -114,12 +115,6 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
     URL.revokeObjectURL(url)
   }
 
-  const handleStatusChange = (status: ShipmentStatus) => {
-    setShipmentStatus(shipment.id, status)
-    if (status === "Arrived") toast.success(t("ship.shipmentArrived"))
-    else toast.success(t("toast.shipmentUpdated"))
-  }
-
   const handleDeleteShipment = async () => {
     const confirmed = window.confirm(t("ship.deleteConfirm"))
     if (!confirmed) return
@@ -135,25 +130,22 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
     }
   }
 
-  const confirmManifestArrival = async () => {
-    if (!shipment.importId) return
+  const confirmShipmentArrival = async () => {
     setArrivalBusy(true)
     try {
-      const result = await manifestClient.confirmArrival(shipment.importId, { id: currentUser.id, name: currentUser.name })
+      const result = await receiveScheduledShipment(shipment.id)
       if (!result.success) throw new Error(result.error ?? "Unable to confirm arrival")
-      await refreshFromDb()
       toast.success("Shipment arrival confirmed and inventory received")
     } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to confirm arrival") }
     finally { setArrivalBusy(false) }
   }
 
-  const rescheduleManifestArrival = async () => {
-    if (!shipment.importId) return
+  const handleRescheduleShipment = async () => {
     setArrivalBusy(true)
     try {
-      const result = await manifestClient.reschedule(shipment.importId, newExpectedDate, delayReason, { id: currentUser.id, name: currentUser.name })
+      const result = await rescheduleShipment(shipment.id, newExpectedDate, delayReason)
       if (!result.success) throw new Error(result.error ?? "Unable to reschedule shipment")
-      await refreshFromDb(); setRescheduleOpen(false); setDelayReason("")
+      setRescheduleOpen(false); setDelayReason("")
       toast.success("Shipment remains pending with a new expected date")
     } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to reschedule shipment") }
     finally { setArrivalBusy(false) }
@@ -255,8 +247,7 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
                   <MetaRow icon={DollarSign} label={t("ship.currency")} value={shipment.currency || "—"} />
                   <MetaRow icon={Calendar} label={t("ship.purchaseDate")} value={shipment.purchaseDate ? formatDate(shipment.purchaseDate) : "—"} />
                   <MetaRow icon={Calendar} label={t("ship.expectedArrival")} value={formatDate(shipment.expectedArrivalDate)} />
-                  <MetaRow icon={Calendar} label={t("ship.actualArrival")} value={shipment.actualArrivalDate ? formatDate(shipment.actualArrivalDate) : "—"} />
-                  <MetaRow icon={MapPin} label={t("common.warehouse")} value={lineItems[0]?.location.warehouse ?? "—"} />
+                  <MetaRow icon={MapPin} label={t("common.warehouse")} value={shipmentWarehouse} />
                 </div>
 
                 {delayDays > 0 && (
@@ -300,19 +291,6 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
 
                 <Separator />
 
-                {/* Status control */}
-                <div className="flex items-center gap-2">
-                  <Label className="text-xs whitespace-nowrap">{t("common.status")}:</Label>
-                  <Select disabled={Boolean(shipment.importId)} value={shipment.status} onValueChange={(v) => handleStatusChange(v as ShipmentStatus)}>
-                    <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {SHIPMENT_STATUSES.map((s) => (
-                        <SelectItem key={s} value={s}>{t(statusKey[s])}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
                 {/* Edit metadata */}
                 {editingMeta ? (
                   <div className="flex flex-col gap-2 rounded-md border p-2">
@@ -337,18 +315,18 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    {shipment.importId && shipment.workflowStatus === "scheduled" && (
+                    {shipment.workflowStatus === "scheduled" && shipment.status !== "Cancelled" && (
                       <>
-                        <Button size="sm" className="h-7 text-[11px]" disabled={arrivalBusy} onClick={confirmManifestArrival}>✓ Confirm arrival</Button>
+                        <Button size="sm" className="h-7 text-[11px]" disabled={arrivalBusy} onClick={confirmShipmentArrival}>✓ Shipment arrived</Button>
                         <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={arrivalBusy} onClick={() => setRescheduleOpen(true)}>Not arrived yet</Button>
                       </>
                     )}
                     <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => setEditingMeta(true)}>
                       {t("ship.editMetadata")}
                     </Button>
-                    {shipment.status !== "Arrived" && (
-                      <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => { setSelectedWeaponId(null); navigate("inventory") }}>
-                        <Package className="size-3" /> {t("ship.registerWeapons")}
+                    {canEditShipmentContents(shipment, currentUser) && (
+                      <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => setContentsEditorOpen(true)}>
+                        <Package className="size-3" /> Edit shipment contents
                       </Button>
                     )}
                   </div>
@@ -375,8 +353,11 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
                       <TableRow className="bg-muted/50">
                         <TableHead className="h-7 text-[10px]">#</TableHead>
                         <TableHead className="h-7 text-[10px]">{t("common.type")}</TableHead>
+                        <TableHead className="h-7 text-[10px]">{t("bulk.weaponType")}</TableHead>
+                        <TableHead className="h-7 text-[10px]">{t("bulk.subType")}</TableHead>
                         <TableHead className="h-7 text-[10px]">{t("weapon.brand")}</TableHead>
                         <TableHead className="h-7 text-[10px]">{t("weapon.model")}</TableHead>
+                        <TableHead className="h-7 text-[10px]">{t("weapon.caliber")}</TableHead>
                         <TableHead className="h-7 text-[10px]">{t("common.quantity")}</TableHead>
                         <TableHead className="h-7 text-[10px]">{t("ship.serials")}</TableHead>
                         <TableHead className="h-7 text-[10px]">{t("common.purchasePrice")}</TableHead>
@@ -514,9 +495,15 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
           <div><Label>New expected arrival date</Label><DatePicker value={newExpectedDate} onChange={setNewExpectedDate} required /></div>
           <div><Label>Delay reason</Label><Textarea value={delayReason} onChange={(event) => setDelayReason(event.target.value)} placeholder="Record the reason for the delay" /></div>
         </div>
-        <DialogFooter><Button variant="outline" onClick={() => setRescheduleOpen(false)}>Cancel</Button><Button disabled={arrivalBusy || !newExpectedDate || !delayReason.trim()} onClick={rescheduleManifestArrival}>Save and remind later</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={() => setRescheduleOpen(false)}>Cancel</Button><Button disabled={arrivalBusy || !newExpectedDate || !delayReason.trim()} onClick={handleRescheduleShipment}>Save and remind later</Button></DialogFooter>
       </DialogContent>
     </Dialog>
+    <ShipmentManifestImportDialog
+      open={contentsEditorOpen}
+      onOpenChange={setContentsEditorOpen}
+      editShipment={shipment}
+      onComplete={() => setContentsEditorOpen(false)}
+    />
     </>
   )
 }
@@ -539,8 +526,11 @@ function LineItemRow({ item, idx, t }: { item: ShipmentLineItem; idx: number; t:
     <TableRow>
       <TableCell className="py-1 text-[10px] tabular-nums">{idx}</TableCell>
       <TableCell className="py-1 text-[10px]">{t(`ship.prodType.${item.productType}`)}</TableCell>
+      <TableCell className="py-1 text-[10px]">{item.weaponType || "—"}</TableCell>
+      <TableCell className="py-1 text-[10px]">{item.subType || "—"}</TableCell>
       <TableCell className="py-1 text-[10px]">{item.brand}</TableCell>
       <TableCell className="py-1 text-[10px]">{item.model}</TableCell>
+      <TableCell className="py-1 text-[10px]">{item.caliber || "—"}</TableCell>
       <TableCell className="py-1 text-[10px] tabular-nums">{item.quantity}</TableCell>
       <TableCell className="py-1">
         {item.productType === "weapon" ? (

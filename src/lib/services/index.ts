@@ -84,9 +84,16 @@ export const ShipmentService = {
       const brandDisplay = item.brandLabel?.trim() || item.brandId
       const modelDisplay = item.modelLabel?.trim() || item.modelId
       if (item.quantity <= 0) return { success: false, error: `Line item quantity must be greater than 0 (${brandDisplay} ${modelDisplay})` }
-      if (!item.brandId.trim()) return { success: false, error: "Brand is required for all line items" }
-      if (item.productType === "weapon" && item.serialNumbers.length !== item.quantity)
-        return { success: false, error: `Serial count (${item.serialNumbers.length}) does not match quantity (${item.quantity}) for ${brandDisplay} ${modelDisplay}` }
+      if (item.productType === "weapon") {
+        if (!item.weaponTypeId.trim() || !item.weaponSubtypeId.trim() || !item.brandId.trim() || !item.modelId.trim() || !item.caliberId.trim())
+          return { success: false, error: `Complete the weapon classification for ${brandDisplay} ${modelDisplay}` }
+        if (item.serialNumbers.length !== item.quantity)
+          return { success: false, error: `Serial count (${item.serialNumbers.length}) does not match quantity (${item.quantity}) for ${brandDisplay} ${modelDisplay}` }
+      } else if (item.productType === "ammunition") {
+        if (!item.caliberLabel?.trim()) return { success: false, error: "Caliber is required for ammunition" }
+      } else if (!item.modelLabel?.trim()) {
+        return { success: false, error: "Accessory name is required" }
+      }
     }
     return { success: true }
   },

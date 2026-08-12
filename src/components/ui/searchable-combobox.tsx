@@ -40,13 +40,23 @@ export function SearchableCombobox({
     }
   }, [open])
 
-  const filtered = useMemo(() => {
-    if (!search) return options
-    const q = search.toLowerCase()
-    return options.filter((o) => o.toLowerCase().includes(q))
-  }, [options, search])
+  const uniqueOptions = useMemo(() => {
+    const seen = new Set<string>()
+    return options.filter((option) => {
+      const normalized = option.trim().toLocaleLowerCase()
+      if (!normalized || seen.has(normalized)) return false
+      seen.add(normalized)
+      return true
+    })
+  }, [options])
 
-  const showCreate = allowCreate && search.trim() && !options.some((o) => o.toLowerCase() === search.trim().toLowerCase())
+  const filtered = useMemo(() => {
+    if (!search) return uniqueOptions
+    const q = search.toLowerCase()
+    return uniqueOptions.filter((o) => o.toLowerCase().includes(q))
+  }, [uniqueOptions, search])
+
+  const showCreate = allowCreate && search.trim() && !uniqueOptions.some((o) => o.toLowerCase() === search.trim().toLowerCase())
 
   const handleCreate = () => {
     const trimmed = search.trim()

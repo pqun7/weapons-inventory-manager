@@ -157,6 +157,8 @@ interface ShipmentRow {
   arrival_note?: string | null
   delay_reason?: string | null
   last_arrival_prompt_at?: string | null
+  planned_costs?: unknown
+  created_at?: string | null
 }
 
 interface InvoiceRow {
@@ -493,6 +495,16 @@ function weaponToRow(w: Weapon): Record<string, unknown> {
 }
 
 function rowToShipment(r: ShipmentRow): Shipment {
+  const lineItems = parseJSON<Record<string, unknown>[]>(r.line_items, []).map((item) => ({
+    ...item,
+    weaponType: String(item.weaponType ?? item.weaponTypeLabel ?? ""),
+    subType: String(item.subType ?? item.subTypeLabel ?? ""),
+    brand: String(item.brand ?? item.brandLabel ?? ""),
+    model: String(item.model ?? item.modelLabel ?? ""),
+    caliber: String(item.caliber ?? item.caliberLabel ?? ""),
+    serialNumbers: Array.isArray(item.serialNumbers) ? item.serialNumbers.map(String) : [],
+    received: Number(item.received ?? 0),
+  })) as ShipmentLineItem[]
   return {
     id: r.id,
     shipmentNumber: r.shipment_number,
@@ -511,7 +523,7 @@ function rowToShipment(r: ShipmentRow): Shipment {
     currency: r.currency ?? undefined,
     purchaseDate: r.purchase_date ?? undefined,
     actualArrivalDate: r.actual_arrival_date ?? undefined,
-    lineItems: parseJSON(r.line_items, []),
+    lineItems,
     documents: parseJSON(r.documents, []),
     totalCostValuation: parseValuation(r.total_cost_valuation),
     workflowStatus: r.workflow_status ?? undefined,
@@ -519,6 +531,8 @@ function rowToShipment(r: ShipmentRow): Shipment {
     arrivalNote: r.arrival_note ?? undefined,
     delayReason: r.delay_reason ?? undefined,
     lastArrivalPromptAt: r.last_arrival_prompt_at ?? undefined,
+    plannedCosts: parseJSON(r.planned_costs, []),
+    createdAt: r.created_at ?? undefined,
   }
 }
 

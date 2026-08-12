@@ -15,7 +15,6 @@ import { useI18n } from "@/lib/i18n"
 import { formatDateTime } from "@/lib/format"
 import type { NotificationType } from "@/lib/types"
 import { toast } from "sonner"
-import { manifestClient } from "@/lib/manifest-client"
 
 const NOTIF_ICONS: Record<NotificationType, typeof Bell> = {
   OverdueDebt: AlertTriangle,
@@ -24,6 +23,7 @@ const NOTIF_ICONS: Record<NotificationType, typeof Bell> = {
   LowStock: TrendingDown,
   BackupOmission: Database,
   ShipmentDelayed: Truck,
+  ShipmentArrivalDue: Truck,
   System: Bell,
 }
 
@@ -34,6 +34,7 @@ const NOTIF_COLORS: Record<NotificationType, string> = {
   LowStock: "text-status-reserved",
   BackupOmission: "text-muted-foreground",
   ShipmentDelayed: "text-status-sold",
+  ShipmentArrivalDue: "text-primary",
   System: "text-primary",
 }
 
@@ -44,6 +45,7 @@ const NOTIF_TITLE_KEYS: Record<NotificationType, string> = {
   LowStock: "notif.title.lowStock",
   BackupOmission: "notif.title.backup",
   ShipmentDelayed: "notif.title.shipmentDelayed",
+  ShipmentArrivalDue: "notif.title.shipmentArrivalDue",
   System: "notif.title.system",
 }
 
@@ -53,17 +55,16 @@ export function NotificationCenter() {
   const markAllRead = useStore((s) => s.markAllNotificationsRead)
   const dismiss = useStore((s) => s.dismissNotification)
   const shipments = useStore((s) => s.shipments)
-  const currentUser = useStore((s) => s.getCurrentUser())
-  const refreshFromDb = useStore((s) => s.refreshFromDb)
+  const receiveScheduledShipment = useStore((s) => s.receiveScheduledShipment)
   const { navigate, setFinancialFilter } = useNav()
   const { t } = useI18n()
   const [filterUnread, setFilterUnread] = useState(false)
   const [arrivalBusy, setArrivalBusy] = useState<string | null>(null)
 
-  const confirmArrival = async (shipmentId: string, importId: string) => {
+  const confirmArrival = async (shipmentId: string) => {
     setArrivalBusy(shipmentId)
-    const result = await manifestClient.confirmArrival(importId, { id: currentUser.id, name: currentUser.name })
-    if (result.success) { await refreshFromDb(); toast.success("Shipment received into inventory") }
+    const result = await receiveScheduledShipment(shipmentId)
+    if (result.success) toast.success("Shipment received into inventory")
     else toast.error(result.error ?? "Unable to confirm shipment arrival")
     setArrivalBusy(null)
   }
@@ -80,7 +81,7 @@ export function NotificationCenter() {
       setFinancialFilter("overdue")
     } else if (notifType === "LowStock") {
       navigate("inventory")
-    } else if (notifType === "IncompleteShipment" || notifType === "ShipmentDelayed") {
+    } else if (notifType === "IncompleteShipment" || notifType === "ShipmentDelayed" || notifType === "ShipmentArrivalDue") {
       navigate("shipments")
     }
   }
@@ -127,7 +128,7 @@ export function NotificationCenter() {
               {displayed.map((n) => {
                 const Icon = NOTIF_ICONS[n.type]
                 const colorClass = NOTIF_COLORS[n.type]
-                const scheduledShipment = shipments.find((shipment) => shipment.id === n.entityId && shipment.workflowStatus === "scheduled" && shipment.importId)
+                const scheduledShipment = shipments.find((shipment) => shipment.id === n.entityId && shipment.workflowStatus === "scheduled")
                 return (
                   <div
                     key={n.id}
@@ -146,7 +147,7 @@ export function NotificationCenter() {
                       <span className="mt-0.5 text-[10px] text-muted-foreground">{formatDateTime(n.date)}</span>
                       {scheduledShipment && (
                         <div className="mt-2 flex gap-1">
-                          <Button size="xs" className="h-6 text-[10px]" disabled={arrivalBusy === scheduledShipment.id} onClick={(event) => { event.stopPropagation(); void confirmArrival(scheduledShipment.id, scheduledShipment.importId!) }}>✓ Confirm arrival</Button>
+                          <Button size="xs" className="h-6 text-[10px]" disabled={arrivalBusy === scheduledShipment.id} onClick={(event) => { event.stopPropagation(); void confirmArrival(scheduledShipment.id) }}>✓ Shipment arrived</Button>
                           <Button size="xs" variant="outline" className="h-6 text-[10px]" onClick={(event) => { event.stopPropagation(); markRead(n.id); navigate("shipments") }}>Not arrived yet</Button>
                         </div>
                       )}

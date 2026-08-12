@@ -164,18 +164,62 @@ export function nextSerialSuggestion(serials: string[], prefix: string): string 
   const max = nums.length > 0 ? Math.max(...nums) : 0
   return `${prefix}${(max + 1).toString().padStart(5, "0")}`
 }
+function getNextSequenceNumber(
+  existingNumbers: string[],
+  prefix: string,
+  digits: number,
+): number {
+  const usedNumbers = new Set<number>()
 
-export function generateInvoiceNumber(existing: { invoiceNumber: string }[]): string {
-  const today = new Date().toISOString().split("T")[0].replace(/-/g, "")
-  const prefix = `INV-${today}-`
-  const todayCount = existing.filter((s) => s.invoiceNumber.startsWith(prefix)).length + 1
-  return `${prefix}${todayCount.toString().padStart(4, "0")}`
+  for (const value of existingNumbers) {
+    if (!value.startsWith(prefix)) continue
+
+    const suffix = value.slice(prefix.length)
+    if (!new RegExp(`^\\d{${digits}}$`).test(suffix)) continue
+    const sequence = Number(suffix)
+
+    if (Number.isInteger(sequence) && sequence > 0) {
+      usedNumbers.add(sequence)
+    }
+  }
+
+  let next = 1
+
+  while (usedNumbers.has(next)) {
+    next++
+  }
+
+  return next
 }
 
-export function generateShipmentNumber(existing: { shipmentNumber: string }[]): string {
+export function generateInvoiceNumber(
+  existing: { invoiceNumber: string }[],
+): string {
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "")
+  const prefix = `INV-${today}-`
+
+  const nextNumber = getNextSequenceNumber(
+    existing.map((s) => s.invoiceNumber),
+    prefix,
+    4,
+  )
+
+  return `${prefix}${nextNumber.toString().padStart(4, "0")}`
+}
+
+export function generateShipmentNumber(
+  existing: { shipmentNumber: string }[],
+): string {
   const year = new Date().getFullYear()
-  const yearCount = existing.filter((s) => s.shipmentNumber.includes(`${year}`)).length + 1
-  return `SHP-${year}${yearCount.toString().padStart(4, "0")}`
+  const prefix = `SHP-${year}`
+
+  const nextNumber = getNextSequenceNumber(
+    existing.map((s) => s.shipmentNumber),
+    prefix,
+    4,
+  )
+
+  return `${prefix}${nextNumber.toString().padStart(4, "0")}`
 }
 
 const SHIPMENT_STATUS_CLASS: Record<string, string> = {
