@@ -35,7 +35,7 @@ def migration_body(sql: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--env-file", type=Path, default=Path(".env"))
+    parser.add_argument("--env-file", type=Path, default=Path(".env.local"))
     parser.add_argument("--migrations", type=Path, default=Path("supabase/migrations"))
     parser.add_argument(
         "--only",

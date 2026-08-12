@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Install database script dependencies
+        run: python -m pip install -r scripts/requirements-migration.txt
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Test application
+        run: npm test
+
+      - name: Test database maintenance scripts
+        run: npm run test:db-scripts
+
+      - name: Build renderer
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY: ci-placeholder-public-key
