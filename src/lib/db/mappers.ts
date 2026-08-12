@@ -298,6 +298,12 @@ interface AuditRow {
   previous_values: unknown
   new_values: unknown
   reason: string | null
+  user_name: string | null
+  event_key: string | null
+  details: unknown
+  item_count: number
+  importance: number
+  is_visible: boolean
 }
 
 interface NotificationRow {
@@ -850,6 +856,12 @@ function rowToAuditLog(r: AuditRow): AuditLog {
     previousValues: parseJSON(r.previous_values, {}),
     newValues: parseJSON(r.new_values, {}),
     reason: r.reason ?? undefined,
+    userName: r.user_name ?? undefined,
+    eventKey: r.event_key ?? undefined,
+    details: parseJSON(r.details, {}),
+    itemCount: r.item_count,
+    importance: Math.max(0, Math.min(3, r.importance)) as AuditLog["importance"],
+    isVisible: r.is_visible,
   }
 }
 
@@ -868,6 +880,12 @@ function auditLogToRow(a: AuditLog): Record<string, unknown> {
     previous_values: a.previousValues ?? {},
     new_values: a.newValues ?? {},
     reason: a.reason ?? null,
+    user_name: a.userName ?? null,
+    event_key: a.eventKey ?? null,
+    details: a.details ?? {},
+    item_count: a.itemCount ?? 0,
+    importance: a.importance ?? 1,
+    is_visible: a.isVisible ?? true,
   }
 }
 

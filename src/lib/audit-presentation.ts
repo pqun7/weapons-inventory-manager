@@ -45,6 +45,19 @@ export function parseAuditMetadata(raw: string): Record<string, unknown> | null 
   }
 }
 
+export function auditDetails(log: AuditLog): Record<string, unknown> | null {
+  const metadata = parseAuditMetadata(log.metadata) ?? {}
+  const details = log.details && typeof log.details === "object" ? log.details : {}
+  const merged = { ...metadata, ...details }
+  return Object.keys(merged).length ? merged : null
+}
+
+export function isBusinessAuditLog(log: AuditLog): boolean {
+  if (log.isVisible === false || log.importance === 0 || log.actionType === "Login") return false
+  const text = `${log.description} ${log.entityType ?? ""}`.toLocaleLowerCase()
+  return !/(autosave|background|heartbeat|manifest items updated during review|row change)/.test(text)
+}
+
 export function isSafeAuditKey(key: string): boolean {
   return !SENSITIVE_KEY.test(key)
 }
@@ -100,8 +113,15 @@ export function auditSummary(
   log: AuditLog,
   metadata: Record<string, unknown> | null,
   t: AuditTranslator,
+  actorName?: string,
 ): string {
-  if (log.description.trim() && log.entityType) return log.description
+  const messageKey = textValue(metadata, "messageKey")
+  const actor = actorName || log.userName || t("audit.systemUser")
+  const entity = log.entityName || textValue(metadata, "shipmentNumber") || textValue(metadata, "invoiceNumber") || t("audit.entity.record")
+  const count = log.itemCount || Number(textValue(metadata, "count")) || 0
+  if (messageKey === "audit.business.inventoryIntake") {
+    return t(messageKey, { actor, count, entity })
+  }
   const invoice = textValue(metadata, "invoiceNumber") ?? textValue(metadata, "invoiceId") ?? "—"
   const shipment = textValue(metadata, "shipmentNumber") ?? textValue(metadata, "shipmentId") ?? "—"
   const item = textValue(metadata, "itemName") ?? textValue(metadata, "caliber") ?? textValue(metadata, "weaponId") ?? "—"
@@ -115,7 +135,12 @@ export function auditSummary(
     DueDateExtension: t("audit.summary.dueDate", { invoice }),
     Update: t("audit.summary.update", { item }),
   }
-  return summaries[log.actionType] ?? log.description
+  const summary = summaries[log.actionType]
+  if (summary) return actorName || log.userName ? t("audit.sentence.withSummary", { actor, summary }) : summary
+  if (log.entityType || log.entityName) {
+    return t("audit.sentence.generic", { actor, action: auditActionLabel(log.actionType, t), entity })
+  }
+  return log.description || t("audit.sentence.generic", { actor, action: auditActionLabel(log.actionType, t), entity })
 }
 
 export function auditMoneyCurrencyKey(key: string): string | null {

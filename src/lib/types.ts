@@ -602,6 +602,12 @@ export interface AuditLog {
   previousValues?: Record<string, unknown>
   newValues?: Record<string, unknown>
   reason?: string
+  userName?: string
+  eventKey?: string
+  details?: Record<string, unknown>
+  itemCount?: number
+  importance?: 0 | 1 | 2 | 3
+  isVisible?: boolean
 }
 
 export interface InventoryProductType {

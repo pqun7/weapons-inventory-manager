@@ -13,6 +13,7 @@ import { I18nProvider } from "@/lib/i18n"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { useStore } from "@/lib/store"
 import { canAccessPage } from "@/lib/rbac"
+import { EntityDialogProvider } from "@/components/entity-dialog-provider"
 
 const DashboardPage = lazy(() => import("@/pages/dashboard").then((m) => ({ default: m.DashboardPage })))
 const InventoryPage = lazy(() => import("@/pages/inventory").then((m) => ({ default: m.InventoryPage })))
@@ -125,26 +126,28 @@ function AppContent({
           onReportViewModeChange={onReportViewModeChange}
         >
           <DirectionProvider dir={dir}>
-            <SidebarProvider>
-              <Suspense
-                fallback={
-                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
-                    <Spinner className="size-8 text-primary" />
-                  </div>
-                }
-              >
-                <AppSidebar />
-                <SidebarInset>
-                  <AppHeader />
-                  <div className="flex-1 overflow-auto scrollbar-thin">
-                    {ready ? <PageRouter /> : <BootPlaceholder />}
-                  </div>
-                </SidebarInset>
-                <CommandBar />
-              </Suspense>
-              {/* Toaster is now inside I18nProvider, so useI18n will work */}
-              <Toaster position={dir === "rtl" ? "bottom-left" : "bottom-right"} richColors />
-            </SidebarProvider>
+            <EntityDialogProvider>
+              <SidebarProvider>
+                <Suspense
+                  fallback={
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
+                      <Spinner className="size-8 text-primary" />
+                    </div>
+                  }
+                >
+                  <AppSidebar />
+                  <SidebarInset>
+                    <AppHeader />
+                    <div className="flex-1 overflow-auto scrollbar-thin">
+                      {ready ? <PageRouter /> : <BootPlaceholder />}
+                    </div>
+                  </SidebarInset>
+                  <CommandBar />
+                </Suspense>
+                {/* Toaster is now inside I18nProvider, so useI18n will work */}
+                <Toaster position={dir === "rtl" ? "bottom-left" : "bottom-right"} richColors />
+              </SidebarProvider>
+            </EntityDialogProvider>
           </DirectionProvider>
         </CurrencyProvider>
       </I18nProvider>

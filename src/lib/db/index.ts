@@ -73,7 +73,7 @@ const INVOICE_COLUMNS = "id,invoice_number,type,customer_id,supplier_id,customer
 const PAYMENT_COLUMNS = "id,invoice_id,invoice_number,date,amount,currency,accounting_amount,accounting_currency,exchange_rate,exchange_rate_date,rate_source,rate_id,method,employee,notes"
 const CUSTOMER_COLUMNS = "id,name,phone,email,address,is_wholesale_buyer,wholesale_discount_percent,notes,custom_fields,date_added"
 const SUPPLIER_COLUMNS = "id,name,contact_person,phone,email,address,date_added"
-const AUDIT_COLUMNS = "id,timestamp,date,user_id,action_type,description,metadata,entity_type,entity_id,entity_name,previous_values,new_values,reason"
+const AUDIT_COLUMNS = "id,timestamp,date,user_id,user_name,action_type,description,metadata,entity_type,entity_id,entity_name,previous_values,new_values,reason,event_key,details,item_count,importance,is_visible"
 const NOTIFICATION_COLUMNS = "id,type,title,message,date,is_read,entity_id"
 const USER_COLUMNS = "id,username,email,name,role,is_primary_admin,permissions,password_set"
 const SETTINGS_COLUMNS = "id,currency_symbol,currency_code,accounting_currency_code,rate_base_currency_code,supported_currencies,currency_frequency,tax_percent,invoice_header,invoice_footer,store_logo,thermal_printer_width,label_format,hourly_snapshot,daily_closing_prompt,weekly_verification,min_profit_margin_percent,target_retail_margin_percent,target_wholesale_margin_percent,maximum_markup_percent,psychological_pricing,theme,preferred_display_currency,show_demo_data,app_language,date_format,number_format,company_name,company_address,company_phone,company_email,company_tax_id"
@@ -141,7 +141,9 @@ export async function dbGetAll(): Promise<AllData> {
     client.from("suppliers").select(SUPPLIER_COLUMNS).order("date_added", { ascending: false }).limit(5000),
     client.from("audit_logs").select(AUDIT_COLUMNS).order("timestamp", { ascending: false }).limit(1000),
     client.from("app_notifications").select(NOTIFICATION_COLUMNS).order("date", { ascending: false }).limit(500),
-    client.from("users").select(USER_COLUMNS).order("id", { ascending: true }).limit(500),
+    // Deleted accounts are retained server-side for referential integrity and audit history,
+    // but must never be restored into the active user list on the next bootstrap.
+    client.from("users").select(USER_COLUMNS).eq("is_active", true).order("id", { ascending: true }).limit(500),
     client.from("system_settings").select(SETTINGS_COLUMNS).eq("id", 1).single(),
     client.from("saved_filters").select("id,name,entity_type,filter_state").order("created_at", { ascending: true }).limit(500),
     client.from("product_costs").select(PRODUCT_COST_COLUMNS).order("created_at", { ascending: true }).limit(10000),
