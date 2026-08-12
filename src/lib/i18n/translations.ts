@@ -1447,6 +1447,10 @@ export const en: Record<string, string> = {
   "ship.delayedStatus": "Delayed",
   "role.Employee": "Employee  ",
   "role.admin": "Administrator",
+  "role.SalesManager": "Sales Manager",
+  "role.InventoryManager": "Inventory Manager",
+  "role.AccountingManager": "Accounting Manager",
+  "role.ReadOnlyManager": "Read-only Manager",
 
 
 }

@@ -594,7 +594,7 @@ export function CustomersPage() {
 
       {/* حوار إضافة عميل */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-sm">{t("cust.addCustomer")}</DialogTitle>
           </DialogHeader>
@@ -616,7 +616,7 @@ export function CustomersPage() {
 
       {/* حوار تعديل عميل */}
       <Dialog open={editOpen} onOpenChange={(open) => { setEditOpen(open); if (!open) setEditingCustomer(null) }}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-sm">{t("cust.editCustomer")}</DialogTitle>
           </DialogHeader>
