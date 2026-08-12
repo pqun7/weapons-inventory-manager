@@ -3,6 +3,7 @@
 export type WeaponStatus = "Available" | "Reserved" | "Sold" | "Returned"
 
 export type WeaponCondition = "Excellent" | "Good" | "Fair" | "Poor"
+export type PricingMode = "auto" | "manual"
 
 export type InvoiceType = "Sale" | "Purchase"
 
@@ -164,6 +165,8 @@ export interface ShipmentLineItem {
   purchasePrice: number
   retailPrice: number
   wholesalePrice: number
+  retailPriceMode?: PricingMode
+  wholesalePriceMode?: PricingMode
   location: StorageLocation
   serialNumbers: string[]
   received: number
@@ -368,6 +371,8 @@ export interface Weapon {
   purchasePrice: number
   retailPrice: number
   wholesalePrice: number
+  retailPriceMode: PricingMode
+  wholesalePriceMode: PricingMode
   actualFinalPrice: number | null
 
   supplierId: string
@@ -407,6 +412,12 @@ export interface Accessory {
   price: number
   priceCurrency?: string
   priceValuation?: MoneyValuation
+  retailPrice: number
+  wholesalePrice: number
+  retailPriceValuation?: MoneyValuation
+  wholesalePriceValuation?: MoneyValuation
+  retailPriceMode: PricingMode
+  wholesalePriceMode: PricingMode
   dateAdded: string
   location: StorageLocation
   costSnapshot?: InventoryCostSnapshot
@@ -427,6 +438,12 @@ export interface Ammunition {
   price: number;
   priceCurrency?: string;
   priceValuation?: MoneyValuation;
+  retailPrice: number;
+  wholesalePrice: number;
+  retailPriceValuation?: MoneyValuation;
+  wholesalePriceValuation?: MoneyValuation;
+  retailPriceMode: PricingMode;
+  wholesalePriceMode: PricingMode;
   dateAdded: string;
   location: StorageLocation;
   costSnapshot?: InventoryCostSnapshot;
@@ -542,6 +559,7 @@ export interface Customer {
   address: string
   isWholesaleBuyer: boolean
   wholesaleDiscountPercent: number
+  notes?: string
   dateAdded: string
 }
 
@@ -563,6 +581,18 @@ export interface AuditLog {
   actionType: AuditActionType
   description: string
   metadata: string
+  entityType?: string
+  entityId?: string
+  entityName?: string
+  previousValues?: Record<string, unknown>
+  newValues?: Record<string, unknown>
+  reason?: string
+}
+
+export interface InventoryProductType {
+  id: string
+  category: "accessory" | "ammunition"
+  name: string
 }
 
 export interface AppNotification {
@@ -619,6 +649,10 @@ export interface SystemSettings {
   dailyClosingPrompt: boolean
   weeklyVerification: boolean
   minProfitMarginPercent: number
+  targetRetailMarginPercent: number
+  targetWholesaleMarginPercent: number
+  maximumMarkupPercent: number
+  psychologicalPricing: boolean
   theme?: "dark" | "light" | "system"
   // Multi-currency display preferences
   preferredDisplayCurrency?: string

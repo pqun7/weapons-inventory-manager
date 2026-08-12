@@ -190,7 +190,7 @@ function generateCustomers(): Customer[] {
     phone: `555-1${pad(randInt(100, 999), 3)}`,
     email: `${name.toLowerCase().replace(/[^a-z]/g, "")}@email.com`,
     address: `${randInt(100, 9999)} ${pick(["Maple", "Oak", "Cedar"])} ${pick(["St", "Ave", "Ln"])}, ${pick(["Austin, TX", "Portland, OR"])}`,
-    isWholesaleBuyer: false, wholesaleDiscountPercent: 0,
+    isWholesaleBuyer: false, wholesaleDiscountPercent: 0, notes: "",
     dateAdded: dateOffset(randInt(100, 500)),
   }))
   const wholesale = WHOLESALE_NAMES.map((b, i) => ({
@@ -198,7 +198,7 @@ function generateCustomers(): Customer[] {
     phone: `555-2${pad(randInt(100, 999), 3)}`,
     email: `purchasing@${b.name.toLowerCase().replace(/[^a-z]/g, "")}.com`,
     address: `${randInt(100, 9999)} ${pick(["Business", "Corporate", "Trade"])} ${pick(["Park", "Center", "Plaza"])}, ${pick(["Dallas, TX", "Chicago, IL"])}`,
-    isWholesaleBuyer: true, wholesaleDiscountPercent: b.discount,
+    isWholesaleBuyer: true, wholesaleDiscountPercent: b.discount, notes: "",
     dateAdded: dateOffset(randInt(150, 600)),
   }))
   return [...retail, ...wholesale]
@@ -306,6 +306,7 @@ function generateWeapons(suppliers: Supplier[], shipments: Shipment[]): Weapon[]
       location: sl.location,
       condition: pick(conditions), status,
       purchasePrice, retailPrice, wholesalePrice,
+      retailPriceMode: "manual", wholesalePriceMode: "manual",
       actualFinalPrice: status === "Sold" ? Math.round((retailPrice * (1 - random() * 0.1)) / 5) * 5 : null,
       supplierId: supplier.id, shipmentId, dateAdded: dateOffset(randInt(1, 400)),
       notes: random() > 0.8 ? "Minor surface wear on grip" : "",
@@ -329,6 +330,8 @@ function generateAccessories(): Accessory[] {
   return types.map((t, i) => ({
     id: `ACC${pad(i + 1, 3)}`, name: t.name, type: t.type,
     quantity: t.qty, safetyThreshold: 10, price: t.price,
+    retailPrice: t.price, wholesalePrice: t.price,
+    retailPriceMode: "manual", wholesalePriceMode: "manual",
     dateAdded: dateOffset(randInt(30, 300)), location: randomLocation(),
   }))
 }
@@ -348,6 +351,8 @@ function generateAmmunition(): Ammunition[] {
     packageType: c.pkgType, unitsPerPackage: c.unitsPerPkg,
     fullPackages: c.packages, looseRounds: c.loose,
     safetyThreshold: 200, price: c.price,
+    retailPrice: c.price, wholesalePrice: c.price,
+    retailPriceMode: "manual", wholesalePriceMode: "manual",
     dateAdded: dateOffset(randInt(30, 300)), location: randomLocation(),
   }))
 }
@@ -490,6 +495,10 @@ const DEFAULT_SETTINGS: SystemSettings = {
   dailyClosingPrompt: true,
   weeklyVerification: false,
   minProfitMarginPercent: 5,
+  targetRetailMarginPercent: 30,
+  targetWholesaleMarginPercent: 20,
+  maximumMarkupPercent: 200,
+  psychologicalPricing: false,
 }
 
 export function generateMockData() {

@@ -1,8 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react"
 import {
   Search, Plus, Users, Phone, Mail, MapPin, Trash2, Clock,
-  FileText, Download, Receipt, Pencil, X, Check, Building,
-  User, CreditCard, Calendar, ShoppingCart,
+  FileText, Download, Receipt, Pencil, Check, CreditCard, ChevronLeft, ChevronRight,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,8 +25,17 @@ import type { SavedFilter, Invoice, Customer } from "@/lib/types"
 import { toast } from "sonner"
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { userFacingError } from "@/lib/user-facing-error"
 
 type CustomerTab = "all" | "dealers" | "direct"
+type CustomerSummary = {
+  totalInvoices: number
+  openInvoices: number
+  grandTotalOutstanding: number
+  totalOverdueBalance: number
+  lastPaymentDate: string | null
+}
 
 // نموذج عميل موحد للإضافة والتعديل
 function CustomerForm({
@@ -37,7 +45,7 @@ function CustomerForm({
   t,
 }: {
   initialValues?: Partial<Customer>
-  onSave: (data: { name: string; phone: string; email: string; address: string; isWholesaleBuyer: boolean; notes: string }) => void
+  onSave: (data: { name: string; phone: string; email: string; address: string; isWholesaleBuyer: boolean; notes: string }) => Promise<void>
   onCancel: () => void
   t: (key: string) => string
 }) {
@@ -47,13 +55,24 @@ function CustomerForm({
   const [address, setAddress] = useState(initialValues?.address ?? "")
   const [isWholesale, setIsWholesale] = useState(initialValues?.isWholesaleBuyer ?? false)
   const [notes, setNotes] = useState(initialValues?.notes ?? "")
+  const [saving, setSaving] = useState(false)
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!name.trim()) {
       toast.error(t("cust.nameRequired"))
       return
     }
-    onSave({ name: name.trim(), phone: phone.trim(), email: email.trim(), address: address.trim(), isWholesaleBuyer: isWholesale, notes })
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      toast.error("Enter a valid email address.")
+      return
+    }
+    if (saving) return
+    setSaving(true)
+    try {
+      await onSave({ name: name.trim(), phone: phone.trim(), email: email.trim(), address: address.trim(), isWholesaleBuyer: isWholesale, notes: notes.trim() })
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -91,7 +110,7 @@ function CustomerForm({
         <Button variant="outline" size="sm" onClick={onCancel}>
           {t("common.cancel")}
         </Button>
-        <Button size="sm" onClick={handleSubmit}>
+        <Button size="sm" disabled={saving} onClick={() => void handleSubmit()}>
           <Check className="size-3.5 mr-1" /> {initialValues ? t("common.update") : t("common.add")}
         </Button>
       </DialogFooter>
@@ -102,10 +121,11 @@ function CustomerForm({
 export function CustomersPage() {
   const { t } = useI18n()
   const customers = useStore((s) => s.customers)
+  const invoices = useStore((s) => s.invoices)
   const payments = useStore((s) => s.payments)
   const getInvoicesByCustomerId = useStore((s) => s.getInvoicesByCustomerId)
   const addCustomer = useStore((s) => s.addCustomer)
-  const updateCustomer = useStore((s) => s.updateCustomer) // افترض وجودها، إذا لم تكن موجودة علّق عليها
+  const updateCustomer = useStore((s) => s.updateCustomer)
   const deleteCustomer = useStore((s) => s.deleteCustomer)
   const refreshFromDb = useStore((s) => s.refreshFromDb)
   const { formatAccountingAggregate, formatInvoice, formatInvoiceLine, formatPayment } = useCurrency()
@@ -116,6 +136,8 @@ export function CustomersPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
+  const [deleteCandidate, setDeleteCandidate] = useState<Customer | null>(null)
+  const [page, setPage] = useState(0)
 
   // Invoice detail dialog
   const [detailInvoice, setDetailInvoice] = useState<Invoice | null>(null)
@@ -128,13 +150,13 @@ export function CustomersPage() {
   const enriched = useMemo(() => {
     // ... الكود نفسه من السؤال لإنشاء enriched ...
     // سأختصره هنا للتركيز على UI، لكنه موجود بالكامل في التطبيق
-    const activeInvoices = useStore.getState().invoices.filter((i) => !i.voided)
+    const activeInvoices = invoices.filter((i) => !i.voided)
     const paymentsByInvoice = new Map<string, string>()
     for (const payment of payments) {
       const current = paymentsByInvoice.get(payment.invoiceId)
       if (!current || payment.date > current) paymentsByInvoice.set(payment.invoiceId, payment.date)
     }
-    const summaryByCustomer = new Map<string, any>()
+    const summaryByCustomer = new Map<string, CustomerSummary>()
     for (const invoice of activeInvoices) {
       if (!invoice.customerId) continue
       const current = summaryByCustomer.get(invoice.customerId) ?? {
@@ -151,17 +173,21 @@ export function CustomersPage() {
       if (paymentDate && (!current.lastPaymentDate || paymentDate > current.lastPaymentDate)) current.lastPaymentDate = paymentDate
       summaryByCustomer.set(invoice.customerId, current)
     }
-    return customers.map((c) => ({
+    return customers.map((c) => {
+      const summary = summaryByCustomer.get(c.id)
+      const lastPaymentDate = summary?.lastPaymentDate ?? null
+      return ({
       ...c,
-      totalInvoices: summaryByCustomer.get(c.id)?.totalInvoices ?? 0,
-      openInvoices: summaryByCustomer.get(c.id)?.openInvoices ?? 0,
-      grandTotalOutstanding: summaryByCustomer.get(c.id)?.grandTotalOutstanding ?? 0,
-      totalOverdueBalance: summaryByCustomer.get(c.id)?.totalOverdueBalance ?? 0,
-      daysSinceLastPayment: summaryByCustomer.get(c.id)?.lastPaymentDate
-        ? Math.max(0, Math.floor((Date.now() - new Date(summaryByCustomer.get(c.id)!.lastPaymentDate).getTime()) / 86400000))
+      totalInvoices: summary?.totalInvoices ?? 0,
+      openInvoices: summary?.openInvoices ?? 0,
+      grandTotalOutstanding: summary?.grandTotalOutstanding ?? 0,
+      totalOverdueBalance: summary?.totalOverdueBalance ?? 0,
+      daysSinceLastPayment: lastPaymentDate
+        ? Math.max(0, Math.floor((Date.now() - new Date(lastPaymentDate).getTime()) / 86400000))
         : null,
-    }))
-  }, [customers, payments])
+      })
+    })
+  }, [customers, invoices, payments])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -174,6 +200,10 @@ export function CustomersPage() {
       return matchesSearch && matchesTab
     })
   }, [enriched, search, tab])
+  useEffect(() => { setPage(0) }, [search, tab])
+  const pageSize = 25
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const pagedCustomers = filtered.slice(page * pageSize, (page + 1) * pageSize)
 
   const selected = filtered.find((c) => c.id === selectedId) || enriched.find((c) => c.id === selectedId) || null
   const selectedInvoices = selectedId ? getInvoicesByCustomerId(selectedId) : []
@@ -195,34 +225,23 @@ export function CustomersPage() {
       toast.success(t("toast.customerAdded"))
       setAddOpen(false)
     } else {
-      toast.error(result.error)
+      console.error("Customer creation failed", result.error)
+      toast.error(userFacingError(result.error, "Unable to create the customer."))
     }
   }
 
   const handleUpdate = async (id: string, data: { name: string; phone: string; email: string; address: string; isWholesaleBuyer: boolean; notes: string }) => {
-    if (updateCustomer) {
-      const result = await updateCustomer(id, {
-        ...data,
-        wholesaleDiscountPercent: data.isWholesaleBuyer ? 10 : 0,
-      })
-      if (result.success) {
-        toast.success(t("toast.customerUpdated"))
-        setEditOpen(false)
-        setEditingCustomer(null)
-      } else {
-        toast.error(result.error)
-      }
+    const result = await updateCustomer(id, {
+      ...data,
+      wholesaleDiscountPercent: data.isWholesaleBuyer ? 10 : 0,
+    })
+    if (result.success) {
+      toast.success(t("toast.customerUpdated"))
+      setEditOpen(false)
+      setEditingCustomer(null)
     } else {
-      // Fallback: delete and re-add (not ideal but works if no update function)
-      await deleteCustomer(id)
-      const result = await addCustomer({ ...data, wholesaleDiscountPercent: data.isWholesaleBuyer ? 10 : 0 })
-      if (result.success) {
-        toast.success(t("toast.customerUpdated"))
-        setEditOpen(false)
-        setEditingCustomer(null)
-      } else {
-        toast.error(t("toast.customerUpdateFailed"))
-      }
+      console.error("Customer update failed", result.error)
+      toast.error(t("toast.customerUpdateFailed"))
     }
   }
 
@@ -231,7 +250,11 @@ export function CustomersPage() {
     if (result.success) {
       toast.success(t("toast.customerDeleted"))
       if (selectedId === id) setSelectedId(null)
-    } else toast.error(result.error)
+      setDeleteCandidate(null)
+    } else {
+      console.error("Customer deletion failed", result.error)
+      toast.error(userFacingError(result.error, "Unable to delete the customer."))
+    }
   }
 
   const parseAttachments = (attachments: string[]) =>
@@ -308,7 +331,7 @@ export function CustomersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((c) => (
+                {pagedCustomers.map((c) => (
                   <TableRow
                     key={c.id}
                     className={cn("cursor-pointer", selectedId === c.id && "bg-muted")}
@@ -343,6 +366,7 @@ export function CustomersPage() {
                 )}
               </TableBody>
             </Table>
+            {filtered.length > pageSize && <div className="flex items-center justify-center gap-2 border-t p-2 text-[10px] text-muted-foreground"><Button size="xs" variant="outline" disabled={page === 0} onClick={() => setPage((value) => Math.max(0, value - 1))}><ChevronLeft className="size-3" /></Button><span>{page + 1} / {pageCount}</span><Button size="xs" variant="outline" disabled={page + 1 >= pageCount} onClick={() => setPage((value) => value + 1)}><ChevronRight className="size-3" /></Button></div>}
           </CardContent>
         </Card>
 
@@ -369,7 +393,7 @@ export function CustomersPage() {
                     <Button variant="outline" size="xs" onClick={openEditDialog}>
                       <Pencil className="size-3 mr-1" /> {t("common.edit")}
                     </Button>
-                    <Button variant="outline" size="xs" className="text-status-sold" onClick={() => handleDelete(selected.id)}>
+                    <Button variant="outline" size="xs" className="text-status-sold" onClick={() => setDeleteCandidate(selected)}>
                       <Trash2 className="size-3" />
                     </Button>
                   </div>
@@ -528,6 +552,14 @@ export function CustomersPage() {
           />
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={deleteCandidate !== null}
+        onOpenChange={(open) => { if (!open) setDeleteCandidate(null) }}
+        title={t("cust.deleteCustomer")}
+        description={deleteCandidate ? `Delete ${deleteCandidate.name}? This is only allowed when no active invoices exist.` : ""}
+        variant="destructive"
+        onConfirm={() => { if (deleteCandidate) void handleDelete(deleteCandidate.id) }}
+      />
 
       {/* حوار تعديل عميل */}
       <Dialog open={editOpen} onOpenChange={(open) => { setEditOpen(open); if (!open) setEditingCustomer(null) }}>

@@ -6,6 +6,7 @@ import type {
   PaymentMethod, AuditActionType, NotificationType, ShipmentStatus,
   SaleLineItem, SavedFilter, StorageLocation, PackageType, UserPreferences,
   ProductAdditionalCostInput, ShipmentAdditionalCostInput,
+  InventoryProductType, PricingMode,
 } from "./types.js"
 import { ammoTotalRounds } from "./types.js"
 import * as db from "./db/index.js"
@@ -32,6 +33,8 @@ export interface BulkIntakeInput {
   purchasePrice: number
   retailPrice: number
   wholesalePrice: number
+  retailPriceMode?: PricingMode
+  wholesalePriceMode?: PricingMode
   supplierId: string
   shipmentId: string | null          // ← corrected to allow null
   currency?: string
@@ -202,6 +205,7 @@ export interface StoreState {
   searchHistory: string[]
   pinnedSearchItems: string[]
   savedFilters: SavedFilter[]
+  inventoryProductTypes: InventoryProductType[]
 
   // Computed getters
   getCurrentUser: () => User
@@ -242,6 +246,7 @@ export interface StoreState {
   updateInvoiceNotes: (invoiceId: string, notes: string) => Promise<{ success: boolean; error?: string }>
 
   addCustomer: (customer: Omit<Customer, "id" | "dateAdded">) => Promise<{ success: boolean; customer?: Customer; error?: string }>
+  updateCustomer: (customerId: string, updates: Partial<Omit<Customer, "id" | "dateAdded">>) => Promise<{ success: boolean; error?: string }>
   addSupplier: (supplier: Omit<Supplier, "id" | "dateAdded">) => Promise<{ success: boolean; supplier?: Supplier; error?: string }>
   deleteCustomer: (customerId: string) => Promise<{ success: boolean; error?: string }>
 
@@ -250,6 +255,8 @@ export interface StoreState {
   addAccessory: (accessory: Omit<Accessory, "id" | "dateAdded" | "additionalCosts" | "costSnapshot"> & { additionalCostInputs?: ProductAdditionalCostInput[] }) => Promise<{ success: boolean; error?: string }>
   addAmmunition: (ammo: Omit<Ammunition, "id" | "dateAdded" | "additionalCosts" | "costSnapshot"> & { additionalCostInputs?: ProductAdditionalCostInput[] }) => Promise<{ success: boolean; error?: string }>
   addStock: (input: AddStockInput) => Promise<{ success: boolean; error?: string }>
+  createInventoryProductType: (category: "accessory" | "ammunition", name: string) => Promise<{ success: boolean; type?: InventoryProductType; created?: boolean; error?: string }>
+  updateProductPricing: (input: { productType: "weapon" | "accessory" | "ammunition"; productId: string; retailPrice: number; wholesalePrice: number; currency: string; retailMode: PricingMode; wholesaleMode: PricingMode }) => Promise<{ success: boolean; error?: string }>
   receiveAmmoByPackages: (input: ReceiveAmmoByPackagesInput) => Promise<{ success: boolean; error?: string }>
   receiveAmmoByRounds: (input: ReceiveAmmoByRoundsInput) => Promise<{ success: boolean; error?: string }>
   sellAmmo: (input: SellAmmoInput) => Promise<{ success: boolean; error?: string }>
@@ -314,6 +321,10 @@ const DEFAULT_SETTINGS: SystemSettings = {
   dailyClosingPrompt: true,
   weeklyVerification: false,
   minProfitMarginPercent: 5,
+  targetRetailMarginPercent: 30,
+  targetWholesaleMarginPercent: 20,
+  maximumMarkupPercent: 200,
+  psychologicalPricing: false,
   theme: "system",
 }
 
@@ -362,6 +373,7 @@ export const useStore = create<StoreState>()(
     searchHistory: [],
     pinnedSearchItems: [],
     savedFilters: [],
+    inventoryProductTypes: [],
     ready: false,
 
     bootstrap: async () => {
@@ -412,6 +424,7 @@ export const useStore = create<StoreState>()(
               users: data.users,
               settings: data.settings,
               savedFilters: data.savedFilters,
+              inventoryProductTypes: data.inventoryProductTypes ?? [],
               userPreferences: userPrefs,
               currentUserId,
               ready: true,
@@ -455,6 +468,7 @@ export const useStore = create<StoreState>()(
           users: data.users,
           settings: data.settings,
           savedFilters: data.savedFilters,
+          inventoryProductTypes: data.inventoryProductTypes ?? [],
         })
       } catch (e) {
         console.error("refreshFromDb failed:", e)
@@ -724,6 +738,16 @@ export const useStore = create<StoreState>()(
       return { success: true, customer: newCustomer }
     },
 
+    updateCustomer: async (customerId, updates) => {
+      try {
+        await db.dbUpdateCustomer(customerId, updates)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    },
+
     addSupplier: async (supplier) => {
       const newSupplier: Supplier = { ...supplier, id: generateId("SUP", get().suppliers), dateAdded: new Date().toISOString().split("T")[0] }
       set((state) => ({ suppliers: [newSupplier, ...state.suppliers] }))
@@ -848,6 +872,26 @@ export const useStore = create<StoreState>()(
         return { success: true }
       } catch (error) {
         set({ settings: previous })
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    },
+
+    createInventoryProductType: async (category, name) => {
+      try {
+        const result = await db.dbCreateInventoryProductType(category, name)
+        await get().refreshFromDb()
+        return { success: true, type: { id: result.id, category: result.category, name: result.name }, created: result.created }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    },
+
+    updateProductPricing: async (input) => {
+      try {
+        await db.dbUpdateProductPricing(input)
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
         return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
     },

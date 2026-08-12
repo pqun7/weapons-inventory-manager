@@ -76,12 +76,12 @@ export interface DynamicMasterData {
   getWarehouseIdByLabel: (label: string) => string | undefined
   getStorageLocationId: (warehouseLabel: string, shelf: string, bin: string) => string | undefined
   // CRUD
-  createWeaponType: (label: string) => Promise<void>
-  createWeaponSubtype: (weaponTypeLabel: string, label: string) => Promise<void>
-  createCaliber: (label: string) => Promise<void>
+  createWeaponType: (label: string) => Promise<string>
+  createWeaponSubtype: (weaponTypeLabel: string, label: string) => Promise<string>
+  createCaliber: (label: string) => Promise<string>
   linkSubtypeCaliber: (subtypeId: string, caliberId: string) => Promise<void>
-  createBrand: (label: string) => Promise<void>
-  createModel: (label: string, brandLabel?: string) => Promise<void>
+  createBrand: (label: string) => Promise<string>
+  createModel: (label: string, brandLabel?: string) => Promise<string>
   createWarehouse: (label: string) => Promise<void>
   createStorageLocation: (warehouseLabel: string, shelf: string, bin: string) => Promise<void>
   deleteWeaponType: (id: string) => Promise<void>
@@ -144,14 +144,12 @@ export function useDynamicMasterData(): DynamicMasterData {
 
   const getCalibersFor = useCallback((weaponTypeLabel: string, subtypeLabel: string): string[] => {
     const wt = weaponTypes.find(t => t.label === weaponTypeLabel)
-    if (!wt) return caliberLabels
+    if (!wt) return []
     const st = weaponSubtypes.find(s => s.weapon_type_id === wt.id && s.label === subtypeLabel)
-    if (!st) return caliberLabels
+    if (!st) return []
     const linkedIds = new Set(subtypeCalibers.filter(sc => sc.subtype_id === st.id).map(sc => sc.caliber_id))
-    const linked = calibers.filter(c => linkedIds.has(c.id)).map(c => c.label)
-    const rest = caliberLabels.filter(l => !linked.includes(l))
-    return [...linked, ...rest]
-  }, [weaponTypes, weaponSubtypes, subtypeCalibers, calibers, caliberLabels])
+    return calibers.filter(c => linkedIds.has(c.id)).map(c => c.label)
+  }, [weaponTypes, weaponSubtypes, subtypeCalibers, calibers])
 
   const getShelvesFor = useCallback((warehouseLabel: string): string[] => {
     const wh = warehouses.find(w => w.label === warehouseLabel)
@@ -203,27 +201,34 @@ export function useDynamicMasterData(): DynamicMasterData {
   }, [warehouses, storageLocations])
 
   // ---------- CRUD ----------
-  const wrap = useCallback((fn: () => Promise<void>) => async () => {
-    try { await fn() } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed") }
-    await refresh()
+  const wrap = useCallback(<T,>(fn: () => Promise<T>) => async (): Promise<T> => {
+    try {
+      const result = await fn()
+      await refresh()
+      return result
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed")
+      throw e
+    }
   }, [refresh])
 
   const createWeaponType = useCallback((label: string) => wrap(async () => {
     const { dbInsertMasterWeaponType } = await import("@/lib/db")
     const maxSort = weaponTypes.reduce((m, t) => Math.max(m, t.sort_order), 0)
-    await dbInsertMasterWeaponType(label.trim(), maxSort + 1)
+    return dbInsertMasterWeaponType(label.trim(), maxSort + 1)
   })(), [weaponTypes, wrap])
 
   const createWeaponSubtype = useCallback((weaponTypeLabel: string, label: string) => wrap(async () => {
-    const { dbInsertMasterWeaponSubtype } = await import("@/lib/db")
-    const wt = weaponTypes.find(t => t.label === weaponTypeLabel)
-    if (!wt) throw new Error(`Weapon type "${weaponTypeLabel}" not found`)
-    await dbInsertMasterWeaponSubtype(wt.id, label.trim(), 99)
+    const { dbInsertMasterWeaponSubtype, dbInsertMasterWeaponType } = await import("@/lib/db")
+    const existingType = weaponTypes.find(t => t.label === weaponTypeLabel)
+    const maxSort = weaponTypes.reduce((maximum, type) => Math.max(maximum, type.sort_order), 0)
+    const weaponTypeId = existingType?.id ?? await dbInsertMasterWeaponType(weaponTypeLabel.trim(), maxSort + 1)
+    return dbInsertMasterWeaponSubtype(weaponTypeId, label.trim(), 99)
   })(), [weaponTypes, wrap])
 
   const createCaliber = useCallback((label: string) => wrap(async () => {
     const { dbInsertMasterCaliber } = await import("@/lib/db")
-    await dbInsertMasterCaliber(label.trim())
+    return dbInsertMasterCaliber(label.trim())
   })(), [wrap])
 
   const linkSubtypeCaliber = useCallback((subtypeId: string, caliberId: string) => wrap(async () => {
@@ -233,17 +238,17 @@ export function useDynamicMasterData(): DynamicMasterData {
 
   const createBrand = useCallback((label: string) => wrap(async () => {
     const { dbInsertMasterBrand } = await import("@/lib/db")
-    await dbInsertMasterBrand(label.trim())
+    return dbInsertMasterBrand(label.trim())
   })(), [wrap])
 
   const createModel = useCallback((label: string, brandLabel?: string) => wrap(async () => {
-    const { dbInsertMasterModel } = await import("@/lib/db")
+    const { dbInsertMasterBrand, dbInsertMasterModel } = await import("@/lib/db")
     let brandId: string | null = null
     if (brandLabel) {
       const b = brands.find(b => b.label === brandLabel)
-      if (b) brandId = b.id
+      brandId = b?.id ?? await dbInsertMasterBrand(brandLabel.trim())
     }
-    await dbInsertMasterModel(label.trim(), brandId)
+    return dbInsertMasterModel(label.trim(), brandId)
   })(), [brands, wrap])
 
   const createWarehouse = useCallback((label: string) => wrap(async () => {

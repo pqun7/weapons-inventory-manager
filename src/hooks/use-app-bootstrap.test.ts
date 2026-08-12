@@ -16,6 +16,10 @@ vi.mock("@/lib/db", () => ({
       storeLogo: "", thermalPrinterWidth: 80, labelFormat: "Standard",
       hourlySnapshot: true, dailyClosingPrompt: true, weeklyVerification: false,
       minProfitMarginPercent: 5,
+      targetRetailMarginPercent: 30,
+      targetWholesaleMarginPercent: 20,
+      maximumMarkupPercent: 200,
+      psychologicalPricing: false,
     },
   }),
 }))

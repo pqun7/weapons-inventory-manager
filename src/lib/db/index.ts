@@ -65,18 +65,18 @@ export type {
   AuditLogEntry,
 }
 
-const WEAPON_COLUMNS = "id,serial_number,weapon_type_id,weapon_subtype_id,brand_id,model_id,caliber_id,storage_location_id,supplier_id,shipment_id,condition,status,purchase_price,retail_price,wholesale_price,actual_final_price,date_added,batch_id,notes,images,movement_history,purchase_price_valuation,retail_price_valuation,wholesale_price_valuation,actual_final_price_valuation,sale_price_valuation,deleted_at"
-const ACCESSORY_COLUMNS = "id,name,type,quantity,safety_threshold,price,price_currency,price_valuation,date_added,warehouse,shelf,bin"
-const AMMUNITION_COLUMNS = "id,name,caliber,package_type,units_per_package,full_packages,loose_rounds,safety_threshold,price,price_currency,price_valuation,date_added,warehouse,shelf,bin"
+const WEAPON_COLUMNS = "id,serial_number,weapon_type_id,weapon_subtype_id,brand_id,model_id,caliber_id,storage_location_id,supplier_id,shipment_id,condition,status,purchase_price,retail_price,wholesale_price,retail_price_mode,wholesale_price_mode,actual_final_price,date_added,batch_id,notes,images,movement_history,purchase_price_valuation,retail_price_valuation,wholesale_price_valuation,actual_final_price_valuation,sale_price_valuation,deleted_at"
+const ACCESSORY_COLUMNS = "id,name,type,quantity,safety_threshold,price,price_currency,price_valuation,retail_price,wholesale_price,retail_price_valuation,wholesale_price_valuation,retail_price_mode,wholesale_price_mode,date_added,warehouse,shelf,bin"
+const AMMUNITION_COLUMNS = "id,name,caliber,package_type,units_per_package,full_packages,loose_rounds,safety_threshold,price,price_currency,price_valuation,retail_price,wholesale_price,retail_price_valuation,wholesale_price_valuation,retail_price_mode,wholesale_price_mode,date_added,warehouse,shelf,bin"
 const SHIPMENT_COLUMNS = "id,shipment_number,supplier_id,shipment_date,expected_arrival_date,total_expected_items,attachments,notes,status,timeline,purchase_order_number,invoice_number,shipping_carrier,container_number,currency,purchase_date,actual_arrival_date,line_items,documents,total_cost_valuation,workflow_status,import_id,arrival_note,delay_reason,last_arrival_prompt_at"
 const INVOICE_COLUMNS = "id,invoice_number,type,customer_id,supplier_id,customer_name,date,due_date,total_original,total_negotiated,total_paid,balance,status,weapon_ids,line_items,sale_mode,employee_id,employee_name,attachments,shipment_id,notes,voided,tax_amount,total_valuation,currency,accounting_currency,exchange_rate,exchange_rate_date,rate_source,total_original_accounting,total_negotiated_accounting,total_paid_accounting,balance_accounting,tax_amount_accounting"
 const PAYMENT_COLUMNS = "id,invoice_id,invoice_number,date,amount,currency,accounting_amount,accounting_currency,exchange_rate,exchange_rate_date,rate_source,rate_id,method,employee,notes"
-const CUSTOMER_COLUMNS = "id,name,phone,email,address,is_wholesale_buyer,wholesale_discount_percent,date_added"
+const CUSTOMER_COLUMNS = "id,name,phone,email,address,is_wholesale_buyer,wholesale_discount_percent,notes,date_added"
 const SUPPLIER_COLUMNS = "id,name,contact_person,phone,email,address,date_added"
-const AUDIT_COLUMNS = "id,timestamp,date,user_id,action_type,description,metadata"
+const AUDIT_COLUMNS = "id,timestamp,date,user_id,action_type,description,metadata,entity_type,entity_id,entity_name,previous_values,new_values,reason"
 const NOTIFICATION_COLUMNS = "id,type,title,message,date,is_read,entity_id"
 const USER_COLUMNS = "id,username,name,role,permissions,password_set"
-const SETTINGS_COLUMNS = "id,currency_symbol,currency_code,accounting_currency_code,rate_base_currency_code,supported_currencies,currency_frequency,tax_percent,invoice_header,invoice_footer,store_logo,thermal_printer_width,label_format,hourly_snapshot,daily_closing_prompt,weekly_verification,min_profit_margin_percent,theme,preferred_display_currency,show_demo_data,app_language,date_format,number_format,company_name,company_address,company_phone,company_email,company_tax_id"
+const SETTINGS_COLUMNS = "id,currency_symbol,currency_code,accounting_currency_code,rate_base_currency_code,supported_currencies,currency_frequency,tax_percent,invoice_header,invoice_footer,store_logo,thermal_printer_width,label_format,hourly_snapshot,daily_closing_prompt,weekly_verification,min_profit_margin_percent,target_retail_margin_percent,target_wholesale_margin_percent,maximum_markup_percent,psychological_pricing,theme,preferred_display_currency,show_demo_data,app_language,date_format,number_format,company_name,company_address,company_phone,company_email,company_tax_id"
 const PRODUCT_COST_COLUMNS = "id,product_type,product_id,name,calculation_type,input_amount,percentage_rate,calculation_base,calculated_amount,currency_code,exchange_rate,base_amount,base_currency_code,exchange_rate_date,rate_source,source,created_by,created_at,updated_at"
 const INVENTORY_COST_COLUMNS = "product_type,product_id,shipment_id,shipment_item_id,original_amount,original_currency_code,original_exchange_rate,original_base_amount,product_costs_base_amount,shipment_costs_base_amount,final_landed_base_amount,base_currency_code,exchange_rate_date,rate_source,finalized_at"
 const SHIPMENT_COST_COLUMNS = "id,shipment_id,name,calculation_type,input_amount,percentage_rate,calculation_base,calculated_amount,currency_code,exchange_rate,base_amount,base_currency_code,exchange_rate_date,rate_source,scope,allocation_method,created_by,created_at,updated_at"
@@ -128,6 +128,7 @@ export async function dbGetAll(): Promise<AllData> {
     invoicesResult, paymentsResult, customersResult, suppliersResult,
     auditResult, notificationsResult, usersResult, settingsResult, filtersResult,
     productCostsResult, inventoryCostsResult, shipmentCostsResult, shipmentScopesResult, shipmentAllocationsResult,
+    productTypesResult,
   ] = await Promise.all([
     dbGetMasterData(),
     client.from("weapons").select(WEAPON_COLUMNS).is("deleted_at", null).order("created_at", { ascending: false }).limit(5000),
@@ -148,6 +149,7 @@ export async function dbGetAll(): Promise<AllData> {
     client.from("shipment_costs").select(SHIPMENT_COST_COLUMNS).order("created_at", { ascending: true }).limit(10000),
     client.from("shipment_cost_scope_items").select("cost_id,shipment_item_id").limit(20000),
     client.from("shipment_cost_allocations").select(SHIPMENT_ALLOCATION_COLUMNS).limit(20000),
+    client.from("inventory_product_types").select("id,category,name").order("name").limit(1000),
   ])
 
   const typeLabels = new Map(masterData.weaponTypes.map((row) => [row.id, row.label]))
@@ -252,6 +254,8 @@ export async function dbGetAll(): Promise<AllData> {
     )),
     savedFilters: requireRows(filtersResult.data, filtersResult.error, "Load saved filters")
       .map((row) => mappers.rowToSavedFilter(asMapperInput<typeof mappers.rowToSavedFilter>(row))),
+    inventoryProductTypes: requireRows(productTypesResult.data, productTypesResult.error, "Load inventory product types")
+      .map((row) => ({ id: String(row.id), category: String(row.category) as "accessory" | "ammunition", name: String(row.name) })),
   }
   return allData
 }
@@ -292,7 +296,7 @@ export async function dbUpdateSettings(settings: SystemSettings): Promise<void> 
 
 export async function dbGetUserPreferences(userId: string): Promise<UserPreferences | null> {
   const { data, error } = await getSupabaseClient().from("user_preferences")
-    .select("user_id,display_currency,report_view_mode,language,date_format").eq("user_id", userId).maybeSingle()
+    .select("user_id,display_currency,report_view_mode,language,date_format,inventory_visible_columns").eq("user_id", userId).maybeSingle()
   if (error) throw new Error(`Load user preferences: ${error.message}`)
   return data ? mappers.rowToUserPreferences(asMapperInput<typeof mappers.rowToUserPreferences>(data)) : null
 }
@@ -329,6 +333,10 @@ export async function dbUpdateAccessory(accessory: Accessory): Promise<void> { a
 export async function dbInsertAmmunition(ammunition: Ammunition): Promise<void> { await insertRow("ammunition", mappers.ammoToRow(ammunition), "Insert ammunition") }
 export async function dbUpdateAmmunition(ammunition: Ammunition): Promise<void> { await updateRow("ammunition", ammunition.id, mappers.ammoToRow(ammunition), "Update ammunition") }
 export async function dbInsertCustomer(customer: Customer): Promise<void> { await insertRow("customers", mappers.customerToRow(customer), "Insert customer") }
+export async function dbUpdateCustomer(customerId: string, patch: Partial<Customer>): Promise<void> {
+  const { error } = await getSupabaseClient().rpc("update_customer", { p_customer_id: customerId, p_patch: patch as unknown as Json })
+  if (error) throw new Error(error.message)
+}
 export async function dbDeleteCustomer(id: string): Promise<void> {
   const { error } = await getSupabaseClient().from("customers").delete().eq("id", id)
   if (error) throw new Error(`Delete customer: ${error.message}`)
@@ -394,14 +402,62 @@ async function insertMaster(table: PublicTableName, row: Record<string, unknown>
   await insertRow(table, { id, ...row }, `Insert ${table}`)
   return id
 }
-export function dbInsertMasterWeaponType(label: string, sortOrder: number): Promise<string> { return insertMaster("weapon_types", { label, sort_order: sortOrder }, "wt") }
-export function dbInsertMasterWeaponSubtype(weaponTypeId: string, label: string, sortOrder: number): Promise<string> { return insertMaster("weapon_subtypes", { weapon_type_id: weaponTypeId, label, sort_order: sortOrder }, "ws") }
-export function dbInsertMasterCaliber(label: string): Promise<string> { return insertMaster("calibers", { label }, "cal") }
-export async function dbLinkSubtypeCaliber(subtypeId: string, caliberId: string): Promise<void> { await insertRow("subtype_calibers", { subtype_id: subtypeId, caliber_id: caliberId }, "Link subtype caliber") }
-export function dbInsertMasterBrand(label: string): Promise<string> { return insertMaster("brands", { label }, "br") }
+async function ensureMasterByLabel(
+  table: "weapon_types" | "calibers" | "brands",
+  label: string,
+  prefix: string,
+  extra: Record<string, unknown> = {},
+): Promise<string> {
+  const normalized = label.trim().replace(/\s+/g, " ")
+  if (!normalized) throw new Error("A name is required")
+  const client = getSupabaseClient()
+  const existing = await client.from(table).select("id,label").ilike("label", normalized).limit(1).maybeSingle()
+  if (existing.error) throw new Error(`Find ${table}: ${existing.error.message}`)
+  if (existing.data) return String(existing.data.id)
+  const id = generatedId(prefix)
+  const inserted = await client.from(table).insert(toJsonRecord({ id, label: normalized, ...extra })).select("id").single()
+  if (!inserted.error) return String(inserted.data.id)
+  if (inserted.error.code !== "23505") throw new Error(`Insert ${table}: ${inserted.error.message}`)
+  const raced = await client.from(table).select("id,label").ilike("label", normalized).limit(1).single()
+  if (raced.error) throw new Error(`Resolve ${table}: ${raced.error.message}`)
+  return String(raced.data.id)
+}
+export function dbInsertMasterWeaponType(label: string, sortOrder: number): Promise<string> { return ensureMasterByLabel("weapon_types", label, "wt", { sort_order: sortOrder }) }
+export async function dbInsertMasterWeaponSubtype(weaponTypeId: string, label: string, sortOrder: number): Promise<string> {
+  const normalized = label.trim().replace(/\s+/g, " ")
+  const client = getSupabaseClient()
+  const existing = await client.from("weapon_subtypes").select("id,label").eq("weapon_type_id", weaponTypeId).ilike("label", normalized).limit(1).maybeSingle()
+  if (existing.error) throw new Error(`Find weapon subtype: ${existing.error.message}`)
+  if (existing.data) return String(existing.data.id)
+  try { return await insertMaster("weapon_subtypes", { weapon_type_id: weaponTypeId, label: normalized, sort_order: sortOrder }, "ws") }
+  catch (error) {
+    const raced = await client.from("weapon_subtypes").select("id,label").eq("weapon_type_id", weaponTypeId).ilike("label", normalized).limit(1).maybeSingle()
+    if (raced.data) return String(raced.data.id)
+    throw error
+  }
+}
+export function dbInsertMasterCaliber(label: string): Promise<string> { return ensureMasterByLabel("calibers", label, "cal") }
+export async function dbLinkSubtypeCaliber(subtypeId: string, caliberId: string): Promise<void> {
+  const { error } = await getSupabaseClient().from("subtype_calibers")
+    .upsert({ subtype_id: subtypeId, caliber_id: caliberId }, { onConflict: "subtype_id,caliber_id", ignoreDuplicates: true })
+  if (error) throw new Error(`Link subtype caliber: ${error.message}`)
+}
+export function dbInsertMasterBrand(label: string): Promise<string> { return ensureMasterByLabel("brands", label, "br") }
 export function dbInsertMasterModel(label: string, brandId: string | null): Promise<string> {
   if (!brandId) return Promise.reject(new Error("Brand is required for a model"))
-  return insertMaster("models", { label, brand_id: brandId }, "mdl")
+  return (async () => {
+    const normalized = label.trim().replace(/\s+/g, " ")
+    const client = getSupabaseClient()
+    const existing = await client.from("models").select("id,label").eq("brand_id", brandId).ilike("label", normalized).limit(1).maybeSingle()
+    if (existing.error) throw new Error(`Find model: ${existing.error.message}`)
+    if (existing.data) return String(existing.data.id)
+    try { return await insertMaster("models", { label: normalized, brand_id: brandId }, "mdl") }
+    catch (error) {
+      const raced = await client.from("models").select("id,label").eq("brand_id", brandId).ilike("label", normalized).limit(1).maybeSingle()
+      if (raced.data) return String(raced.data.id)
+      throw error
+    }
+  })()
 }
 export function dbInsertMasterWarehouse(label: string): Promise<string> { return insertMaster("warehouses", { label }, "wh") }
 export function dbInsertMasterStorageLocation(warehouseId: string, shelf: string, bin: string): Promise<string> { return insertMaster("storage_locations", { warehouse_id: warehouseId, shelf, bin }, "loc") }
@@ -701,6 +757,22 @@ export function dbCreateAccessory(accessory: Accessory, costs: ProductAdditional
 
 export function dbCreateAmmunition(ammunition: Ammunition, costs: ProductAdditionalCostInput[]): Promise<void> {
   return createInventoryProduct("ammunition", ammunition, costs)
+}
+
+export async function dbCreateInventoryProductType(category: "accessory" | "ammunition", name: string): Promise<{ id: string; category: "accessory" | "ammunition"; name: string; created: boolean }> {
+  const { data, error } = await getSupabaseClient().rpc("create_inventory_product_type", { p_category: category, p_name: name })
+  if (error) throw new Error(error.message)
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Product type response is invalid")
+  return { id: String(data.id), category: String(data.category) as "accessory" | "ammunition", name: String(data.name), created: data.created === true }
+}
+
+export async function dbUpdateProductPricing(input: { productType: "weapon" | "accessory" | "ammunition"; productId: string; retailPrice: number; wholesalePrice: number; currency: string; retailMode: "auto" | "manual"; wholesaleMode: "auto" | "manual" }): Promise<void> {
+  const { error } = await getSupabaseClient().rpc("update_product_pricing", {
+    p_product_type: input.productType, p_product_id: input.productId,
+    p_retail_price: input.retailPrice, p_wholesale_price: input.wholesalePrice,
+    p_currency: input.currency, p_retail_mode: input.retailMode, p_wholesale_mode: input.wholesaleMode,
+  })
+  if (error) throw new Error(error.message)
 }
 
 export async function dbReplaceProductCosts(productType: string, productId: string, costs: ProductAdditionalCostInput[]): Promise<void> {

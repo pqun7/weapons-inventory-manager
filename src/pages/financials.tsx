@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Separator } from "@/components/ui/separator"
 import {
   useReactTable,
@@ -22,7 +22,6 @@ import {
   flexRender,
   type ColumnDef,
   type SortingState,
-  type ColumnFiltersState,
   type VisibilityState,
 } from "@tanstack/react-table"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -153,12 +152,6 @@ export function FinancialsPage() {
 
   const selectedInvoice = invoices.find((i) => i.id === selectedInvoiceId)
   const invoicePayments = selectedInvoiceId ? payments.filter((p) => p.invoiceId === selectedInvoiceId) : []
-
-  const currentFilterState = useMemo<Record<string, unknown>>(() => ({
-    tab,
-    search,
-    quickFilter,
-  }), [tab, search, quickFilter])
 
   const handleLoadFilter = useCallback((filter: SavedFilter) => {
     const state = filter.filterState ?? {}

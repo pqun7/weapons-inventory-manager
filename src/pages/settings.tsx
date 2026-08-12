@@ -73,11 +73,46 @@ export function SettingsPage() {
   const [backupLoading, setBackupLoading] = useState(false)
   const [companyName, setCompanyName] = useState(settings.companyName ?? "")
   const [companyAddress, setCompanyAddress] = useState(settings.companyAddress ?? "")
+  const [pricingDraft, setPricingDraft] = useState(() => ({
+    retail: String(settings.targetRetailMarginPercent),
+    wholesale: String(settings.targetWholesaleMarginPercent),
+    minimum: String(settings.minProfitMarginPercent),
+    maximumMarkup: String(settings.maximumMarkupPercent),
+  }))
 
   useEffect(() => {
     setCompanyName(settings.companyName ?? "")
     setCompanyAddress(settings.companyAddress ?? "")
   }, [settings.companyName, settings.companyAddress])
+
+  useEffect(() => {
+    setPricingDraft({
+      retail: String(settings.targetRetailMarginPercent),
+      wholesale: String(settings.targetWholesaleMarginPercent),
+      minimum: String(settings.minProfitMarginPercent),
+      maximumMarkup: String(settings.maximumMarkupPercent),
+    })
+  }, [settings.maximumMarkupPercent, settings.minProfitMarginPercent, settings.targetRetailMarginPercent, settings.targetWholesaleMarginPercent])
+
+  const savePricingRules = async () => {
+    const retail = Number(pricingDraft.retail)
+    const wholesale = Number(pricingDraft.wholesale)
+    const minimum = Number(pricingDraft.minimum)
+    const maximumMarkup = Number(pricingDraft.maximumMarkup)
+    if (![retail, wholesale, minimum, maximumMarkup].every(Number.isFinite)
+      || retail <= 0 || retail >= 100 || wholesale <= 0 || wholesale >= retail
+      || minimum < 0 || minimum >= wholesale || maximumMarkup < 0) {
+      toast.error(t("pricing.invalidPrice"))
+      return
+    }
+    const result = await updateSettings({
+      targetRetailMarginPercent: retail,
+      targetWholesaleMarginPercent: wholesale,
+      minProfitMarginPercent: minimum,
+      maximumMarkupPercent: maximumMarkup,
+    })
+    if (!result.success) toast.error(result.error ?? t("settings.saveFailed"))
+  }
 
   useEffect(() => {
     void refreshFromDb()
@@ -265,6 +300,41 @@ export function SettingsPage() {
                       className="h-8 text-xs"
                     />
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-sm"><Coins className="size-4" />{t("settings.pricingRules")}</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-3 sm:grid-cols-2">
+                {([
+                  ["retail", "settings.targetRetailMargin"],
+                  ["wholesale", "settings.targetWholesaleMargin"],
+                  ["minimum", "settings.minProfitMargin"],
+                  ["maximumMarkup", "settings.maximumMarkup"],
+                ] as const).map(([field, label]) => (
+                  <div key={field}>
+                    <Label className="text-xs">{t(label)}</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={field === "maximumMarkup" ? 10000 : 99.99}
+                      step="0.1"
+                      value={pricingDraft[field]}
+                      onChange={(event) => setPricingDraft((current) => ({ ...current, [field]: event.target.value }))}
+                      onBlur={() => void savePricingRules()}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                ))}
+                <div className="flex items-center justify-between gap-3 rounded-md border p-3 sm:col-span-2">
+                  <div>
+                    <Label className="text-xs">{t("settings.psychologicalPricing")}</Label>
+                    <p className="text-[10px] text-muted-foreground">{t("settings.psychologicalPricingHelp")}</p>
+                  </div>
+                  <Switch checked={settings.psychologicalPricing} onCheckedChange={(checked) => void updateSettings({ psychologicalPricing: checked })} />
                 </div>
               </CardContent>
             </Card>

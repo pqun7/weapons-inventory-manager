@@ -37,6 +37,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, default=Path(".env"))
     parser.add_argument("--migrations", type=Path, default=Path("supabase/migrations"))
+    parser.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        metavar="VERSION_OR_FILENAME",
+        help="Apply only the specified migration version or filename. May be repeated.",
+    )
     args = parser.parse_args()
     load_dotenv(args.env_file)
     database_url = os.environ.get("SUPABASE_DB_URL")
@@ -57,6 +64,20 @@ def main() -> int:
         }
 
     files = sorted(args.migrations.glob("*.sql"))
+    if args.only:
+        requested = set(args.only)
+        files = [
+            path for path in files
+            if path.name in requested or path.stem in requested or path.stem.split("_", 1)[0] in requested
+        ]
+        missing = requested - {
+            value
+            for path in files
+            for value in (path.name, path.stem, path.stem.split("_", 1)[0])
+            if value in requested
+        }
+        if missing:
+            raise RuntimeError(f"Requested migrations were not found: {', '.join(sorted(missing))}")
     if not files:
         raise RuntimeError(f"No SQL migrations found in {args.migrations}")
     with psycopg.connect(**connection_kwargs) as connection:

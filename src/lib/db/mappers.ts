@@ -22,6 +22,7 @@ import type {
   UserPermissions,
   PackageType,
   UserPreferences,
+  InventoryProductType,
 } from "../types.js"
 
 export interface DbResult<T> {
@@ -43,6 +44,7 @@ export interface AllData {
   users: User[]
   settings: SystemSettings
   savedFilters: SavedFilter[]
+  inventoryProductTypes?: InventoryProductType[]
 }
 
 export interface MasterDataAll {
@@ -109,6 +111,8 @@ interface WeaponRow {
   purchase_price: number
   retail_price: number
   wholesale_price: number
+  retail_price_mode: string
+  wholesale_price_mode: string
   actual_final_price: number | null
   purchase_price_valuation: unknown
   retail_price_valuation: unknown
@@ -219,6 +223,12 @@ interface AccessoryRow {
   price: number
   price_currency: string | null
   price_valuation: unknown
+  retail_price: number
+  wholesale_price: number
+  retail_price_valuation: unknown
+  wholesale_price_valuation: unknown
+  retail_price_mode: string
+  wholesale_price_mode: string
   date_added: string
   warehouse: string
   shelf: string
@@ -237,6 +247,12 @@ interface AmmoRow {
   price: number
   price_currency: string | null
   price_valuation: unknown
+  retail_price: number
+  wholesale_price: number
+  retail_price_valuation: unknown
+  wholesale_price_valuation: unknown
+  retail_price_mode: string
+  wholesale_price_mode: string
   date_added: string
   warehouse: string
   shelf: string
@@ -252,6 +268,7 @@ interface CustomerRow {
   is_wholesale_buyer: number | boolean
   wholesale_discount_percent: number
   date_added: string
+  notes: string
 }
 
 interface SupplierRow {
@@ -272,6 +289,12 @@ interface AuditRow {
   action_type: string
   description: string
   metadata: unknown
+  entity_type: string | null
+  entity_id: string | null
+  entity_name: string | null
+  previous_values: unknown
+  new_values: unknown
+  reason: string | null
 }
 
 interface NotificationRow {
@@ -312,6 +335,10 @@ interface SettingsRow {
   daily_closing_prompt: number | boolean
   weekly_verification: number | boolean
   min_profit_margin_percent: number
+  target_retail_margin_percent: number
+  target_wholesale_margin_percent: number
+  maximum_markup_percent: number
+  psychological_pricing: number | boolean
   theme: string | null
   preferred_display_currency: string | null
   show_demo_data: number
@@ -331,6 +358,7 @@ interface UserPreferencesRow {
   report_view_mode: string
   language: string | null
   date_format: string | null
+  inventory_visible_columns: unknown
 }
 
 interface SavedFilterRow {
@@ -411,6 +439,8 @@ function rowToWeapon(r: WeaponRow): Weapon {
     purchasePrice: r.purchase_price,
     retailPrice: r.retail_price,
     wholesalePrice: r.wholesale_price,
+    retailPriceMode: r.retail_price_mode as Weapon["retailPriceMode"],
+    wholesalePriceMode: r.wholesale_price_mode as Weapon["wholesalePriceMode"],
     actualFinalPrice: r.actual_final_price,
     supplierId: r.supplier_id,
     shipmentId: r.shipment_id,
@@ -445,6 +475,8 @@ function weaponToRow(w: Weapon): Record<string, unknown> {
     purchase_price: w.purchasePrice,
     retail_price: w.retailPrice,
     wholesale_price: w.wholesalePrice,
+    retail_price_mode: w.retailPriceMode ?? "manual",
+    wholesale_price_mode: w.wholesalePriceMode ?? "manual",
     actual_final_price: w.actualFinalPrice,
     date_added: w.dateAdded,
     batch_id: w.batchId ?? null,
@@ -643,6 +675,12 @@ function rowToAccessory(r: AccessoryRow): Accessory {
     price: r.price,
     priceCurrency: r.price_currency ?? undefined,
     priceValuation: parseValuation(r.price_valuation),
+    retailPrice: r.retail_price,
+    wholesalePrice: r.wholesale_price,
+    retailPriceValuation: parseValuation(r.retail_price_valuation),
+    wholesalePriceValuation: parseValuation(r.wholesale_price_valuation),
+    retailPriceMode: r.retail_price_mode as Accessory["retailPriceMode"],
+    wholesalePriceMode: r.wholesale_price_mode as Accessory["wholesalePriceMode"],
     dateAdded: r.date_added,
     location: parseLocation(r.warehouse, r.shelf, r.bin),
   }
@@ -659,6 +697,12 @@ function accessoryToRow(a: Accessory): Record<string, unknown> {
     price: a.price,
     price_currency: a.priceCurrency ?? null,
     price_valuation: a.priceValuation ?? null,
+    retail_price: a.retailPrice,
+    wholesale_price: a.wholesalePrice,
+    retail_price_valuation: a.retailPriceValuation ?? null,
+    wholesale_price_valuation: a.wholesalePriceValuation ?? null,
+    retail_price_mode: a.retailPriceMode,
+    wholesale_price_mode: a.wholesalePriceMode,
     date_added: a.dateAdded,
     warehouse: loc.warehouse,
     shelf: loc.shelf,
@@ -679,6 +723,12 @@ function rowToAmmo(r: AmmoRow): Ammunition {
     price: r.price,
     priceCurrency: r.price_currency ?? undefined,
     priceValuation: parseValuation(r.price_valuation),
+    retailPrice: r.retail_price,
+    wholesalePrice: r.wholesale_price,
+    retailPriceValuation: parseValuation(r.retail_price_valuation),
+    wholesalePriceValuation: parseValuation(r.wholesale_price_valuation),
+    retailPriceMode: r.retail_price_mode as Ammunition["retailPriceMode"],
+    wholesalePriceMode: r.wholesale_price_mode as Ammunition["wholesalePriceMode"],
     dateAdded: r.date_added,
     location: parseLocation(r.warehouse, r.shelf, r.bin),
   }
@@ -697,6 +747,12 @@ function ammoToRow(a: Ammunition): Record<string, unknown> {
     price: a.price,
     price_currency: a.priceCurrency ?? null,
     price_valuation: a.priceValuation ?? null,
+    retail_price: a.retailPrice,
+    wholesale_price: a.wholesalePrice,
+    retail_price_valuation: a.retailPriceValuation ?? null,
+    wholesale_price_valuation: a.wholesalePriceValuation ?? null,
+    retail_price_mode: a.retailPriceMode,
+    wholesale_price_mode: a.wholesalePriceMode,
     date_added: a.dateAdded,
     warehouse: loc.warehouse,
     shelf: loc.shelf,
@@ -713,6 +769,7 @@ function rowToCustomer(r: CustomerRow): Customer {
     address: r.address,
     isWholesaleBuyer: r.is_wholesale_buyer === true || r.is_wholesale_buyer === 1,
     wholesaleDiscountPercent: r.wholesale_discount_percent,
+    notes: r.notes,
     dateAdded: r.date_added,
   }
 }
@@ -726,6 +783,7 @@ function customerToRow(c: Customer): Record<string, unknown> {
     address: c.address,
     is_wholesale_buyer: c.isWholesaleBuyer,
     wholesale_discount_percent: c.wholesaleDiscountPercent,
+    notes: c.notes ?? "",
     date_added: c.dateAdded,
   }
 }
@@ -763,6 +821,12 @@ function rowToAuditLog(r: AuditRow): AuditLog {
     actionType: r.action_type as AuditLog["actionType"],
     description: r.description,
     metadata: typeof r.metadata === "string" ? r.metadata : JSON.stringify(r.metadata ?? {}),
+    entityType: r.entity_type ?? undefined,
+    entityId: r.entity_id ?? undefined,
+    entityName: r.entity_name ?? undefined,
+    previousValues: parseJSON(r.previous_values, {}),
+    newValues: parseJSON(r.new_values, {}),
+    reason: r.reason ?? undefined,
   }
 }
 
@@ -775,6 +839,12 @@ function auditLogToRow(a: AuditLog): Record<string, unknown> {
     action_type: a.actionType,
     description: a.description,
     metadata: parseJSON(a.metadata, {}),
+    entity_type: a.entityType ?? null,
+    entity_id: a.entityId ?? null,
+    entity_name: a.entityName ?? null,
+    previous_values: a.previousValues ?? {},
+    new_values: a.newValues ?? {},
+    reason: a.reason ?? null,
   }
 }
 
@@ -843,6 +913,10 @@ function rowToSettings(r: SettingsRow): SystemSettings {
     dailyClosingPrompt: r.daily_closing_prompt === true || r.daily_closing_prompt === 1,
     weeklyVerification: r.weekly_verification === true || r.weekly_verification === 1,
     minProfitMarginPercent: r.min_profit_margin_percent,
+    targetRetailMarginPercent: r.target_retail_margin_percent,
+    targetWholesaleMarginPercent: r.target_wholesale_margin_percent,
+    maximumMarkupPercent: r.maximum_markup_percent,
+    psychologicalPricing: r.psychological_pricing === true || r.psychological_pricing === 1,
     theme: (r.theme as SystemSettings["theme"]) ?? "system",
     preferredDisplayCurrency: r.preferred_display_currency ?? undefined,
     appLanguage: r.app_language,
@@ -875,6 +949,10 @@ function settingsToRow(s: SystemSettings): Record<string, unknown> {
     daily_closing_prompt: s.dailyClosingPrompt,
     weekly_verification: s.weeklyVerification,
     min_profit_margin_percent: s.minProfitMarginPercent,
+    target_retail_margin_percent: s.targetRetailMarginPercent,
+    target_wholesale_margin_percent: s.targetWholesaleMarginPercent,
+    maximum_markup_percent: s.maximumMarkupPercent,
+    psychological_pricing: s.psychologicalPricing,
     theme: s.theme ?? "system",
     preferred_display_currency: s.preferredDisplayCurrency ?? null,
     app_language: s.appLanguage ?? "en",
@@ -895,6 +973,7 @@ function rowToUserPreferences(r: UserPreferencesRow): UserPreferences {
     reportViewMode: r.report_view_mode as UserPreferences["reportViewMode"],
     language: r.language ?? undefined,
     dateFormat: r.date_format ?? undefined,
+    inventoryVisibleColumns: parseJSON<string[] | undefined>(r.inventory_visible_columns, undefined),
   }
 }
 
@@ -905,6 +984,7 @@ function userPreferencesToRow(p: UserPreferences): Record<string, unknown> {
     report_view_mode: p.reportViewMode,
     language: p.language ?? null,
     date_format: p.dateFormat ?? null,
+    inventory_visible_columns: p.inventoryVisibleColumns ?? null,
   }
 }
 

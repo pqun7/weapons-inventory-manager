@@ -101,6 +101,7 @@ export function auditSummary(
   metadata: Record<string, unknown> | null,
   t: AuditTranslator,
 ): string {
+  if (log.description.trim() && log.entityType) return log.description
   const invoice = textValue(metadata, "invoiceNumber") ?? textValue(metadata, "invoiceId") ?? "—"
   const shipment = textValue(metadata, "shipmentNumber") ?? textValue(metadata, "shipmentId") ?? "—"
   const item = textValue(metadata, "itemName") ?? textValue(metadata, "caliber") ?? textValue(metadata, "weaponId") ?? "—"

@@ -11,7 +11,6 @@ export const InventoryService = {
     if (!input.weaponTypeId) return { success: false, error: "Weapon type is required" }
     if (!input.weaponSubtypeId) return { success: false, error: "Sub-type is required" }
     if (!input.caliberId) return { success: false, error: "Caliber is required" }
-    if (!input.supplierId) return { success: false, error: "Supplier is required" }
     if (input.purchasePrice <= 0) return { success: false, error: "Purchase price must be > 0" }
     if (input.retailPrice <= 0) return { success: false, error: "Retail price must be > 0" }
     if (input.wholesalePrice <= 0) return { success: false, error: "Wholesale price must be > 0" }

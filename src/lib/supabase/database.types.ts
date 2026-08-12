@@ -15,6 +15,7 @@ export type PublicTableName =
   | "shipment_documents" | "shipment_import_items" | "shipment_validation_issues"
   | "shipment_item_changes" | "shipment_status_history" | "migration_runs"
   | "business_id_counters"
+  | "inventory_product_types"
 
 type GenericTable = {
   Row: Record<string, Json>
@@ -64,6 +65,9 @@ type RpcName =
   | "confirm_manifest_arrival"
   | "reschedule_manifest"
   | "cancel_manifest"
+  | "create_inventory_product_type"
+  | "update_customer"
+  | "update_product_pricing"
 
 type GenericRpc = {
   Args: Record<string, Json | undefined>

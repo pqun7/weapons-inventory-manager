@@ -112,7 +112,7 @@ function createWindow(): BrowserWindow {
 
     // 2. ✅ استخدام المتغير DEV_SERVER_URL المحسوب
     mainWindow.loadURL(devServerUrl!)
-    mainWindow.webContents.openDevTools({ mode: "detach" })
+    // mainWindow.webContents.openDevTools({ mode: "detach" })
     logBoot("window:loadURL")
   } else {
     // Production: load built index.html

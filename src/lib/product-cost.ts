@@ -140,6 +140,23 @@ export function calculateProductFinalCost(
   return storage(final, decimalPlaces)
 }
 
+export function calculateDraftFinalCostInCurrency(
+  originalPurchaseCost: MoneyLike,
+  originalCurrency: string,
+  costs: ProductCostDraft[],
+  convert: (amount: number, fromCurrency: string, toCurrency: string) => number,
+  decimalPlaces = 4,
+): string {
+  const original = nonNegative(originalPurchaseCost, "Original purchase cost")
+  const total = costs.reduce((sum, cost) => {
+    const baseInCostCurrency = convert(original.toNumber(), originalCurrency, cost.currency)
+    const calculated = calculateProductAdditionalCost(baseInCostCurrency, cost, decimalPlaces)
+    const converted = convert(Number(calculated.calculatedAmount), calculated.currency, originalCurrency)
+    return sum.plus(nonNegative(converted, "Converted additional cost"))
+  }, original)
+  return storage(total, decimalPlaces)
+}
+
 export function calculateCurrencyConversion(
   amount: MoneyLike,
   exchangeRateUnitsPerBase: MoneyLike,

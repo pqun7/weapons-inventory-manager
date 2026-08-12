@@ -7,6 +7,7 @@ import {
   formatInvoiceLineMoney,
   formatPaymentMoney,
   formatValuation as formatMoneyValuation,
+  invoiceAccountingAmount,
   type InvoiceMoneyField,
 } from "@/lib/money-ui"
 import type { Invoice, MoneyValuation, PaymentRecord } from "@/lib/types"
@@ -160,25 +161,42 @@ export function CurrencyProvider({
   )
 
   const formatInvoice = useCallback(
-    (invoice: Invoice, field: InvoiceMoneyField, mode: ReportViewMode = "display") =>
-      formatInvoiceMoney(invoice, field, resolvedDisplayCurrency, locale, mode),
-    [resolvedDisplayCurrency, locale],
+    (invoice: Invoice, field: InvoiceMoneyField, mode: ReportViewMode = "display") => {
+      try {
+        return formatInvoiceMoney(invoice, field, resolvedDisplayCurrency, locale, mode)
+      } catch {
+        const invoiceCurrency = invoice.accountingCurrency ?? accountingCurrency
+        const accountingValue = invoiceAccountingAmount(invoice, field)
+        return CurrencyService.format(accountingValue ?? (Number(invoice[field]) || 0), invoiceCurrency, locale)
+      }
+    },
+    [accountingCurrency, resolvedDisplayCurrency, locale],
   )
 
   const formatInvoiceLine = useCallback(
-    (invoice: Invoice, amount: number) => formatInvoiceLineMoney(invoice, amount, resolvedDisplayCurrency, locale),
-    [resolvedDisplayCurrency, locale],
+    (invoice: Invoice, amount: number) => {
+      try { return formatInvoiceLineMoney(invoice, amount, resolvedDisplayCurrency, locale) }
+      catch { return CurrencyService.format(amount, invoice.currency ?? accountingCurrency, locale) }
+    },
+    [accountingCurrency, resolvedDisplayCurrency, locale],
   )
 
   const formatPayment = useCallback(
-    (payment: PaymentRecord, mode: ReportViewMode = "display") =>
-      formatPaymentMoney(payment, resolvedDisplayCurrency, locale, mode),
-    [resolvedDisplayCurrency, locale],
+    (payment: PaymentRecord, mode: ReportViewMode = "display") => {
+      try { return formatPaymentMoney(payment, resolvedDisplayCurrency, locale, mode) }
+      catch { return CurrencyService.format(payment.amount, payment.currency ?? accountingCurrency, locale) }
+    },
+    [accountingCurrency, resolvedDisplayCurrency, locale],
   )
 
   const formatAccountingAggregate = useCallback(
-    (amount: number, mode: ReportViewMode = "display") =>
-      formatAggregate(amount, accountingCurrency, resolvedDisplayCurrency, locale, mode),
+    (amount: number, mode: ReportViewMode = "display") => {
+      try {
+        return formatAggregate(amount, accountingCurrency, resolvedDisplayCurrency, locale, mode)
+      } catch {
+        return CurrencyService.format(amount, accountingCurrency, locale)
+      }
+    },
     [accountingCurrency, resolvedDisplayCurrency, locale],
   )
 

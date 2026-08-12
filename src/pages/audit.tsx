@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import {
-  Activity, ArrowUpRight, Clock3, Coins, FileText, Filter, Hash,
+  Activity, ArrowUpRight, ChevronLeft, ChevronRight, Clock3, Coins, FileText, Filter, Hash,
   Search, ScrollText, UserRound,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -10,6 +10,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
@@ -72,6 +73,12 @@ export function AuditPage() {
   const { navigate, setSelectedWeaponId } = useNav()
   const [search, setSearch] = useState("")
   const [categoryFilter, setCategoryFilter] = useState<AuditActionType | "All">("All")
+  const [userFilter, setUserFilter] = useState("All")
+  const [entityFilter, setEntityFilter] = useState("All")
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
+  const [sortDirection, setSortDirection] = useState<"newest" | "oldest">("newest")
+  const [page, setPage] = useState(0)
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null)
 
   useEffect(() => { void refreshFromDb() }, [refreshFromDb])
@@ -82,25 +89,42 @@ export function AuditPage() {
     for (const log of auditLogs) result[log.actionType] = (result[log.actionType] ?? 0) + 1
     return result
   }, [auditLogs])
+  const entityTypes = useMemo(() => [...new Set(auditLogs.map((log) => log.entityType).filter((value): value is string => Boolean(value)))].sort(), [auditLogs])
 
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase()
     return [...auditLogs]
-      .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
+      .sort((left, right) => sortDirection === "newest" ? right.timestamp.localeCompare(left.timestamp) : left.timestamp.localeCompare(right.timestamp))
       .filter((log) => categoryFilter === "All" || log.actionType === categoryFilter)
+      .filter((log) => userFilter === "All" || log.userId === userFilter)
+      .filter((log) => entityFilter === "All" || log.entityType === entityFilter)
+      .filter((log) => !dateFrom || log.timestamp.slice(0, 10) >= dateFrom)
+      .filter((log) => !dateTo || log.timestamp.slice(0, 10) <= dateTo)
       .filter((log) => {
         if (!query) return true
         const user = userById.get(log.userId)
         return [
           log.id, log.actionType, log.description, log.userId, user?.name, user?.username,
-          auditActionLabel(log.actionType, t), log.metadata,
+          auditActionLabel(log.actionType, t), log.metadata, log.entityType, log.entityId, log.entityName,
         ].some((value) => value?.toLocaleLowerCase().includes(query))
       })
-      .slice(0, 500)
-  }, [auditLogs, categoryFilter, search, t, userById])
+  }, [auditLogs, categoryFilter, dateFrom, dateTo, entityFilter, search, sortDirection, t, userById, userFilter])
 
-  const selectedMetadata = useMemo(
-    () => selectedLog ? parseAuditMetadata(selectedLog.metadata) : null,
+  useEffect(() => { setPage(0) }, [categoryFilter, dateFrom, dateTo, entityFilter, search, sortDirection, userFilter])
+  const pageSize = 50
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const pagedLogs = filtered.slice(page * pageSize, (page + 1) * pageSize)
+
+  const selectedMetadata = useMemo<Record<string, unknown> | null>(
+    () => selectedLog ? {
+      ...(parseAuditMetadata(selectedLog.metadata) ?? {}),
+      ...(selectedLog.entityType ? { entityType: selectedLog.entityType } : {}),
+      ...(selectedLog.entityId ? { entityId: selectedLog.entityId } : {}),
+      ...(selectedLog.entityName ? { entityName: selectedLog.entityName } : {}),
+      ...(selectedLog.previousValues && Object.keys(selectedLog.previousValues).length ? { previousValues: selectedLog.previousValues } : {}),
+      ...(selectedLog.newValues && Object.keys(selectedLog.newValues).length ? { newValues: selectedLog.newValues } : {}),
+      ...(selectedLog.reason ? { reason: selectedLog.reason } : {}),
+    } : null,
     [selectedLog],
   )
   const selectedGroups = useMemo(() => groupedAuditMetadata(selectedMetadata), [selectedMetadata])
@@ -199,6 +223,20 @@ export function AuditPage() {
                 {AUDIT_ACTIONS.map((action) => <SelectItem key={action} value={action}>{auditActionLabel(action, t)} ({counts[action] ?? 0})</SelectItem>)}
               </SelectContent>
             </Select>
+            <Select value={userFilter} onValueChange={setUserFilter}>
+              <SelectTrigger className="h-9 w-full text-xs sm:w-44"><SelectValue placeholder={t("audit.user")} /></SelectTrigger>
+              <SelectContent><SelectItem value="All">{t("common.all")}</SelectItem>{users.map((user) => <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>)}</SelectContent>
+            </Select>
+            <Select value={entityFilter} onValueChange={setEntityFilter}>
+              <SelectTrigger className="h-9 w-full text-xs sm:w-44"><SelectValue placeholder="Entity" /></SelectTrigger>
+              <SelectContent><SelectItem value="All">{t("common.all")}</SelectItem>{entityTypes.map((entity) => <SelectItem key={entity} value={entity}>{entity}</SelectItem>)}</SelectContent>
+            </Select>
+            <DatePicker value={dateFrom} onChange={setDateFrom} placeholder={t("audit.fromDate")} className="h-9 w-full text-xs sm:w-40" max={dateTo || undefined} />
+            <DatePicker value={dateTo} onChange={setDateTo} placeholder={t("audit.toDate")} className="h-9 w-full text-xs sm:w-40" min={dateFrom || undefined} />
+            <Select value={sortDirection} onValueChange={(value) => setSortDirection(value as "newest" | "oldest")}>
+              <SelectTrigger className="h-9 w-full text-xs sm:w-36"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="newest">{t("audit.newestFirst")}</SelectItem><SelectItem value="oldest">{t("audit.oldestFirst")}</SelectItem></SelectContent>
+            </Select>
           </div>
 
           <div className="overflow-hidden rounded-xl border">
@@ -214,7 +252,7 @@ export function AuditPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((log) => {
+                  {pagedLogs.map((log) => {
                     const metadata = parseAuditMetadata(log.metadata)
                     const currency = getAuditCurrency(metadata)
                     const user = userById.get(log.userId)
@@ -233,7 +271,14 @@ export function AuditPage() {
               </Table>
             </div>
           </div>
-          {auditLogs.length > 500 && <p className="text-[10px] text-muted-foreground">{t("audit.latestLimit", { count: 500 })}</p>}
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+            <span>{t("audit.eventCount", { count: filtered.length })}</span>
+            <div className="flex items-center gap-2">
+              <Button size="xs" variant="outline" disabled={page === 0} onClick={() => setPage((value) => Math.max(0, value - 1))}><ChevronLeft className="size-3" />{t("common.previous")}</Button>
+              <span>{page + 1} / {pageCount}</span>
+              <Button size="xs" variant="outline" disabled={page + 1 >= pageCount} onClick={() => setPage((value) => value + 1)}>{t("common.nextPage")}<ChevronRight className="size-3" /></Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

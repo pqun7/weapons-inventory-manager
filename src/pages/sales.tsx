@@ -2,9 +2,10 @@ import { useState, useMemo, useCallback, useRef, Fragment, useEffect } from "rea
 import {
   Search, ShoppingCart, UserPlus, Check, Receipt, TrendingUp, Package,
   X, Shield, Plus, ChevronRight, ChevronLeft, ChevronDown, Trash2, AlertTriangle,
-  Zap, Banknote, CreditCard, Landmark, Clock, FileText,
+  Zap, CreditCard, Landmark, Clock, FileText,
   Info, Paperclip,
 } from "lucide-react"
+import { Banknote } from "@/lib/lucide-icons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -206,6 +207,12 @@ export function SalesPage() {
       : valuationPrice(weapon.retailPriceValuation, weapon.retailPrice)
   }, [mode, valuationPrice])
 
+  const inventoryModePrice = useCallback((item: Ammunition | Accessory): number => {
+    return mode === "Wholesale"
+      ? valuationPrice(item.wholesalePriceValuation, item.wholesalePrice)
+      : valuationPrice(item.retailPriceValuation, item.retailPrice)
+  }, [mode, valuationPrice])
+
   const landedCostPrice = useCallback((weapon: Weapon): number => {
     if (weapon.costSnapshot) {
       return CurrencyService.convertFromAccounting(Number(weapon.costSnapshot.finalLandedBaseAmount), saleCurrency)
@@ -228,13 +235,13 @@ export function SalesPage() {
     setPaidAmount("")
     setAmmoLines((lines) => lines.map((line) => ({
       ...line,
-      unitPrice: valuationPrice(line.ammo.priceValuation, line.ammo.price),
+      unitPrice: inventoryModePrice(line.ammo),
     })))
     setAccessoryLines((lines) => lines.map((line) => ({
       ...line,
-      unitPrice: valuationPrice(line.accessory.priceValuation, line.accessory.price),
+      unitPrice: inventoryModePrice(line.accessory),
     })))
-  }, [saleCurrency, valuationPrice])
+  }, [inventoryModePrice, saleCurrency])
 
   // ---------- Pricing ----------
   const weaponsSubtotal = useMemo(
@@ -330,7 +337,7 @@ export function SalesPage() {
     const ammo = ammunition.find((a) => a.caliber === caliber)
     if (!ammo) return
     if (ammoLines.find((l) => l.ammo.id === ammo.id)) { toast.error(t('sales.caliberAlreadyAdded', { caliber })); return }
-    const unitPrice = valuationPrice(ammo.priceValuation, ammo.price)
+    const unitPrice = inventoryModePrice(ammo)
     if (!Number.isFinite(unitPrice)) { toast.error("This item has no authoritative currency valuation"); return }
     setAmmoLines((prev) => [...prev, { ammo, quantity: "1", unitPrice, sellMode: "round", packageInput: "" }])
 
@@ -344,7 +351,7 @@ export function SalesPage() {
     const accessory = accessories.find((a) => `${a.name} — ${a.type}` === label)
     if (!accessory) return
     if (accessoryLines.find((l) => l.accessory.id === accessory.id)) { toast.error(t('sales.accessoryAlreadyAdded', { name: accessory.name })); return }
-    const unitPrice = valuationPrice(accessory.priceValuation, accessory.price)
+    const unitPrice = inventoryModePrice(accessory)
     if (!Number.isFinite(unitPrice)) { toast.error("This item has no authoritative currency valuation"); return }
     setAccessoryLines((prev) => [...prev, { accessory, quantity: "1", unitPrice }])
     setAccessoryPicker("")
@@ -507,12 +514,18 @@ export function SalesPage() {
   // ---------- Dynamic Dialog Width based on step ----------
   const dialogMaxWidthClass = useMemo(() => {
     switch (step) {
-      case 1: return "sm:max-w-xl md:max-w-2xl"
-      case 2: return "sm:max-w-5xl md:max-w-6xl lg:max-w-7xl"
-      case 3: return "sm:max-w-2xl md:max-w-3xl lg:max-w-4xl"
-      case 4: return "sm:max-w-2xl md:max-w-3xl lg:max-w-4xl"
-      case 5: return "sm:max-w-4xl md:max-w-5xl lg:max-w-6xl xl:max-w-7xl"
-      default: return "sm:max-w-5xl"
+      case 1:
+        return "sm:max-w-xl md:max-w-2xl"
+      case 2:
+        return "w-[95vw] max-w-none"
+      case 3:
+      case 4:
+        // تم تكبير الخطوتين 3 و 4 لشاشات أكبر
+        return "w-[40vw] max-w-none"
+      case 5:
+        return "sm:max-w-4xl md:max-w-5xl lg:max-w-6xl xl:max-w-7xl"
+      default:
+        return "sm:max-w-5xl"
     }
   }, [step])
 
@@ -583,7 +596,7 @@ export function SalesPage() {
 
       {/* Wizard modal */}
       <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) resetForm() }}>
-        <DialogContent className={cn(
+        <DialogContent onPointerDownOutside={(e) => e.preventDefault()} className={cn(
           "max-h-[95vh] flex flex-col transition-all duration-300",
           dialogMaxWidthClass
         )}>
@@ -1292,7 +1305,7 @@ export function SalesPage() {
                                         </span>
                                         <span className="ml-1 font-medium">
                                           {formatTransactionMoney(
-                                            valuationPrice(l.ammo.priceValuation, l.ammo.price)
+                                            inventoryModePrice(l.ammo)
                                           )}
                                         </span>
                                       </div>
@@ -1509,7 +1522,7 @@ export function SalesPage() {
                                         </span>
                                         <span className="ml-1 font-medium">
                                           {formatTransactionMoney(
-                                            valuationPrice(l.accessory.priceValuation, l.accessory.price)
+                                            inventoryModePrice(l.accessory)
                                           )}
                                         </span>
                                       </div>
