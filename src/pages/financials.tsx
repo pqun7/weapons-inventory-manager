@@ -3,7 +3,8 @@ import {
   Search, Receipt, DollarSign, Check, X,
   Calendar, Eye, Clock, CheckCircle, AlertCircle,
   SlidersHorizontal, ArrowUpDown, ChevronLeft, ChevronRight,
-  Columns, List
+  Columns, List, Wallet, CalendarClock, Ban, CircleDollarSign,
+  Settings, Loader2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -41,7 +42,6 @@ import { toast } from "sonner"
 import { invoiceAccountingAmount, sumMoney, type InvoiceMoneyField } from "@/lib/money-ui"
 import { Textarea } from "@/components/ui/textarea"
 
-
 type QuickFilter = "all" | "overdue" | "not-overdue"
 
 const PAYMENT_METHODS: PaymentMethod[] = ["cash", "card", "bank_transfer", "check", "other"]
@@ -62,22 +62,21 @@ export function FinancialsPage() {
   const refreshFromDb = useStore((s) => s.refreshFromDb)
   const getCurrentUser = useStore((s) => s.getCurrentUser)
   const currentUser = getCurrentUser()
-  const { financialFilter, setFinancialFilter } = useNav()
+  const { financialFilter, setFinancialFilter, selectedInvoiceId, setSelectedInvoiceId } = useNav()
   const {
     reportViewMode, setReportViewMode, displayCurrency, currencies,
-    transactionCurrency, accountingCurrency, formatInvoice, formatPayment,
+    transactionCurrency, formatInvoice, formatPayment,
     formatOriginal, formatAccountingAggregate, currencyPresentation,
   } = useCurrency()
 
   const [tab, setTab] = useState<"receivable" | "payable">("receivable")
   const [search, setSearch] = useState("")
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null)
   const [payOpen, setPayOpen] = useState(false)
   const [extendOpen, setExtendOpen] = useState(false)
   const [voidConfirmOpen, setVoidConfirmOpen] = useState(false)
 
-  // Dialog internal tab
-  const [detailTab, setDetailTab] = useState<"overview" | "payments">("overview")
+  // حالة التحميل لمنع النقر المزدوج
+  const [isSubmitting, setIsSubmitting] = useState<"pay" | "extend" | "void" | null>(null)
 
   // Payment form
   const [payAmount, setPayAmount] = useState("")
@@ -152,6 +151,13 @@ export function FinancialsPage() {
   const selectedInvoice = invoices.find((i) => i.id === selectedInvoiceId)
   const invoicePayments = selectedInvoiceId ? payments.filter((p) => p.invoiceId === selectedInvoiceId) : []
 
+  // حسابات معاينة الدفع
+  const parsedPayAmount = Number(payAmount) || 0
+  const remainingAfterPay = selectedInvoice
+    ? Math.max(0, (selectedInvoice.balance || 0) - parsedPayAmount)
+    : 0
+  const isOverpay = selectedInvoice ? parsedPayAmount > (selectedInvoice.balance || 0) : false
+
   const handleLoadFilter = useCallback((filter: SavedFilter) => {
     const state = filter.filterState ?? {}
     if (typeof state.tab === "string" && (state.tab === "receivable" || state.tab === "payable")) {
@@ -167,58 +173,73 @@ export function FinancialsPage() {
   }, [setQuickFilter])
 
   const handlePay = async () => {
-    if (!selectedInvoiceId) return
+    if (!selectedInvoiceId || isSubmitting) return
     const amount = Number(payAmount)
     if (!amount || amount <= 0) {
       toast.error(t("fin.validAmountRequired"))
       return
     }
-    const result = await DebtService.registerPayment({
-      invoiceId: selectedInvoiceId,
-      amount,
-      currency: payCurrency,
-      method: payMethod,
-      notes: payNotes,
-    })
-    if (result.success) {
-      const invoiceCurrency = selectedInvoice?.currency ?? transactionCurrency
-      toast.success(`${t("toast.paymentRegistered")} — ${t("fin.balance")}: ${formatOriginal(result.newBalance ?? 0, invoiceCurrency)}`)
-      setPayOpen(false)
-      await refreshFromDb()
-    } else {
-      toast.error(result.error)
+    setIsSubmitting("pay")
+    try {
+      const result = await DebtService.registerPayment({
+        invoiceId: selectedInvoiceId,
+        amount,
+        currency: payCurrency,
+        method: payMethod,
+        notes: payNotes,
+      })
+      if (result.success) {
+        const invoiceCurrency = selectedInvoice?.currency ?? transactionCurrency
+        toast.success(`${t("toast.paymentRegistered")} — ${t("fin.balance")}: ${formatOriginal(result.newBalance ?? 0, invoiceCurrency)}`)
+        setPayOpen(false)
+        await refreshFromDb()
+      } else {
+        toast.error(result.error)
+      }
+    } finally {
+      setIsSubmitting(null)
     }
   }
 
   const handleExtend = async () => {
-    if (!selectedInvoiceId || !newDueDate) {
-      toast.error(t("fin.newDueDateRequired"))
+    if (!selectedInvoiceId || !newDueDate || isSubmitting) {
+      if (!newDueDate) toast.error(t("fin.newDueDateRequired"))
       return
     }
-    const result = await DebtService.extendDueDate({
-      invoiceId: selectedInvoiceId,
-      newDueDate,
-      reason: extendReason,
-    })
-    if (result.success) {
-      toast.success(t("toast.dueDateExtended"))
-      setExtendOpen(false)
-      await refreshFromDb()
-    } else {
-      toast.error(result.error)
+    setIsSubmitting("extend")
+    try {
+      const result = await DebtService.extendDueDate({
+        invoiceId: selectedInvoiceId,
+        newDueDate,
+        reason: extendReason,
+      })
+      if (result.success) {
+        toast.success(t("toast.dueDateExtended"))
+        setExtendOpen(false)
+        await refreshFromDb()
+      } else {
+        toast.error(result.error)
+      }
+    } finally {
+      setIsSubmitting(null)
     }
   }
 
   const handleVoid = async () => {
-    if (!selectedInvoiceId) return
-    const result = await voidInvoice(selectedInvoiceId)
-    if (result.success) {
-      toast.success(t("toast.invoiceVoided"))
-      setVoidConfirmOpen(false)
-      setSelectedInvoiceId(null)
-      await refreshFromDb()
-    } else {
-      toast.error(result.error)
+    if (!selectedInvoiceId || isSubmitting) return
+    setIsSubmitting("void")
+    try {
+      const result = await voidInvoice(selectedInvoiceId)
+      if (result.success) {
+        toast.success(t("toast.invoiceVoided"))
+        setVoidConfirmOpen(false)
+        setSelectedInvoiceId(null)
+        await refreshFromDb()
+      } else {
+        toast.error(result.error)
+      }
+    } finally {
+      setIsSubmitting(null)
     }
   }
 
@@ -269,7 +290,7 @@ export function FinancialsPage() {
                   chip.key === "overdue" && quickFilter === chip.key && "bg-status-sold text-status-sold-fg hover:bg-status-sold/90",
                   chip.key === "overdue" && quickFilter !== chip.key && "text-status-sold border-status-sold/40 hover:bg-status-sold/10",
                 )}
-                onClick={() => setQuickFilter(chip.key)}  // ✅ استخدم setQuickFilter بدل setQuickFilterState
+                onClick={() => setQuickFilter(chip.key)}
               >
                 {chip.label}
               </Button>
@@ -324,206 +345,253 @@ export function FinancialsPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Invoice Detail Dialog – reorganized with internal tabs (ONLY ONE) */}
+      {/* ====== Invoice Detail Dialog (Redesigned with minimal colors) ====== */}
       <Dialog
         open={!!selectedInvoiceId}
         onOpenChange={(open) => {
           if (!open) {
             setSelectedInvoiceId(null)
-            setDetailTab("overview")
           }
         }}
       >
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-4xl p-0 overflow-hidden">
           {selectedInvoice && (
             <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-base">
-                  <Receipt className="size-4" />
-                  <span className="font-mono">{selectedInvoice.invoiceNumber}</span>
-                  <Badge variant="outline" className={cn("text-[10px]", invoiceStatusClass(selectedInvoice.status))}>
-                    {t(`status.${selectedInvoice.status}`)}
-                  </Badge>
-                </DialogTitle>
-                <DialogDescription className="text-xs">
-                  {selectedInvoice.customerName} — {formatDate(selectedInvoice.date)}
-                </DialogDescription>
+              <DialogHeader className="px-6 pt-6 pb-4 border-b bg-muted/30">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <DialogTitle className="flex items-center gap-3 text-xl font-semibold">
+                      <Receipt className="size-5 text-muted-foreground" />
+                      <span className="font-mono">{selectedInvoice.invoiceNumber}</span>
+                      <Badge variant="outline" className={cn("text-xs", invoiceStatusClass(selectedInvoice.status))}>
+                        {t(`status.${selectedInvoice.status}`)}
+                      </Badge>
+                    </DialogTitle>
+                    <DialogDescription className="mt-1 text-sm">
+                      {selectedInvoice.customerName} · {formatDate(selectedInvoice.date)}
+                    </DialogDescription>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm text-muted-foreground">{t("fin.currentBalance")}</div>
+                    <div className={cn("text-2xl font-bold tabular-nums", selectedInvoice.balance > 0 ? "text-red-600" : "text-green-600")}>
+                      {fmtAmount(selectedInvoice, "balance")}
+                    </div>
+                  </div>
+                </div>
               </DialogHeader>
 
-              {/* Financial Summary Cards – always visible */}
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <StatBox label={t("fin.total")} value={fmtAmount(selectedInvoice, "totalOriginal")} />
-                <StatBox label={t("fin.invoiceType")} value={fmtAmount(selectedInvoice, "totalNegotiated")} />
-                <StatBox label={t("fin.paid")} value={fmtAmount(selectedInvoice, "totalPaid")} color="text-green-600" />
-                <StatBox
-                  label={t("fin.balance")}
-                  value={fmtAmount(selectedInvoice, "balance")}
-                  color={selectedInvoice.balance > 0 ? "text-red-500" : "text-green-600"}
-                />
-              </div>
+              <div className="p-6 space-y-6 max-h-[65vh] overflow-y-auto custom-scrollbar">
+                {/* Summary cards - neutral color */}
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <SummaryCard
+                    icon={<CircleDollarSign className="size-4 text-muted-foreground" />}
+                    label={t("fin.totalOriginal")}
+                    value={fmtAmount(selectedInvoice, "totalOriginal")}
+                  />
+                  <SummaryCard
+                    icon={<Receipt className="size-4 text-muted-foreground" />}
+                    label={t("fin.totalNegotiated")}
+                    value={fmtAmount(selectedInvoice, "totalNegotiated")}
+                  />
+                  <SummaryCard
+                    icon={<CheckCircle className="size-4 text-muted-foreground" />}
+                    label={t("fin.paid")}
+                    value={fmtAmount(selectedInvoice, "totalPaid")}
+                  />
+                  <SummaryCard
+                    icon={<AlertCircle className="size-4 text-muted-foreground" />}
+                    label={t("fin.balance")}
+                    value={fmtAmount(selectedInvoice, "balance")}
+                    valueClassName={selectedInvoice.balance > 0 ? "text-red-600" : "text-green-600"}
+                  />
+                </div>
 
-              {/* Tabs for Overview & Payments */}
-              <Tabs value={detailTab} onValueChange={(v) => setDetailTab(v as "overview" | "payments")} className="w-full">
-                <TabsList className="h-7 w-full justify-start">
-                  <TabsTrigger value="overview" className="text-xs">{t("common.overview")}</TabsTrigger>
-                  <TabsTrigger value="payments" className="text-xs">{t("fin.payments")} ({invoicePayments.length})</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="overview" className="mt-3 space-y-3">
-                  {/* Due Date & Lifecycle */}
-                  <div className="rounded-md border p-3 text-xs space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">{t("fin.newDueDate")}</span>
-                      <span className="font-medium">
-                        {formatDate(selectedInvoice.dueDate)} (
-                        {daysUntilDue(selectedInvoice.dueDate) >= 0
-                          ? `${daysUntilDue(selectedInvoice.dueDate)}d left`
-                          : `${Math.abs(daysUntilDue(selectedInvoice.dueDate))}d overdue`})
-                      </span>
+                {/* Due date & status */}
+                <div className="rounded-lg border p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-muted rounded-full">
+                      <Calendar className="size-5 text-muted-foreground" />
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">{t("common.status")}</span>
-                      <span className="font-medium flex items-center gap-1">
-                        <LifecycleIcon
-                          status={
-                            selectedInvoice.balance <= 0
-                              ? "Paid"
-                              : selectedInvoice.status === "Overdue"
-                                ? "Overdue"
-                                : "Pending"
-                          }
-                        />
-                        {selectedInvoice.balance <= 0
-                          ? t("status.Paid")
-                          : selectedInvoice.status === "Overdue"
-                            ? t("status.Overdue")
-                            : t("status.Pending")}
-                      </span>
+                    <div>
+                      <div className="text-xs text-muted-foreground">{t("fin.dueDate")}</div>
+                      <div className="text-sm font-medium">{formatDate(selectedInvoice.dueDate)}</div>
                     </div>
                   </div>
-
-                  {/* Financial Lifecycle Timeline */}
-                  <div>
-                    <h4 className="mb-2 text-xs font-semibold">{t("fin.lifecycle")}</h4>
-                    <div className="flex flex-col gap-2">
-                      <TimelineEntry
-                        icon={<Receipt className="size-3" />}
-                        label={t("fin.invoiceNumber")}
-                        date={selectedInvoice.date}
-                        detail={fmtAmount(selectedInvoice, "totalNegotiated")}
-                      />
-                      {invoicePayments.map((p) => (
-                        <TimelineEntry
-                          key={p.id}
-                          icon={<DollarSign className="size-3" />}
-                          label={`${t("fin.registerPayment")} (${t(paymentMethodKey[p.method])})`}
-                          date={p.date}
-                          detail={`${formatPayment(p, "original")} → ${formatPayment(p, "accounting")} — ${p.employee}`}
-                        />
-                      ))}
-                      {selectedInvoice.status === "Paid" && (
-                        <TimelineEntry
-                          icon={<CheckCircle className="size-3 text-green-600" />}
-                          label={t("status.Paid")}
-                          date={selectedInvoice.date}
-                          detail={t("fin.paid")}
-                          color="text-green-600"
-                        />
-                      )}
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">
+                      <Clock className="size-3 mr-1 text-muted-foreground" />
+                      {daysUntilDue(selectedInvoice.dueDate) >= 0
+                        ? t("fin.dueInDays", { days: daysUntilDue(selectedInvoice.dueDate) })
+                        : t("fin.daysOverdue", { days: Math.abs(daysUntilDue(selectedInvoice.dueDate)) })}
+                    </Badge>
+                    <Badge variant="outline" className={cn("text-xs", invoiceStatusClass(selectedInvoice.status))}>
+                      {t(`status.${selectedInvoice.status}`)}
+                    </Badge>
                   </div>
-                </TabsContent>
+                </div>
 
-                <TabsContent value="payments" className="mt-3">
-                  {invoicePayments.length > 0 ? (
-                    <div className="rounded-md border">
+                {/* Payments section */}
+                <div className="rounded-lg border">
+                  <div className="px-4 py-3 border-b bg-muted/30 flex items-center justify-between">
+                    <h3 className="text-sm font-semibold flex items-center gap-2">
+                      <Wallet className="size-4 text-muted-foreground" />
+                      {t("fin.paymentHistory")}
+                    </h3>
+                    <Badge variant="secondary">{invoicePayments.length}</Badge>
+                  </div>
+                  <div className="p-4">
+                    {invoicePayments.length > 0 ? (
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-muted/50">
-                            <TableHead className="h-7 text-[10px]">{t("common.date")}</TableHead>
-                            <TableHead className="h-7 text-[10px]">{t("fin.amount")}</TableHead>
-                            <TableHead className="h-7 text-[10px]">{t("fin.paymentMethod")}</TableHead>
-                            <TableHead className="h-7 text-[10px]">{t("common.name")}</TableHead>
-                            <TableHead className="h-7 text-[10px]">{t("common.notes")}</TableHead>
+                            <TableHead className="h-8 text-xs">{t("common.date")}</TableHead>
+                            <TableHead className="h-8 text-xs">{t("fin.amount")}</TableHead>
+                            <TableHead className="h-8 text-xs">{t("fin.paymentMethod")}</TableHead>
+                            <TableHead className="h-8 text-xs">{t("common.name")}</TableHead>
+                            <TableHead className="h-8 text-xs">{t("common.notes")}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {invoicePayments.map((p) => (
                             <TableRow key={p.id}>
-                              <TableCell className="py-1 text-[10px]">{formatDateShort(p.date)}</TableCell>
-                              <TableCell className="py-1 text-[10px] font-medium tabular-nums">
+                              <TableCell className="py-2 text-xs">{formatDateShort(p.date)}</TableCell>
+                              <TableCell className="py-2 text-xs font-medium tabular-nums">
                                 <div>{formatPayment(p, "original")}</div>
                                 {p.currency !== p.accountingCurrency && (
-                                  <div className="text-[9px] font-normal text-muted-foreground">
+                                  <div className="text-[10px] font-normal text-muted-foreground">
                                     ≈ {formatPayment(p, "accounting")} · {t("fin.exchangeRate")} {p.exchangeRate} · {p.exchangeRateDate ? formatDateShort(p.exchangeRateDate) : "—"}
                                   </div>
                                 )}
                               </TableCell>
-                              <TableCell className="py-1 text-[10px]">{t(paymentMethodKey[p.method])}</TableCell>
-                              <TableCell className="py-1 text-[10px]">{p.employee}</TableCell>
-                              <TableCell className="py-1 text-[10px] text-muted-foreground">{p.notes}</TableCell>
+                              <TableCell className="py-2 text-xs">{t(paymentMethodKey[p.method])}</TableCell>
+                              <TableCell className="py-2 text-xs">{p.employee}</TableCell>
+                              <TableCell className="py-2 text-xs text-muted-foreground">{p.notes}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
                       </Table>
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-muted-foreground">{t("fin.noPayments")}</p>
-                  )}
-                </TabsContent>
-              </Tabs>
-
-              {/* Action Buttons (only when invoice is active) */}
-              {selectedInvoice.balance > 0 && !selectedInvoice.voided && (
-                <div className="flex items-center justify-end gap-2 pt-2 border-t mt-3">
-                  <Button size="sm" className="h-8 gap-1.5" onClick={() => setPayOpen(true)}>
-                    <DollarSign className="size-3.5" />
-                    {t("fin.registerPayment")}
-                  </Button>
-
-                  {currentUser.permissions.canExtendDueDates && (
-                    <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setExtendOpen(true)}>
-                      <Calendar className="size-3.5" />
-                      {t("fin.extendDueDate")}
-                    </Button>
-                  )}
-
-                  {currentUser.permissions.canVoidInvoices && (
-                    <Button size="sm" variant="outline" className="h-8 gap-1.5 text-red-500" onClick={() => setVoidConfirmOpen(true)}>
-                      <X className="size-3.5" />
-                      {t("fin.voidInvoice")}
-                    </Button>
-                  )}
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-6 text-center text-muted-foreground">
+                        <Wallet className="size-8 opacity-30 mb-2" />
+                        <span className="text-sm">{t("fin.noPaymentsYet")}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
+
+                {/* Actions - improved neutral cards */}
+                {selectedInvoice.balance > 0 && !selectedInvoice.voided && (
+                  <div className="rounded-lg border p-4">
+                    <h3 className="text-sm font-semibold flex items-center gap-2 mb-3">
+                      <Settings className="size-4 text-muted-foreground" />
+                      {t("fin.availableActions")}
+                    </h3>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <ActionCard
+                        icon={<DollarSign className="size-5 text-muted-foreground" />}
+                        title={t("fin.registerPayment")}
+                        description={t("fin.registerPaymentHelp")}
+                        onClick={() => setPayOpen(true)}
+                        buttonLabel={t("fin.registerPayment")}
+                        disabled={isSubmitting !== null}
+                      />
+                      {currentUser.permissions.canExtendDueDates && (
+                        <ActionCard
+                          icon={<CalendarClock className="size-5 text-muted-foreground" />}
+                          title={t("fin.extendDueDate")}
+                          description={t("fin.extendDueDateHelp")}
+                          onClick={() => setExtendOpen(true)}
+                          buttonLabel={t("fin.extendDueDate")}
+                          disabled={isSubmitting !== null}
+                        />
+                      )}
+                      {currentUser.permissions.canVoidInvoices && (
+                        <ActionCard
+                          icon={<Ban className="size-5 text-muted-foreground" />}
+                          title={t("fin.voidInvoice")}
+                          description={t("fin.voidInvoiceHelp")}
+                          onClick={() => setVoidConfirmOpen(true)}
+                          buttonLabel={t("fin.voidInvoice")}
+                          destructive
+                          disabled={isSubmitting !== null}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Register Payment Dialog */}
+      {/* ====== Register Payment Dialog ====== */}
       <Dialog open={payOpen} onOpenChange={setPayOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-sm">{t("fin.registerPayment")}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <DollarSign className="size-5 text-muted-foreground" />
+              {t("fin.registerPayment")}
+            </DialogTitle>
             <DialogDescription className="text-xs">
-              {selectedInvoice ? `${t("fin.invoiceNumber")}: ${selectedInvoice.invoiceNumber} — ${t("fin.balance")}: ${fmtAmount(selectedInvoice, "balance")}` : ''}
+              {selectedInvoice ? (
+                <span>
+                  {t("fin.invoiceNumber")}: <span className="font-mono">{selectedInvoice.invoiceNumber}</span> — {t("fin.currentBalance")}:{" "}
+                  <span className={cn("font-semibold", selectedInvoice.balance > 0 ? "text-red-600" : "text-green-600")}>
+                    {fmtAmount(selectedInvoice, "balance")}
+                  </span>
+                </span>
+              ) : ''}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3">
-            <div>
-              <Label className="text-xs">{t("fin.paymentAmount")} ({payCurrency})</Label>
-              <Input type="number" min="0" step="any" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} className="h-8 text-xs" />
-              {selectedInvoice && (
-                <p className="mt-1 text-[10px] text-muted-foreground">
-                  {t("fin.balance")}: {fmtAmount(selectedInvoice, "balance")} · {t("report.accountingCurrency")}: {accountingCurrency}
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg border p-3 bg-muted/30">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">{t("fin.currentBalance")}</span>
+                <span className="font-semibold">{selectedInvoice ? fmtAmount(selectedInvoice, "balance") : "—"}</span>
+              </div>
+              <div className="my-2 h-px bg-border" />
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">{t("fin.amountToPay")}</span>
+                <span className="font-semibold tabular-nums">{parsedPayAmount.toFixed(2)}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs mt-1">
+                <span className="text-muted-foreground">{t("fin.remainingAfterPayment")}</span>
+                <span className={cn("font-semibold tabular-nums", remainingAfterPay > 0 ? "text-muted-foreground" : "text-green-600")}>
+                  {remainingAfterPay > 0 ? formatOriginal(remainingAfterPay, payCurrency) : t("fin.fullyPaid")}
+                </span>
+              </div>
+              {isOverpay && (
+                <p className="mt-2 text-[11px] text-red-600 flex items-center gap-1">
+                  <AlertCircle className="size-3.5" />
+                  {t("fin.amountExceedsBalance")}
                 </p>
               )}
             </div>
-            <div>
+
+            <div className="space-y-2">
+              <Label className="text-xs">{t("fin.paymentAmount")} ({payCurrency})</Label>
+              <Input
+                type="number"
+                min="0"
+                step="any"
+                value={payAmount}
+                onChange={(e) => setPayAmount(e.target.value)}
+                className="h-9 text-sm"
+                placeholder="0.00"
+                aria-invalid={isOverpay}
+              />
+              {selectedInvoice && (
+                <p className="text-[11px] text-muted-foreground">
+                  {t("fin.maxPayable")}: {fmtAmount(selectedInvoice, "balance")}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
               <Label className="text-xs">{t("settings.currency")}</Label>
               <Select value={payCurrency} onValueChange={setPayCurrency}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {currencies.map((currency) => (
                     <SelectItem key={currency.isoCode} value={currency.isoCode}>
@@ -533,10 +601,11 @@ export function FinancialsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
+
+            <div className="space-y-2">
               <Label className="text-xs">{t("fin.paymentMethod")}</Label>
               <Select value={payMethod} onValueChange={(v) => setPayMethod(v as PaymentMethod)}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {PAYMENT_METHODS.map((m) => (
                     <SelectItem key={m} value={m}>{t(paymentMethodKey[m])}</SelectItem>
@@ -544,56 +613,91 @@ export function FinancialsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
+
+            <div className="space-y-2">
               <Label className="text-xs">{t("common.notes")}</Label>
-              <Input value={payNotes} onChange={(e) => setPayNotes(e.target.value)} className="h-8 text-xs" />
+              <Input value={payNotes} onChange={(e) => setPayNotes(e.target.value)} className="h-9 text-sm" placeholder={t("fin.notesPlaceholder")} />
             </div>
           </div>
-          <DialogFooter>
-            <Button size="sm" variant="outline" onClick={() => setPayOpen(false)}>{t("fin.cancel")}</Button>
-            <Button size="sm" onClick={handlePay}><Check className="size-3.5" /> {t("fin.confirm")}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Extend Due Date Dialog */}
-      <Dialog open={extendOpen} onOpenChange={setExtendOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-sm">{t("fin.extendDueDate")}</DialogTitle>
-            <DialogDescription className="text-xs">
-              {selectedInvoice ? `${t("fin.newDueDate")}: ${formatDate(selectedInvoice.dueDate)}` : ''}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <div>
-              <Label className="text-xs">{t("fin.newDueDate")}</Label>
-              <DatePicker value={newDueDate} onChange={setNewDueDate} className="h-8 text-xs" required />
-            </div>
-            <div>
-              <Label className="text-xs">{t("common.notes")}</Label>
-              <Textarea value={extendReason} onChange={(e) => setExtendReason(e.target.value)} className="min-h-[60px] text-xs" />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button size="sm" variant="outline" onClick={() => setExtendOpen(false)}>{t("fin.cancel")}</Button>
-            <Button size="sm" onClick={handleExtend}><Check className="size-3.5" /> {t("fin.confirm")}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Void Confirmation Dialog */}
-      <Dialog open={voidConfirmOpen} onOpenChange={setVoidConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-sm">{t("fin.voidInvoice")}</DialogTitle>
-            <DialogDescription className="text-xs">
-              {t("fin.voidConfirm")} {selectedInvoice?.invoiceNumber}? {t("fin.voidWarning")}
-            </DialogDescription>
-          </DialogHeader>
           <DialogFooter className="gap-2">
-            <Button variant="outline" size="sm" onClick={() => setVoidConfirmOpen(false)}>{t("fin.cancel")}</Button>
-            <Button variant="destructive" size="sm" onClick={handleVoid}><X className="size-3.5 me-1" /> {t("fin.voidInvoice")}</Button>
+            <Button variant="outline" onClick={() => setPayOpen(false)} disabled={isSubmitting === "pay"}>
+              {t("fin.cancel")}
+            </Button>
+            <Button onClick={handlePay} disabled={isOverpay || !parsedPayAmount || isSubmitting === "pay"}>
+              {isSubmitting === "pay" ? <Loader2 className="size-4 mr-1 animate-spin" /> : <Check className="size-4 mr-1" />}
+              {t("fin.confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ====== Extend Due Date Dialog ====== */}
+      <Dialog open={extendOpen} onOpenChange={setExtendOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <CalendarClock className="size-5 text-muted-foreground" />
+              {t("fin.extendDueDate")}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {selectedInvoice ? (
+                <span>
+                  {t("fin.currentDueDate")}: <span className="font-medium">{formatDate(selectedInvoice.dueDate)}</span>
+                </span>
+              ) : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label className="text-xs">{t("fin.newDueDate")}</Label>
+              <DatePicker value={newDueDate} onChange={setNewDueDate} className="h-9 text-sm" required />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">{t("fin.reasonForExtension")}</Label>
+              <Textarea
+                value={extendReason}
+                onChange={(e) => setExtendReason(e.target.value)}
+                className="min-h-[80px] text-sm"
+                placeholder={t("fin.reasonPlaceholder")}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setExtendOpen(false)} disabled={isSubmitting === "extend"}>
+              {t("fin.cancel")}
+            </Button>
+            <Button onClick={handleExtend} disabled={isSubmitting === "extend" || !newDueDate}>
+              {isSubmitting === "extend" ? <Loader2 className="size-4 mr-1 animate-spin" /> : <Check className="size-4 mr-1" />}
+              {t("fin.confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ====== Void Confirmation Dialog ====== */}
+      <Dialog open={voidConfirmOpen} onOpenChange={setVoidConfirmOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Ban className="size-5 text-muted-foreground" />
+              {t("fin.voidInvoice")}
+            </DialogTitle>
+            <DialogDescription className="text-sm">
+              {t("fin.voidConfirm")} <span className="font-mono">{selectedInvoice?.invoiceNumber}</span>?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="bg-muted/40 border rounded-lg p-3 flex items-start gap-2">
+            <AlertCircle className="size-5 text-red-500 shrink-0 mt-0.5" />
+            <span className="text-sm text-muted-foreground">{t("fin.voidWarning")}</span>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setVoidConfirmOpen(false)} disabled={isSubmitting === "void"}>
+              {t("fin.cancel")}
+            </Button>
+            <Button variant="destructive" onClick={handleVoid} disabled={isSubmitting === "void"}>
+              {isSubmitting === "void" ? <Loader2 className="size-4 mr-1 animate-spin" /> : <X className="size-4 mr-1" />}
+              {t("fin.voidInvoice")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -601,8 +705,68 @@ export function FinancialsPage() {
   )
 }
 
+// Helper component for Summary Card (neutral colors)
+function SummaryCard({
+  icon,
+  label,
+  value,
+  valueClassName,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+  valueClassName?: string
+}) {
+  return (
+    <div className="rounded-lg border p-3 flex flex-col gap-1">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        {icon}
+        <span className="text-xs">{label}</span>
+      </div>
+      <div className={cn("text-lg font-bold tabular-nums", valueClassName)}>{value}</div>
+    </div>
+  )
+}
 
+// Helper component for Action Card (improved, less colorful)
+function ActionCard({
+  icon,
+  title,
+  description,
+  onClick,
+  buttonLabel,
+  destructive,
+  disabled,
+}: {
+  icon: React.ReactNode
+  title: string
+  description: string
+  onClick: () => void
+  buttonLabel: string
+  destructive?: boolean
+  disabled?: boolean
+}) {
+  return (
+    <div className="flex flex-col rounded-lg border p-3 hover:bg-muted/30 transition-colors">
+      <div className="flex items-center gap-2 mb-1">
+        {icon}
+        <span className="text-sm font-medium">{title}</span>
+      </div>
+      <p className="text-xs text-muted-foreground mb-3">{description}</p>
+      <Button
+        size="sm"
+        variant={destructive ? "outline" : "secondary"}
+        className={cn("mt-auto w-full", destructive && "text-red-600 hover:text-red-700 border-red-200 hover:bg-red-50")}
+        onClick={onClick}
+        disabled={disabled}
+      >
+        {buttonLabel}
+      </Button>
+    </div>
+  )
+}
 
+// ======================== FinancialGrid Component ========================
 function FinancialGrid({
   invoices,
   selectedInvoiceId,
@@ -933,7 +1097,7 @@ function FinancialGrid({
   )
 }
 
-
+// StatBox component
 function StatBox({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div className="rounded-md border p-2">
@@ -941,23 +1105,4 @@ function StatBox({ label, value, color }: { label: string; value: string; color?
       <div className={cn("mt-0.5 text-sm font-bold tabular-nums", color)}>{value}</div>
     </div>
   )
-}
-
-function TimelineEntry({ icon, label, date, detail, color }: { icon: React.ReactNode; label: string; date: string; detail: string; color?: string }) {
-  return (
-    <div className="flex items-start gap-2">
-      <div className={cn("flex size-5 shrink-0 items-center justify-center rounded-full bg-muted", color)}>{icon}</div>
-      <div className="flex flex-1 items-center justify-between">
-        <span className="text-[11px] font-medium">{label}</span>
-        <span className="text-[10px] text-muted-foreground">{formatDate(date)}</span>
-      </div>
-      <span className="text-[10px] tabular-nums">{detail}</span>
-    </div>
-  )
-}
-
-function LifecycleIcon({ status }: { status: "Paid" | "Overdue" | "Pending" }) {
-  if (status === "Paid") return <CheckCircle className="size-3.5 text-green-600 dark:text-green-400" />
-  if (status === "Overdue") return <AlertCircle className="size-3.5 text-status-sold" />
-  return <Clock className="size-3.5 text-amber-500 dark:text-amber-400" />
 }

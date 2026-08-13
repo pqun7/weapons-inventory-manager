@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react"
 import { useStore } from "@/lib/store"
+import { AUTHENTICATED_USER_NOT_LINKED } from "@/lib/db"
+import { getSupabaseClient } from "@/lib/supabase/client"
 
 export function useAppBootstrap(enabled = true) {
   const ready = useStore((s: { ready: boolean }) => s.ready)
@@ -10,7 +12,12 @@ export function useAppBootstrap(enabled = true) {
     if (enabled && !ready) {
       const perf = typeof performance !== "undefined" ? performance : null
       perf?.mark("boot:hook-bootstrap:request")
-      bootstrap().catch((e) => {
+      bootstrap().catch(async (e) => {
+        if (e instanceof Error && e.message === AUTHENTICATED_USER_NOT_LINKED) {
+          const { error: signOutError } = await getSupabaseClient().auth.signOut({ scope: "local" })
+          setError(signOutError?.message ?? null)
+          return
+        }
         setError(e instanceof Error ? e.message : "Failed to initialize database")
       })
     }

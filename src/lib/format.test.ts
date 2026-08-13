@@ -49,6 +49,13 @@ describe("formatDate", () => {
     const result = formatDate("2024-01-15")
     expect(result).toMatch(/Jan.*15.*2024/)
   })
+
+  it("uses the Gregorian calendar in Arabic", () => {
+    setFormatLanguage("ar")
+    const result = formatDate("2024-01-15")
+    expect(result).toContain("٢٠٢٤")
+    expect(result).not.toContain("١٤٤٥")
+  })
 })
 
 describe("formatDateShort", () => {

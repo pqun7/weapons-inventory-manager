@@ -23,6 +23,7 @@ import { CreateShipmentWizard } from "@/components/create-shipment-wizard"
 import { ShipmentDetailPanel } from "@/components/shipment-detail-panel"
 import { ShipmentManifestImportDialog } from "@/components/shipment-manifest-import-dialog"
 import { sortShipmentsNewestFirst } from "@/lib/shipment-workflow"
+import { useNav } from "@/lib/nav"
 
 const SHIPMENT_STATUSES: ShipmentStatus[] = [
   "Pending",
@@ -40,12 +41,12 @@ export function ShipmentsPage() {
   const weapons = useStore((s) => s.weapons)
   const autoFlagDelayedShipments = useStore((s) => s.autoFlagDelayedShipments)
   const refreshFromDb = useStore((s) => s.refreshFromDb)
+  const { selectedShipmentId, setSelectedShipmentId } = useNav()
 
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<ShipmentStatus | "all">("all")
   const [sortBy, setSortBy] = useState<"addedDate" | "shipmentDate" | "expectedArrival" | "status">("addedDate")
   const [createOpen, setCreateOpen] = useState(false)
-  const [selectedShipmentId, setSelectedShipmentId] = useState<string | null>(null)
   const [importOpen, setImportOpen] = useState(false)
 
   useEffect(() => {

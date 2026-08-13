@@ -3,21 +3,19 @@ import path from "node:path"
 import {
   ALLOWED_MANIFEST_EXTENSIONS,
   MAX_MANIFEST_FILE_SIZE,
+  canonicalizeExtractedProductFields,
   heuristicSpreadsheetItems,
-  inferCaliber,
-  inferManufacturerAndModel,
-  inferProductType,
-  inferWeaponSubtype,
-  inferWeaponType,
   parseSpreadsheetBufferAsync,
+  parseWordDocumentBufferAsync,
   type NativeExtraction,
   type ParsedManifestItem,
 } from "./manifest-parser.js"
 import { analyzeManifestWithAi, userFacingAiError, type AiManifestMetadata } from "./openai-manifest-service.js"
+import { reconcileExtractedItems } from "./manifest-reconciliation.js"
+import { verifyManifestExtraction } from "./manifest-verification.js"
 import {
   MANIFEST_PROMPT_VERSION,
   MANIFEST_SCHEMA_VERSION,
-  normalizeSerial,
   type ManifestExtractionResult,
   type ManifestProgress,
   type ManifestUploadInput,
@@ -27,29 +25,53 @@ type ProgressCallback = (progress: ManifestProgress) => void
 
 function canonicalizeProductFields(item: ParsedManifestItem): ParsedManifestItem {
   if (!item.productName) return item
-  const inferredProductType = inferProductType(item.productName)
-  const productType = item.productType ?? inferredProductType
-  if (productType !== "weapon") return { ...item, productType }
-
-  const identity = inferManufacturerAndModel(item.productName)
-  const weaponType = inferWeaponType(item.productName)
-  const category = inferWeaponSubtype(item.productName)
-  const caliber = inferCaliber(item.productName)
+  const originalProductName = item.productName
+  const canonical = canonicalizeExtractedProductFields({ ...item, productName: originalProductName })
+  const extractionEvidence = Array.isArray((item.rawData._extraction as { evidence?: unknown[] } | undefined)?.evidence)
+    ? (item.rawData._extraction as { evidence: Array<{ confidence?: number }> }).evidence
+    : []
+  const sourceConfidence = Math.max(item.confidence.productName ?? 0, ...extractionEvidence.map((entry) => Number(entry.confidence) || 0), 0.5)
+  const derivedConfidence = Math.min(0.95, sourceConfidence * 0.94)
+  const derived = (existing: number | undefined, previous: unknown, next: unknown) => existing ?? (previous !== next && next != null ? derivedConfidence : undefined)
+  const rawFields = {
+    productName: item.productName,
+    productType: item.productType,
+    weaponType: item.weaponType,
+    category: item.category,
+    manufacturer: item.manufacturer,
+    model: item.model,
+    caliber: item.caliber,
+  }
+  const confidence = { ...item.confidence }
+  const derivedFields = [
+    ["productName", item.productName, canonical.productName],
+    ["productType", item.productType, canonical.productType],
+    ["weaponType", item.weaponType, canonical.weaponType],
+    ["category", item.category, canonical.category],
+    ["manufacturer", item.manufacturer, canonical.manufacturer],
+    ["model", item.model, canonical.model],
+    ["caliber", item.caliber, canonical.caliber],
+  ] as const
+  for (const [field, previous, next] of derivedFields) {
+    const value = derived(item.confidence[field], previous, next)
+    if (value != null) confidence[field] = value
+  }
   return {
     ...item,
-    productType,
-    weaponType: weaponType ?? item.weaponType,
-    category: category ?? item.category,
-    manufacturer: identity.manufacturer ?? item.manufacturer,
-    model: identity.model ?? item.model,
-    caliber: caliber ?? item.caliber,
-    confidence: {
-      ...item.confidence,
-      productType: inferredProductType === "weapon" ? Math.max(item.confidence.productType ?? 0, 0.94) : item.confidence.productType,
-      weaponType: weaponType ? Math.max(item.confidence.weaponType ?? 0, 0.92) : item.confidence.weaponType,
-      manufacturer: identity.manufacturer ? Math.max(item.confidence.manufacturer ?? 0, identity.manufacturerConfidence) : item.confidence.manufacturer,
-      model: identity.model ? Math.max(item.confidence.model ?? 0, identity.modelConfidence) : item.confidence.model,
-      caliber: caliber ? Math.max(item.confidence.caliber ?? 0, 0.91) : item.confidence.caliber,
+    productName: canonical.productName,
+    productType: canonical.productType,
+    weaponType: canonical.weaponType,
+    category: canonical.category,
+    manufacturer: canonical.manufacturer,
+    model: canonical.model,
+    caliber: canonical.caliber,
+    confidence,
+    rawData: {
+      ...item.rawData,
+      _rawFields: rawFields,
+      _classification: { actionType: canonical.actionType, feedingType: canonical.feedingType },
+      _normalization: { method: "deterministic-bilingual-lexicon", derivedFrom: "productName", sourceConfidence, derivedConfidence },
+      ...(canonical.translated ? { _translation: { originalProductName, canonicalProductName: canonical.productName, language: "ar", method: "deterministic-weapon-lexicon" } } : {}),
     },
   }
 }
@@ -68,6 +90,8 @@ function validateUpload(input: ManifestUploadInput): { extension: string; mimeTy
   const signatures: Record<string, boolean> = {
     ".xlsx": startsWith(0x50, 0x4b),
     ".xls": startsWith(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1),
+    ".doc": startsWith(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1),
+    ".docx": startsWith(0x50, 0x4b),
     ".pdf": startsWith(0x25, 0x50, 0x44, 0x46),
     ".jpg": startsWith(0xff, 0xd8, 0xff),
     ".jpeg": startsWith(0xff, 0xd8, 0xff),
@@ -80,6 +104,8 @@ function validateUpload(input: ManifestUploadInput): { extension: string; mimeTy
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".xls": "application/vnd.ms-excel",
     ".csv": "text/csv",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".pdf": "application/pdf",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
@@ -89,51 +115,51 @@ function validateUpload(input: ManifestUploadInput): { extension: string; mimeTy
   return { extension, mimeType, bytes }
 }
 
-function mergeExtractedItems(nativeItems: ParsedManifestItem[], aiItems: ParsedManifestItem[]): ParsedManifestItem[] {
-  if (nativeItems.length === 0) return aiItems
-  if (aiItems.length === 0) return nativeItems
-  const usedAi = new Set<number>()
-  const merged = nativeItems.map((nativeItem) => {
-    const nativeSerials = new Set(nativeItem.serialNumbers.map(normalizeSerial))
-    const matchIndex = aiItems.findIndex((aiItem, index) => {
-      if (usedAi.has(index)) return false
-      const sameSource = nativeItem.source.sheet && aiItem.source.sheet === nativeItem.source.sheet
-        && nativeItem.source.row != null && aiItem.source.row === nativeItem.source.row
-      const sameSerial = aiItem.serialNumbers.some((serial) => nativeSerials.has(normalizeSerial(serial)))
-      return Boolean(sameSource || sameSerial)
-    })
-    if (matchIndex < 0) return nativeItem
-    usedAi.add(matchIndex)
-    const aiItem = aiItems[matchIndex]
-    const combined = { ...nativeItem } as ParsedManifestItem
-    const semanticFields: Array<keyof ParsedManifestItem> = [
-      "productType", "productName", "category", "weaponType", "manufacturer", "model", "caliber",
-      "sku", "productCode", "unitPrice", "totalPrice", "currency", "countryOfOrigin",
-    ]
-    const deterministicNativeFields = new Set<keyof ParsedManifestItem>(["weaponType", "manufacturer", "model", "caliber"])
-    for (const field of semanticFields) {
-      const aiValue = aiItem[field]
-      const nativeValue = nativeItem[field]
-      if (aiValue != null && aiValue !== "" && (nativeValue == null || nativeValue === "" || (!deterministicNativeFields.has(field) && (aiItem.confidence[String(field)] ?? 0) > (nativeItem.confidence[String(field)] ?? 0) + 0.05))) {
-        ;(combined as Record<string, unknown>)[field] = aiValue
-      }
-    }
-    const serialNumbers = [...new Set([...nativeItem.serialNumbers, ...aiItem.serialNumbers].map(normalizeSerial).filter(Boolean))]
-    return {
-      ...combined,
-      serialNumbers,
-      serialNumber: serialNumbers.length === 1 ? serialNumbers[0] : null,
-      quantity: nativeItem.quantity ?? aiItem.quantity,
-      confidence: { ...nativeItem.confidence, ...aiItem.confidence },
-      source: { ...nativeItem.source, ...aiItem.source },
-      rawData: { ...nativeItem.rawData, ai: aiItem.rawData },
-    }
-  })
-  for (const [index, item] of aiItems.entries()) if (!usedAi.has(index)) merged.push(item)
-  return merged
+const MONTHS: Record<string, number> = {
+  january: 1, jan: 1, يناير: 1,
+  february: 2, feb: 2, فبراير: 2,
+  march: 3, mar: 3, مارس: 3,
+  april: 4, apr: 4, ابريل: 4, أبريل: 4,
+  may: 5, مايو: 5,
+  june: 6, jun: 6, يونيو: 6,
+  july: 7, jul: 7, يوليو: 7,
+  august: 8, aug: 8, اغسطس: 8, أغسطس: 8,
+  september: 9, sep: 9, سبتمبر: 9,
+  october: 10, oct: 10, اكتوبر: 10, أكتوبر: 10,
+  november: 11, nov: 11, نوفمبر: 11,
+  december: 12, dec: 12, ديسمبر: 12,
 }
 
-function nativeMetadata(extraction: NativeExtraction | undefined): AiManifestMetadata {
+function asciiDigits(value: string): string {
+  return value
+    .replace(/[\u0660-\u0669]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
+    .replace(/[\u06F0-\u06F9]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+}
+
+function parseNamedMonthDate(value: string | null): string | null {
+  if (!value) return null
+  const normalized = asciiDigits(value).normalize("NFKC")
+  const dayFirst = normalized.match(/\b(\d{1,2})\s+([\p{L}.]+)\s+(\d{4})\b/iu)
+  const monthFirst = normalized.match(/\b([A-Za-z.]+)\s+(\d{1,2})(?:st|nd|rd|th)?[,]?\s+(\d{4})\b/i)
+  const day = Number(dayFirst?.[1] ?? monthFirst?.[2])
+  const monthName = (dayFirst?.[2] ?? monthFirst?.[1] ?? "").replace(/\./g, "").toLocaleLowerCase("en")
+  const year = Number(dayFirst?.[3] ?? monthFirst?.[3])
+  const month = MONTHS[monthName]
+  if (!month || year < 1900 || year > 2200 || day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return null
+  return `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`
+}
+
+function metadataFromFileName(fileName: string): { supplier: string | null; shipmentDate: string | null } {
+  const stem = path.basename(fileName, path.extname(fileName)).replace(/\s*\(\d+\)\s*$/, "").trim()
+  const dateMatch = stem.match(/(?:\d{1,2}\s+[\p{L}.]+\s+\d{4}|[A-Za-z.]+\s+\d{1,2}(?:st|nd|rd|th)?[,]?\s+\d{4})/iu)
+  const orderMatch = stem.match(/^(?:طلبيه|طلبية|order)\s+(.+?)(?=\s+\d{1,2}\s+[\p{L}.]+\s+\d{4}|\s+[A-Za-z.]+\s+\d{1,2}|$)/iu)
+  return {
+    supplier: orderMatch?.[1]?.trim() || null,
+    shipmentDate: parseNamedMonthDate(dateMatch?.[0] ?? null),
+  }
+}
+
+function nativeMetadata(extraction: NativeExtraction | undefined, fileName: string): AiManifestMetadata {
   const source = extraction?.text ?? ""
   const pick = (patterns: RegExp[]): string | null => {
     for (const pattern of patterns) {
@@ -142,30 +168,50 @@ function nativeMetadata(extraction: NativeExtraction | undefined): AiManifestMet
     }
     return null
   }
-  const date = pick([/(?:shipment\s*date|date)\s*[:#]?\s*([^\n]+)/i])
-  const parsedDate = date ? new Date(date) : null
+  const fileMetadata = metadataFromFileName(fileName)
+  const date = pick([/(?:shipment\s*date|date|تاريخ\s*الشحنه|تاريخ\s*الشحنة|التاريخ)\s*[:#]?\s*([^\n]+)/i])
+  const namedDate = parseNamedMonthDate(date)
+  const parsedDate = date && !namedDate ? new Date(asciiDigits(date)) : null
+  const shipmentDate = namedDate
+    ?? (parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString().slice(0, 10) : null)
+    ?? fileMetadata.shipmentDate
+  const supplier = pick([/(?:shipper|exporter|supplier|المورد|الشاحن|المصدر)\s*[:#]?\s*([^\n]+)/i]) ?? fileMetadata.supplier
   return {
     shipmentNumber: pick([/(?:commercial\s*#|manifest\s*(?:number|no)|shipment\s*(?:number|no))\s*[:#]?\s*([^\n]+)/i]),
-    supplier: pick([/(?:shipper|exporter|supplier)\s*[:#]?\s*([^\n]+)/i]),
+    supplier,
     supplierReference: null,
     invoiceNumber: pick([/invoice\s*(?:number|no)?\s*[:#]?\s*([^\n]+)/i]),
     manifestNumber: pick([/manifest\s*(?:number|no)\s*[:#]?\s*([^\n]+)/i]),
-    shipmentDate: parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString().slice(0, 10) : null,
+    shipmentDate,
     expectedArrivalDate: null,
     origin: pick([/(?:origin|country\s*of\s*origin)\s*[:#]?\s*([^\n]+)/i]),
     destination: pick([/(?:destination|consignee)\s*[:#]?\s*([^\n]+)/i]),
     currency: pick([/(?:currency)\s*[:#]?\s*([A-Z]{3})/i])?.toUpperCase() ?? null,
-    confidence: {},
+    confidence: {
+      supplier: supplier ? fileMetadata.supplier === supplier ? 0.78 : 0.96 : 0,
+      shipmentDate: shipmentDate ? fileMetadata.shipmentDate === shipmentDate ? 0.93 : 0.96 : 0,
+    },
   }
 }
 
 function mergeMetadata(native: AiManifestMetadata, ai: AiManifestMetadata | undefined): AiManifestMetadata {
   if (!ai) return native
-  return {
-    ...native,
-    ...Object.fromEntries(Object.entries(ai).filter(([, value]) => value != null && value !== "")),
-    confidence: { ...native.confidence, ...ai.confidence },
-  } as AiManifestMetadata
+  const merged = { ...native, confidence: { ...native.confidence } }
+  const fields: Array<Exclude<keyof AiManifestMetadata, "confidence">> = [
+    "shipmentNumber", "supplier", "supplierReference", "invoiceNumber", "manifestNumber", "shipmentDate",
+    "expectedArrivalDate", "origin", "destination", "currency",
+  ]
+  for (const field of fields) {
+    const nativeValue = native[field]
+    const aiValue = ai[field]
+    const nativeConfidence = native.confidence[field] ?? 0
+    const aiConfidence = ai.confidence[field] ?? 0
+    if (aiValue != null && aiValue !== "" && (nativeValue == null || nativeValue === "" || aiConfidence >= nativeConfidence + 0.12)) {
+      merged[field] = aiValue
+      merged.confidence[field] = aiConfidence
+    }
+  }
+  return merged
 }
 
 export async function extractShipmentManifest(input: ManifestUploadInput, progress?: ProgressCallback): Promise<ManifestExtractionResult> {
@@ -175,6 +221,14 @@ export async function extractShipmentManifest(input: ManifestUploadInput, progre
   progress?.({ stage: "reading", percent: 20, message: "Reading document" })
   let native: NativeExtraction | undefined
   if ([".xlsx", ".xls", ".csv"].includes(validated.extension)) native = await parseSpreadsheetBufferAsync(validated.bytes)
+  else if ([".doc", ".docx"].includes(validated.extension)) native = await parseWordDocumentBufferAsync(validated.bytes)
+  if (native) {
+    native = {
+      ...native,
+      text: `# Source file: ${input.fileName}\n${native.text}`,
+      raw: { ...native.raw, sourceFile: input.fileName },
+    }
+  }
   progress?.({ stage: "extracting", percent: 38, message: "Extracting tables and text" })
   const heuristicItems = native ? heuristicSpreadsheetItems(native) : []
   const aiEnabled = input.aiEnabled !== false
@@ -196,11 +250,16 @@ export async function extractShipmentManifest(input: ManifestUploadInput, progre
   if (!ai && !native) {
     throw new Error(aiEnabled
       ? "AI extraction is required for PDF and image manifests"
-      : "Local-only analysis supports XLSX, XLS, and CSV manifests. Enable AI analysis for PDF and image files.")
+      : "Local-only analysis supports XLSX, XLS, CSV, DOC, and DOCX manifests. Enable AI analysis for PDF and image files.")
   }
-  const metadata = mergeMetadata(nativeMetadata(native), ai?.shipment)
-  const items = mergeExtractedItems(heuristicItems, ai?.items ?? []).map(canonicalizeProductFields)
-  if (items.length === 0) throw new Error("No shipment items could be extracted from this document")
+  const metadata = mergeMetadata(nativeMetadata(native, input.fileName), ai?.shipment)
+  const normalizedItems = reconcileExtractedItems(heuristicItems, ai?.items ?? []).map(canonicalizeProductFields)
+  if (normalizedItems.length === 0) throw new Error("No shipment items could be extracted from this document")
+  const { items, verification } = verifyManifestExtraction({
+    items: normalizedItems,
+    nativeExtraction: native,
+    visualAnalysisCompleted: Boolean(ai?.visualInputUsed),
+  })
   progress?.({ stage: "normalizing", percent: 80, message: "Normalizing extracted data" })
   progress?.({ stage: "complete", percent: 100, message: "Manifest is ready for review" })
   return {
@@ -225,7 +284,12 @@ export async function extractShipmentManifest(input: ManifestUploadInput, progre
     processingWarning: ai?.fallbackReason ?? processingWarning,
     promptVersion: MANIFEST_PROMPT_VERSION,
     schemaVersion: MANIFEST_SCHEMA_VERSION,
-    rawExtraction: (native?.raw ?? ai?.raw ?? {}) as Record<string, unknown>,
+    rawExtraction: {
+      ...(native?.raw ?? {}),
+      ...(!native && ai?.raw && typeof ai.raw === "object" && !Array.isArray(ai.raw) ? ai.raw as Record<string, unknown> : {}),
+      verification,
+    },
+    verification,
     items,
   }
 }

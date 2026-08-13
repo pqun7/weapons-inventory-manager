@@ -2,6 +2,13 @@ import { useState, useEffect, useCallback, useMemo } from "react"
 import { toast } from "sonner"
 
 function labelsEqual(left: string, right: string): boolean {
+  const weaponTypeAlias = (value: string): string => {
+    const key = value.normalize("NFKD").toLocaleLowerCase("en").replace(/[^\p{L}\p{N}]/gu, "")
+    return key === "blankfiringpistol" ? "blankpistol" : key
+  }
+  const leftAlias = weaponTypeAlias(left)
+  const rightAlias = weaponTypeAlias(right)
+  if (leftAlias === "blankpistol" || rightAlias === "blankpistol") return leftAlias === rightAlias
   return left.trim().localeCompare(right.trim(), undefined, { sensitivity: "accent" }) === 0
 }
 

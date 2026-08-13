@@ -16,7 +16,7 @@ describe("shipment manifest AI opt-out", () => {
       mimeType: "application/pdf",
       bytes: pdfBytes,
       aiEnabled: false,
-    })).rejects.toThrow("Local-only analysis supports XLSX, XLS, and CSV")
+    })).rejects.toThrow("Local-only analysis supports XLSX, XLS, CSV, DOC, and DOCX")
 
     expect(fetchMock).not.toHaveBeenCalled()
   })

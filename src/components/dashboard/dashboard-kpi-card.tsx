@@ -13,8 +13,8 @@ interface DashboardKpiCardProps {
   trend: number | null
   attention?: boolean
   positiveIsGood?: boolean
-  onClick: () => void
-  openLabel: string
+  onClick?: () => void
+  openLabel?: string
 }
 
 export function DashboardKpiCard({
@@ -26,7 +26,14 @@ export function DashboardKpiCard({
       <CardContent className="p-0">
         <Tooltip>
           <TooltipTrigger asChild>
-            <button type="button" onClick={onClick} aria-label={`${openLabel}: ${label}`} className="w-full rounded-xl p-4 text-start outline-none hover:bg-muted/35 focus-visible:bg-muted/35">
+            <div
+              role={onClick ? "button" : undefined}
+              tabIndex={onClick ? 0 : undefined}
+              onClick={onClick}
+              onKeyDown={onClick ? (event) => { if (event.key === "Enter" || event.key === " ") onClick() } : undefined}
+              aria-label={onClick && openLabel ? `${openLabel}: ${label}` : undefined}
+              className={cn("w-full rounded-xl p-4 text-start outline-none", onClick && "cursor-pointer hover:bg-muted/35 focus-visible:bg-muted/35")}
+            >
               <div className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">{label}<Info className="size-3.5" aria-hidden="true" /></span>
                 <span className={cn("flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground", attention && "text-status-reserved-fg")}>
@@ -38,7 +45,7 @@ export function DashboardKpiCard({
                 {trend != null && trend !== 0 && <TrendIcon aria-hidden="true" className={cn("size-3.5", (trend > 0) === positiveIsGood ? "text-status-returned-fg" : "text-status-sold-fg")} />}
                 <span>{comparison}</span>
               </div>
-            </button>
+            </div>
           </TooltipTrigger>
           <TooltipContent className="max-w-64">{tooltip}</TooltipContent>
         </Tooltip>

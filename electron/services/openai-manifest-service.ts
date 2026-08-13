@@ -1,4 +1,5 @@
 import path from "node:path"
+import { z } from "zod"
 import type { NativeExtraction, ParsedManifestItem } from "./manifest-parser.js"
 import { MANIFEST_PROMPT_VERSION } from "../../src/lib/shipment-manifest.js"
 
@@ -25,6 +26,7 @@ export interface AiManifestResult {
   raw: unknown
   provider: "openai" | "deepseek"
   fallbackReason: string | null
+  visualInputUsed: boolean
 }
 
 export type AiFailureCategory = "timeout" | "rate_limit" | "service_unavailable" | "invalid_api_key" | "invalid_response"
@@ -96,7 +98,7 @@ const nullableString = { type: ["string", "null"] }
 const nullableNumber = { type: ["number", "null"] }
 const confidenceProperties = Object.fromEntries([
   "productName", "category", "productType", "weaponType", "manufacturer", "model", "caliber", "sku", "productCode",
-  "serialNumber", "quantity", "unitPrice", "totalPrice", "currency", "countryOfOrigin",
+  "actionType", "feedingType", "serialNumber", "quantity", "unitPrice", "totalPrice", "currency", "countryOfOrigin",
 ].map((key) => [key, { type: "number", minimum: 0, maximum: 1 }]))
 const shipmentConfidenceProperties = Object.fromEntries([
   "shipmentNumber", "supplier", "supplierReference", "invoiceNumber", "manifestNumber", "shipmentDate",
@@ -122,11 +124,12 @@ const MANIFEST_JSON_SCHEMA = {
       type: "array",
       items: {
         type: "object", additionalProperties: false,
-        required: ["productName", "category", "productType", "weaponType", "manufacturer", "model", "caliber", "sku", "productCode", "serialNumber", "serialNumbers", "quantity", "unitPrice", "totalPrice", "currency", "countryOfOrigin", "confidence", "source", "rawDataJson"],
+        required: ["productName", "category", "productType", "weaponType", "manufacturer", "model", "caliber", "actionType", "feedingType", "sku", "productCode", "serialNumber", "serialNumbers", "quantity", "unitPrice", "totalPrice", "currency", "countryOfOrigin", "confidence", "source", "rawDataJson"],
         properties: {
           productName: nullableString, category: nullableString,
           productType: { type: ["string", "null"], enum: ["weapon", "ammunition", "accessory", null] },
           weaponType: nullableString, manufacturer: nullableString, model: nullableString, caliber: nullableString,
+          actionType: nullableString, feedingType: nullableString,
           sku: nullableString, productCode: nullableString, serialNumber: nullableString,
           serialNumbers: { type: "array", items: { type: "string" } },
           quantity: { type: ["integer", "null"], minimum: 1 }, unitPrice: nullableNumber, totalPrice: nullableNumber,
@@ -156,8 +159,11 @@ Hard rules:
 - A phrase such as "(60 PCS)" is an explicit quantity for an unserialized product. Carton/box numbers and dimensions are not product quantities.
 - "Magazine feed shotgun" and "10 round magazine shotgun" describe a weapon, not ammunition. Cases, grips, cleaning kits, pumps, zeroing apparatus, and spare tubes are accessories.
 - Extract manufacturer, model, weapon type, and caliber only from words visibly present in the product description or dedicated cells.
-- Split compound weapon descriptions into distinct business fields. Example: "HATSAN AIR RIFLE FLASH 5,5" means manufacturer "Hatsan", weaponType "Air rifle", model "FLASH", and caliber "5.5mm"; keep the complete original text in productName.
-- Store the action/feed mechanism in category (the weapon subtype), never in weaponType or model. Examples: "SEMI AUTO SHOTGUN" => weaponType "Shotgun", category "Semi auto"; "RADELLİ SEMI MAGAZİNE SHOTGUN" => manufacturer "Radelli", weaponType "Shotgun", category "Semi magazine".
+- Normalize Arabic weapon terminology into exact English business values in productName, weaponType, category, and caliber. Preserve the exact Arabic source only in source.text and rawDataJson. Required examples: "بنادق خرطوش عيار 12" => productName/category "12-Gauge Shotgun", weaponType "Shotgun", caliber "12 GA"; "بنادق هواء عيار 22" => productName/category ".22-Caliber Air Rifle", weaponType "Air Rifle", caliber ".22"; "مسدسات صوت 9 ملي" => productName/category "9mm Blank-Firing Pistol", weaponType "Blank-Firing Pistol", caliber "9mm blank".
+- Use stable Title Case English classification vocabulary for Arabic sources: Shotgun, Air Rifle, Blank-Firing Pistol, Pistol, Revolver, Rifle, Sniper Rifle, Carbine, Assault Rifle, Automatic Rifle, Submachine Gun, Machine Gun, Musket, or Firearm. Never transliterate a generic Arabic weapon type when an English classification is supported.
+- Normalize ammunition just as precisely: 12-gauge shotgun ammunition => "12-Gauge Shotshell"; .22 air-rifle pellets => ".22 Caliber Air Rifle Pellet"; 9mm blank ammunition => "9mm Blank Cartridge".
+- Split compound weapon descriptions into distinct business fields. Example: "HATSAN AIR RIFLE FLASH 5,5" means manufacturer "Hatsan", weaponType "Air Rifle", model "FLASH", and caliber "5.5mm"; keep the complete original text in productName.
+- Keep classification dimensions separate. category is the physical/caliber subtype (for example "12-Gauge Shotgun", ".22-Caliber Air Rifle", or "9mm Blank-Firing Pistol"); actionType stores values such as "Semi-Automatic" or "Pump-Action"; feedingType stores values such as "Magazine-Fed". Never put action/feed terms in weaponType or model.
 - Do not manufacture missing serials, prices, dates, suppliers, calibers, models, or manufacturers.
 - Split distinct products into distinct items. Keep multiple explicit serials in serialNumbers.
 - Confidence is 0..1 per field and measures direct support in the source, not plausibility.
@@ -189,11 +195,62 @@ function extractDeepSeekOutputText(response: Record<string, unknown>): string {
   throw new Error("DeepSeek returned no JSON extraction")
 }
 
+const confidenceKeys = Object.keys(confidenceProperties)
+const shipmentConfidenceKeys = Object.keys(shipmentConfidenceProperties)
+const strictConfidenceSchema = (keys: string[]) => z.object(Object.fromEntries(keys.map((key) => [key, z.number().min(0).max(1)]))).strict()
+const boundedNullableString = z.string().max(20_000).nullable()
+const manifestPayloadSchema = z.object({
+  shipment: z.object({
+    shipmentNumber: boundedNullableString,
+    supplier: boundedNullableString,
+    supplierReference: boundedNullableString,
+    invoiceNumber: boundedNullableString,
+    manifestNumber: boundedNullableString,
+    shipmentDate: boundedNullableString,
+    expectedArrivalDate: boundedNullableString,
+    origin: boundedNullableString,
+    destination: boundedNullableString,
+    currency: boundedNullableString,
+    confidence: strictConfidenceSchema(shipmentConfidenceKeys),
+  }).strict(),
+  items: z.array(z.object({
+    productName: boundedNullableString,
+    category: boundedNullableString,
+    productType: z.enum(["weapon", "ammunition", "accessory"]).nullable(),
+    weaponType: boundedNullableString,
+    manufacturer: boundedNullableString,
+    model: boundedNullableString,
+    caliber: boundedNullableString,
+    actionType: boundedNullableString,
+    feedingType: boundedNullableString,
+    sku: boundedNullableString,
+    productCode: boundedNullableString,
+    serialNumber: boundedNullableString,
+    serialNumbers: z.array(z.string().trim().min(1).max(1_000)).max(100_000),
+    quantity: z.number().int().positive().max(10_000_000).nullable(),
+    unitPrice: z.number().finite().nonnegative().nullable(),
+    totalPrice: z.number().finite().nonnegative().nullable(),
+    currency: boundedNullableString,
+    countryOfOrigin: boundedNullableString,
+    confidence: strictConfidenceSchema(confidenceKeys),
+    source: z.object({
+      sheet: boundedNullableString,
+      page: z.number().int().positive().nullable(),
+      row: z.number().int().positive().nullable(),
+      column: boundedNullableString,
+      text: boundedNullableString,
+    }).strict(),
+    rawDataJson: z.string().max(2_000_000),
+  }).strict()).max(100_000),
+  ambiguities: z.array(z.string().max(20_000)).max(10_000),
+}).strict()
+
 function validateManifestPayload(value: unknown): asserts value is Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("AI extraction is not a JSON object")
-  const payload = value as Record<string, unknown>
-  if (!payload.shipment || typeof payload.shipment !== "object" || Array.isArray(payload.shipment)) throw new Error("AI extraction is missing shipment metadata")
-  if (!Array.isArray(payload.items)) throw new Error("AI extraction is missing the items array")
+  const validated = manifestPayloadSchema.safeParse(value)
+  if (!validated.success) {
+    const issue = validated.error.issues[0]
+    throw new Error(`AI extraction schema violation at ${issue?.path.join(".") || "root"}: ${issue?.message ?? "invalid payload"}`)
+  }
 }
 
 function parseRawData(value: unknown): Record<string, unknown> {
@@ -211,6 +268,7 @@ function mapAiItems(value: unknown, offset: number): ParsedManifestItem[] {
   return value.map((raw, index) => {
     const item = raw as Record<string, unknown>
     const serialNumbers = Array.isArray(item.serialNumbers) ? item.serialNumbers.filter((serial): serial is string => typeof serial === "string" && serial.trim().length > 0) : []
+    const rawData = parseRawData(item.rawDataJson)
     return {
       rowIndex: offset + index + 1,
       productType: item.productType === "weapon" || item.productType === "ammunition" || item.productType === "accessory" ? item.productType : null,
@@ -232,22 +290,78 @@ function mapAiItems(value: unknown, offset: number): ParsedManifestItem[] {
       weaponTypeId: null, weaponSubtypeId: null, brandId: null, modelId: null, caliberId: null, storageLocationId: null,
       confidence: item.confidence && typeof item.confidence === "object" ? item.confidence as Record<string, number> : {},
       source: item.source && typeof item.source === "object" ? item.source as ParsedManifestItem["source"] : {},
-      rawData: parseRawData(item.rawDataJson),
+      rawData: {
+        ...rawData,
+        _classification: {
+          actionType: typeof item.actionType === "string" ? item.actionType : null,
+          feedingType: typeof item.feedingType === "string" ? item.feedingType : null,
+        },
+      },
     }
   })
 }
 
-function splitText(text: string, maxChars = 420_000): string[] {
+function splitPlainText(text: string, maxChars = 420_000): string[] {
   if (text.length <= maxChars) return [text]
   const lines = text.split("\n")
   const chunks: string[] = []
   let current = ""
   for (const line of lines) {
+    if (line.length + 1 > maxChars) {
+      if (current) { chunks.push(current); current = "" }
+      for (let offset = 0; offset < line.length; offset += maxChars) chunks.push(line.slice(offset, offset + maxChars))
+      continue
+    }
     if (current.length + line.length + 1 > maxChars && current) { chunks.push(current); current = "" }
     current += `${line}\n`
   }
   if (current) chunks.push(current)
   return chunks
+}
+
+const STRUCTURAL_CONTEXT_PATTERN = /^(?:description(?: of goods)?|product(?: name)?|item(?: description)?|goods|quantity|qty|count|serial(?: numbers?| no)?|s\/?n|manufacturer|brand|model|calib(?:er|re)?|gauge|price|currency|origin|البيان|الصنف|المنتج|اسم المنتج|الكمية|العدد|السيريال|الرقم التسلسلي|التسلسل|المصنع|الموديل|العيار)$/iu
+
+/** Chunks only between rows/tables and repeats explicitly labelled header context. */
+export function buildStructureAwareChunks(extraction: NativeExtraction, maxChars = 420_000): string[] {
+  if (extraction.text.length <= maxChars) return [extraction.text]
+  if (extraction.sheets.length === 0) return splitPlainText(extraction.text, maxChars)
+  const sourceContext = extraction.text.split("\n").filter((line) => /^# Source file:/i.test(line)).join("\n").slice(0, 4_000)
+  const chunks: string[] = []
+  for (const sheet of extraction.sheets) {
+    const headerRows = sheet.rows
+      .filter((row, index) => index === 0 || (row.row <= 30 && row.cells.some((cell) => STRUCTURAL_CONTEXT_PATTERN.test(String(cell.value)))))
+      .slice(0, 8)
+    const headerRowNumbers = new Set(headerRows.map((row) => row.row))
+    const rowLine = (row: NativeExtraction["sheets"][number]["rows"][number]) => `${row.row}\t${row.cells.map((cell) => `${cell.column}:${String(cell.value)}`).join("\t")}`
+    const prefix = [
+      sourceContext,
+      `# Sheet/Table: ${sheet.name}${sheet.hidden ? " [hidden]" : ""}`,
+      "# Repeated header context only — do not emit these rows again:",
+      ...headerRows.map(rowLine),
+      "# Data rows for this segment:",
+    ].filter(Boolean).join("\n").slice(0, Math.max(100, Math.floor(maxChars * 0.25)))
+    let current = `${prefix}\n`
+    const dataRows = sheet.rows.filter((row) => !headerRowNumbers.has(row.row))
+    if (dataRows.length === 0) {
+      chunks.push(current)
+      continue
+    }
+    for (const row of dataRows) {
+      const line = `${rowLine(row)}\n`
+      if (line.length + prefix.length + 1 > maxChars) {
+        if (current.length > prefix.length + 1) chunks.push(current)
+        const available = Math.max(100, maxChars - prefix.length - 100)
+        const pieces = splitPlainText(line, available)
+        for (const [pieceIndex, piece] of pieces.entries()) chunks.push(`${prefix}\n# Continuation ${pieceIndex + 1}/${pieces.length} of source row ${row.row}:\n${piece}`)
+        current = `${prefix}\n`
+      } else if (current.length + line.length > maxChars) {
+        chunks.push(current)
+        current = `${prefix}\n${line}`
+      } else current += line
+    }
+    if (current.length > prefix.length + 1) chunks.push(current)
+  }
+  return chunks.length > 0 ? chunks : splitPlainText(extraction.text, maxChars)
 }
 
 function focusedNativeExtraction(extraction: NativeExtraction, nativeItems: ParsedManifestItem[] | undefined): NativeExtraction {
@@ -428,6 +542,7 @@ function buildManifestResult(
   responses: Record<string, unknown>[],
   started: number,
   fallbackReason: string | null,
+  visualInputUsed: boolean,
 ): AiManifestResult {
   const parsed = parseProviderResponses(provider, responses)
   const shipment = (parsed.map((entry) => entry.shipment).find((value) => value && typeof value === "object") ?? {}) as Record<string, unknown>
@@ -459,6 +574,7 @@ function buildManifestResult(
     raw: parsed,
     provider,
     fallbackReason,
+    visualInputUsed,
   }
 }
 
@@ -471,33 +587,48 @@ async function runOpenAi(input: {
   const extension = path.extname(input.fileName).toLowerCase()
   const responses: Record<string, unknown>[] = []
   if (input.nativeExtraction) {
-    const chunks = splitText(input.nativeExtraction.text)
-    for (let index = 0; index < chunks.length; index++) {
-      responses.push(await withRetries(() => requestOpenAiStructuredExtraction([{ type: "input_text", text: `Structured spreadsheet segment ${index + 1}/${chunks.length}:\n${chunks[index]}` }], model, apiKey), maxRetries))
+    const chunks = buildStructureAwareChunks(input.nativeExtraction)
+    const supportedImages: Array<{ mimeType: string; dataBase64: string }> = []
+    let visualBytes = 0
+    for (const image of input.nativeExtraction.document?.images ?? []) {
+      if (!image.dataBase64 || !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(image.mimeType)) continue
+      const approximateBytes = Math.floor(image.dataBase64.length * 0.75)
+      if (approximateBytes > 15 * 1024 * 1024 || visualBytes + approximateBytes > 35 * 1024 * 1024 || supportedImages.length >= 8) continue
+      supportedImages.push({ mimeType: image.mimeType, dataBase64: image.dataBase64 })
+      visualBytes += approximateBytes
     }
+    for (let index = 0; index < chunks.length; index++) {
+      const content: Array<Record<string, unknown>> = [{ type: "input_text", text: `Structured document segment ${index + 1}/${chunks.length}:\n${chunks[index]}` }]
+      if (index === 0) {
+        for (const image of supportedImages) content.push({ type: "input_image", image_url: `data:${image.mimeType};base64,${image.dataBase64}`, detail: "high" })
+      }
+      responses.push(await withRetries(() => requestOpenAiStructuredExtraction(content, model, apiKey), maxRetries))
+    }
+    return buildManifestResult("openai", model, responses, started, null, supportedImages.length > 0)
   } else if ([".jpg", ".jpeg", ".png", ".webp"].includes(extension)) {
     const dataUrl = `data:${input.mimeType};base64,${Buffer.from(input.bytes).toString("base64")}`
     responses.push(await withRetries(() => requestOpenAiStructuredExtraction([
       { type: "input_text", text: "Extract the complete shipment manifest from this image." },
       { type: "input_image", image_url: dataUrl, detail: "high" },
     ], model, apiKey), maxRetries))
+    return buildManifestResult("openai", model, responses, started, null, true)
   } else {
     const dataUrl = `data:${input.mimeType};base64,${Buffer.from(input.bytes).toString("base64")}`
     responses.push(await withRetries(() => requestOpenAiStructuredExtraction([
       { type: "input_file", filename: input.fileName, file_data: dataUrl, detail: extension === ".pdf" ? "high" : undefined },
       { type: "input_text", text: "Extract the complete shipment manifest from this document." },
     ], model, apiKey), maxRetries))
+    return buildManifestResult("openai", model, responses, started, null, extension === ".pdf")
   }
-  return buildManifestResult("openai", model, responses, started, null)
 }
 
 async function runDeepSeek(nativeExtraction: NativeExtraction, model: string, apiKey: string, maxRetries: number, started: number, fallbackReason: string): Promise<AiManifestResult> {
-  const chunks = splitText(nativeExtraction.text)
+  const chunks = buildStructureAwareChunks(nativeExtraction)
   const responses: Record<string, unknown>[] = []
   for (let index = 0; index < chunks.length; index++) {
-    responses.push(await withRetries(() => requestDeepSeekStructuredExtraction(`Structured spreadsheet segment ${index + 1}/${chunks.length}:\n${chunks[index]}`, model, apiKey), maxRetries))
+    responses.push(await withRetries(() => requestDeepSeekStructuredExtraction(`Structured document segment ${index + 1}/${chunks.length}:\n${chunks[index]}`, model, apiKey), maxRetries))
   }
-  return buildManifestResult("deepseek", model, responses, started, fallbackReason)
+  return buildManifestResult("deepseek", model, responses, started, fallbackReason, false)
 }
 
 export async function analyzeManifestWithAi(input: {

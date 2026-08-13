@@ -44,6 +44,7 @@
     "electron/services/manifest-parser-worker.ts",
     "electron/services/openai-manifest-service.ts",
     "src/env.d.ts",
+    "src/lib/manifest-file-types.ts",
     "src/lib/shipment-manifest.ts"
   ],
   "exclude": [

@@ -28,6 +28,7 @@ describe("validateBrandTypePair", () => {
 
   it("returns invalid for Glock + Blank pistol", () => {
     expect(validateBrandTypePair("Glock", "Blank pistol").valid).toBe(false)
+    expect(validateBrandTypePair("Glock", "Blank-Firing Pistol").valid).toBe(false)
   })
 
   it("returns valid for Benelli + Shotgun", () => {
@@ -78,10 +79,12 @@ describe("validateTypeCaliberPair", () => {
 
   it("returns valid for Air rifle + .177", () => {
     expect(validateTypeCaliberPair("Air rifle", ".177")).toEqual({ valid: true })
+    expect(validateTypeCaliberPair("Air Rifle", ".177")).toEqual({ valid: true })
   })
 
   it("returns invalid for Air rifle + 9x19mm", () => {
     expect(validateTypeCaliberPair("Air rifle", "9x19mm").valid).toBe(false)
+    expect(validateTypeCaliberPair("Air Rifle", "9x19mm").valid).toBe(false)
   })
 
   it("returns valid when weaponType is empty", () => {

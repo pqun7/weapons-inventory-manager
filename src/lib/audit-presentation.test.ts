@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   auditMetadataGroup,
+  auditDetails,
   auditMoneyCurrencyKey,
   auditSummary,
   getAuditCurrency,
@@ -12,6 +13,9 @@ import type { AuditLog } from "@/lib/types"
 
 const t = (key: string, params?: Record<string, string | number>) => {
   if (key === "audit.summary.payment") return `Payment for ${params?.invoice}`
+  if (key === "audit.summary.shipment") return `Shipment activity for ${params?.shipment}`
+  if (key === "audit.summary.update") return `Record updated: ${params?.item}`
+  if (key === "audit.sentence.withSummary") return `${params?.actor}: ${params?.summary}`
   if (key === "audit.field.invoiceNumber") return "Invoice number"
   return key
 }
@@ -21,6 +25,18 @@ describe("audit presentation", () => {
     expect(parseAuditMetadata('{"invoiceNumber":"INV-1"}')).toEqual({ invoiceNumber: "INV-1" })
     expect(parseAuditMetadata("not-json")).toBeNull()
     expect(parseAuditMetadata("[]")).toBeNull()
+  })
+
+  it("includes structured before/after values and the reason in dialog details", () => {
+    expect(auditDetails(createLog({
+      previousValues: { status: "Pending" },
+      newValues: { status: "Paid" },
+      reason: "Payment received",
+    }))).toEqual({
+      previousValues: { status: "Pending" },
+      newValues: { status: "Paid" },
+      reason: "Payment received",
+    })
   })
 
   it("never exposes secrets or file payloads", () => {
@@ -62,4 +78,34 @@ describe("audit presentation", () => {
     expect(humanizeAuditKey("invoiceNumber", t)).toBe("Invoice number")
     expect(humanizeAuditKey("customField", t)).toBe("Custom Field")
   })
+
+  it("uses the recorded description instead of rendering a missing shipment reference", () => {
+    const shipmentLog = createLog({
+      actionType: "Shipment",
+      description: "Manifest items updated in one bulk operation",
+      userName: "System",
+    })
+    expect(auditSummary(shipmentLog, { itemCount: 3 }, t)).toBe("System: Manifest items updated in one bulk operation")
+  })
+
+  it("uses entity context for updates and never renders a dash placeholder", () => {
+    const updateLog = createLog({ actionType: "Update", description: "Customer updated", entityName: "Ahmed", userName: "Admin" })
+    expect(auditSummary(updateLog, {}, t)).toBe("Admin: Record updated: Ahmed")
+
+    const fallbackLog = createLog({ actionType: "Update", description: "Password setup completed", userName: "System" })
+    expect(auditSummary(fallbackLog, {}, t)).toBe("System: Password setup completed")
+  })
 })
+
+function createLog(overrides: Partial<AuditLog>): AuditLog {
+  return {
+    id: "LOG-X",
+    timestamp: "2026-08-13T00:00:00Z",
+    date: "2026-08-13",
+    userId: "SYSTEM",
+    actionType: "Update",
+    description: "",
+    metadata: "{}",
+    ...overrides,
+  }
+}

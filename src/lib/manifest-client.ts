@@ -6,6 +6,7 @@ import {
   normalizeCaliber,
   type ManifestConfirmInput,
   type ManifestDetailsPatch,
+  type ManifestExtractionVerification,
   type ManifestExtractedItem,
   type ManifestExtractionResult,
   type ManifestItemPatch,
@@ -22,7 +23,7 @@ type CurrentUser = { id: string; name: string }
 type Row = Record<string, Json>
 type ManifestResult<T = void> = { success: boolean; data?: T; error?: string }
 
-const IMPORT_COLUMNS = "id,shipment_id,status,file_name,file_type,file_size,file_hash,shipment_number,supplier_name,supplier_id,supplier_reference,invoice_number,manifest_number,shipment_date,expected_arrival_date,origin,destination,currency,review_note,additional_costs,ai_provider,ai_model,ai_request_id,ai_processing_ms,prompt_version,schema_version,validation_summary,error_code,error_message,created_at,updated_at"
+const IMPORT_COLUMNS = "id,shipment_id,status,file_name,file_type,file_size,file_hash,shipment_number,supplier_name,supplier_id,supplier_reference,invoice_number,manifest_number,shipment_date,expected_arrival_date,origin,destination,currency,review_note,additional_costs,ai_provider,ai_model,ai_request_id,ai_processing_ms,prompt_version,schema_version,validation_summary,raw_extraction_json,error_code,error_message,created_at,updated_at"
 const ITEM_COLUMNS = "id,import_id,row_index,product_type,product_name,category,weapon_type,manufacturer,model,caliber,sku,product_code,serial_number,serial_numbers_json,quantity,unit_price,retail_price,wholesale_price,retail_price_mode,wholesale_price_mode,additional_costs,total_price,currency,country_of_origin,weapon_type_id,weapon_subtype_id,brand_id,model_id,caliber_id,storage_location_id,source_json,raw_data_json,status"
 const ISSUE_COLUMNS = "id,import_id,item_id,field_name,code,severity,message,details_json,created_at"
 
@@ -67,6 +68,11 @@ function mapReview(row: Row, itemRows: Row[], issueRows: Row[]): ShipmentManifes
     issues: issues.filter((issue) => issue.itemId === String(item.id)),
   }))
   const summary = objectValue(row.validation_summary)
+  const rawExtraction = objectValue(row.raw_extraction_json)
+  const rawVerification = objectValue(rawExtraction.verification as Json | undefined)
+  const extractionVerification = typeof rawVerification.qualityScore === "number"
+    ? rawVerification as unknown as ManifestExtractionVerification
+    : undefined
   return {
     id: String(row.id), shipmentId: clean(row.shipment_id), status: String(row.status) as ManifestWorkflowStatus,
     fileName: String(row.file_name), fileType: String(row.file_type), fileSize: Number(row.file_size), fileHash: String(row.file_hash),
@@ -80,6 +86,7 @@ function mapReview(row: Row, itemRows: Row[], issueRows: Row[]): ShipmentManifes
     processingWarning: row.error_code === "AI_FALLBACK" || row.error_code === "AI_PROVIDER_FALLBACK" ? clean(row.error_message) : null,
     promptVersion: clean(row.prompt_version), schemaVersion: String(row.schema_version),
     validationSummary: { valid: Number(summary.valid ?? 0), needsReview: Number(summary.needsReview ?? 0), invalid: Number(summary.invalid ?? 0), duplicate: Number(summary.duplicate ?? 0), conflict: Number(summary.conflict ?? 0) },
+    extractionVerification,
     items, issues, createdAt: String(row.created_at), updatedAt: String(row.updated_at),
   }
 }
@@ -98,7 +105,8 @@ async function getReview(importId: string): Promise<ShipmentManifestReview> {
 }
 
 function normalizedLookup(value: string | null | undefined): string {
-  return (value ?? "").normalize("NFKD").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "")
+  const normalized = (value ?? "").normalize("NFKD").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "")
+  return normalized === "blankfiringpistol" ? "blankpistol" : normalized
 }
 
 function findId(rows: Array<{ id: string; label: string }>, value: string | null, allowContains = true): string | null {

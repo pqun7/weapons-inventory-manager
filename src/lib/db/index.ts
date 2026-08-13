@@ -23,6 +23,8 @@ type MapperInput<Mapper> = Mapper extends (row: infer Input) => unknown ? Input 
 
 let ready = false
 
+export const AUTHENTICATED_USER_NOT_LINKED = "AUTHENTICATED_USER_NOT_LINKED"
+
 function asMapperInput<Mapper>(row: Row): MapperInput<Mapper> {
   return row as unknown as MapperInput<Mapper>
 }
@@ -56,7 +58,7 @@ export function isDbReady(): boolean {
 export async function dbGetCurrentUserId(): Promise<string> {
   const { data, error } = await getSupabaseClient().rpc("current_app_user_id", {})
   if (error) throw new Error(`Resolve current user: ${error.message}`)
-  if (typeof data !== "string" || !data) throw new Error("The authenticated account is not linked to an active application user")
+  if (typeof data !== "string" || !data) throw new Error(AUTHENTICATED_USER_NOT_LINKED)
   return data
 }
 
@@ -811,7 +813,7 @@ export async function dbExtendInvoiceDueDate(input: DueDateExtensionInput): Prom
   const { error } = await getSupabaseClient().rpc("extend_invoice_due_date", {
     p_invoice_id: input.invoiceId,
     p_new_due_date: input.newDueDate,
-    p_reason: input.reason,
+    p_reason: input.reason?.trim() || null,
   })
   if (error) throw new Error(error.message)
 }

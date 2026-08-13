@@ -25,10 +25,9 @@ export function SuppliersPage() {
   const addSupplier = useStore((s) => s.addSupplier)
   const refreshFromDb = useStore((s) => s.refreshFromDb)
   const { formatAccountingAggregate, formatValuation } = useCurrency()
-  const { navigate } = useNav()
+  const { navigate, selectedSupplierId: selectedId, setSelectedSupplierId: setSelectedId } = useNav()
 
   const [search, setSearch] = useState("")
-  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [newName, setNewName] = useState("")
   const [newContact, setNewContact] = useState("")

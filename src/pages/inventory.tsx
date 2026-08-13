@@ -8,8 +8,8 @@ import {
 } from "@tanstack/react-table"
 import {
   ArrowUpDown, ChevronLeft, ChevronRight, Plus, Search, Package, Boxes, Settings,
-  Filter, X, SlidersHorizontal, Eye, Pencil, Copy, MoveRight,
-  ChevronDown, List, Columns,
+  X, SlidersHorizontal, Eye, Pencil, Copy, MoveRight,
+  ChevronDown, List, Columns, Loader2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -750,38 +750,6 @@ export function InventoryPage() {
 
                 <div className="h-5 w-px bg-border" />
 
-                <Select
-                  value={weaponTypeFilter ?? "__all__"}
-                  onValueChange={(v) => setWeaponTypeFilter(v === "__all__" ? null : v)}
-                >
-                  <SelectTrigger className="h-8 w-[130px] text-xs">
-                    <Filter className="mr-1 size-3" />
-                    <SelectValue placeholder={t("common.type")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">{t("common.allTypes")}</SelectItem>
-                    {filterOptions.weaponTypes.map((wt) => (
-                      <SelectItem key={wt} value={wt}>{wt}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  value={subTypeFilter ?? "__all__"}
-                  onValueChange={(v) => setSubTypeFilter(v === "__all__" ? null : v)}
-                  disabled={!weaponTypeFilter}
-                >
-                  <SelectTrigger className="h-8 w-[130px] text-xs">
-                    <SelectValue placeholder={t("weapon.subType")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">{t("common.allSubTypes")}</SelectItem>
-                    {filterOptions.subTypes.map((st) => (
-                      <SelectItem key={st} value={st}>{st}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
                 <DropdownMenu open={showMoreFilters} onOpenChange={setShowMoreFilters}>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" className="h-8 gap-1 text-xs">
@@ -791,6 +759,41 @@ export function InventoryPage() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="w-80 p-4" align="start">
                     <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-[11px]">{t("weapon.weaponType")}</Label>
+                        <Select
+                          value={weaponTypeFilter ?? "__all__"}
+                          onValueChange={(v) => setWeaponTypeFilter(v === "__all__" ? null : v)}
+                        >
+                          <SelectTrigger className="h-7 text-[11px]">
+                            <SelectValue placeholder={t("common.any")} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__all__">{t("common.allTypes")}</SelectItem>
+                            {filterOptions.weaponTypes.map((weaponType) => (
+                              <SelectItem key={weaponType} value={weaponType}>{weaponType}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-[11px]">{t("weapon.subType")}</Label>
+                        <Select
+                          value={subTypeFilter ?? "__all__"}
+                          onValueChange={(v) => setSubTypeFilter(v === "__all__" ? null : v)}
+                          disabled={!weaponTypeFilter}
+                        >
+                          <SelectTrigger className="h-7 text-[11px]">
+                            <SelectValue placeholder={t("common.any")} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__all__">{t("common.allSubTypes")}</SelectItem>
+                            {filterOptions.subTypes.map((subType) => (
+                              <SelectItem key={subType} value={subType}>{subType}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <div>
                         <Label className="text-[11px]">{t("weapon.brand")}</Label>
                         <Select
@@ -1338,7 +1341,7 @@ function AddStockDialog({ target, shipments, onClose, onConfirm }: {
     shipmentId: string | null
     notes: string
     location?: StorageLocation
-  }) => void
+  }) => Promise<void>
 }) {
   const { t } = useI18n()
   const { currencies, transactionCurrency, currencyPresentation } = useCurrency()
@@ -1350,6 +1353,7 @@ function AddStockDialog({ target, shipments, onClose, onConfirm }: {
   const [warehouse, setWarehouse] = useState("Main")
   const [shelf, setShelf] = useState("")
   const [bin, setBin] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // const lastTargetId = target?.itemId ?? null
   const [resetKey, setResetKey] = useState<string | null>(null)
@@ -1367,26 +1371,31 @@ function AddStockDialog({ target, shipments, onClose, onConfirm }: {
     setBin(target.location.bin)
   }, [target, resetKey, transactionCurrency])
 
-  const handleConfirm = () => {
-    if (!target) return
+  const handleConfirm = async () => {
+    if (!target || isSubmitting) return
     const qty = Number(quantity)
     const price = Number(purchasePrice)
     if (!Number.isFinite(qty) || qty <= 0) { toast.error(t("inv.quantityMustBePositive")); return }
     if (!Number.isFinite(price) || price < 0) { toast.error(t("inv.priceMustBePositive")); return }
-    onConfirm({
-      itemType: target.itemType,
-      itemId: target.itemId,
-      quantity: qty,
-      purchasePrice: price,
-      currency,
-      shipmentId,
-      notes,
-      location: { warehouse, shelf, bin },
-    })
+    setIsSubmitting(true)
+    try {
+      await onConfirm({
+        itemType: target.itemType,
+        itemId: target.itemId,
+        quantity: qty,
+        purchasePrice: price,
+        currency,
+        shipmentId,
+        notes,
+        location: { warehouse, shelf, bin },
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
-    <Dialog open={target !== null} onOpenChange={(open) => { if (!open) onClose() }}>
+    <Dialog open={target !== null} onOpenChange={(open) => { if (!open && !isSubmitting) onClose() }}>
       <DialogContent className="max-w-md">
         <DialogHeader><DialogTitle className="text-sm">{t("inv.addStock")}</DialogTitle></DialogHeader>
         {target && (
@@ -1415,8 +1424,8 @@ function AddStockDialog({ target, shipments, onClose, onConfirm }: {
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-1">
-              <Button size="sm" variant="outline" onClick={onClose}>{t("common.cancel")}</Button>
-              <Button size="sm" onClick={handleConfirm}>{t("common.confirm")}</Button>
+              <Button size="sm" variant="outline" onClick={onClose} disabled={isSubmitting}>{t("common.cancel")}</Button>
+              <Button size="sm" onClick={() => void handleConfirm()} disabled={isSubmitting}>{isSubmitting && <Loader2 className="size-3.5 animate-spin" />}{t("common.confirm")}</Button>
             </div>
           </div>
         )}
@@ -1446,6 +1455,7 @@ function AmmoReceiveDialog({ ammo, shipments, onClose }: {
   const [warehouse, setWarehouse] = useState("Main")
   const [shelf, setShelf] = useState("")
   const [bin, setBin] = useState("")
+  const [submitting, setSubmitting] = useState<"packages" | "rounds" | null>(null)
 
   // const lastAmmoId = ammo?.id ?? null
   const [resetKey, setResetKey] = useState<string | null>(null)
@@ -1473,37 +1483,47 @@ function AmmoReceiveDialog({ ammo, shipments, onClose }: {
   const computedTotal = (Number(numberOfPackages) || 0) * (Number(unitsPerPackage) || 0)
 
   const handleConfirmPackages = async () => {
-    if (!ammo) return
+    if (!ammo || submitting) return
     const pkgs = Number(numberOfPackages)
     const units = Number(unitsPerPackage)
     const price = Number(purchasePrice)
     if (!Number.isFinite(pkgs) || pkgs <= 0) { toast.error(t("inv.packagesMustBePositive")); return }
     if (!Number.isFinite(units) || units <= 0) { toast.error(t("inv.unitsPerPkgMustBePositive")); return }
     if (!Number.isFinite(price) || price <= 0) { toast.error(t("inv.priceMustBePositive")); return }
-    const res = await receiveAmmoByPackages({
-      itemId: ammo.id, numberOfPackages: pkgs, unitsPerPackage: units,
-      purchasePrice: price, currency, shipmentId, notes, location: { warehouse, shelf, bin },
-    })
-    if (res.success) { toast.success(t("toast.ammoReceivedPackages")); onClose() }
-    else { console.error("Ammunition receipt failed", res.error); toast.error(userFacingError(res.error, t("toast.ammoReceiveFailed"))) }
+    setSubmitting("packages")
+    try {
+      const res = await receiveAmmoByPackages({
+        itemId: ammo.id, numberOfPackages: pkgs, unitsPerPackage: units,
+        purchasePrice: price, currency, shipmentId, notes, location: { warehouse, shelf, bin },
+      })
+      if (res.success) { toast.success(t("toast.ammoReceivedPackages")); onClose() }
+      else { console.error("Ammunition receipt failed", res.error); toast.error(userFacingError(res.error, t("toast.ammoReceiveFailed"))) }
+    } finally {
+      setSubmitting(null)
+    }
   }
 
   const handleConfirmRounds = async () => {
-    if (!ammo) return
+    if (!ammo || submitting) return
     const rounds = Number(totalRoundsInput)
     const price = Number(purchasePrice)
     if (!Number.isFinite(rounds) || rounds <= 0) { toast.error(t("inv.roundsMustBePositive")); return }
     if (!Number.isFinite(price) || price <= 0) { toast.error(t("inv.priceMustBePositive")); return }
-    const res = await receiveAmmoByRounds({
-      itemId: ammo.id, totalRounds: rounds, purchasePrice: price, currency,
-      shipmentId, notes, location: { warehouse, shelf, bin },
-    })
-    if (res.success) { toast.success(t("toast.ammoReceivedRounds")); onClose() }
-    else { console.error("Ammunition receipt failed", res.error); toast.error(userFacingError(res.error, t("toast.ammoReceiveFailed"))) }
+    setSubmitting("rounds")
+    try {
+      const res = await receiveAmmoByRounds({
+        itemId: ammo.id, totalRounds: rounds, purchasePrice: price, currency,
+        shipmentId, notes, location: { warehouse, shelf, bin },
+      })
+      if (res.success) { toast.success(t("toast.ammoReceivedRounds")); onClose() }
+      else { console.error("Ammunition receipt failed", res.error); toast.error(userFacingError(res.error, t("toast.ammoReceiveFailed"))) }
+    } finally {
+      setSubmitting(null)
+    }
   }
 
   return (
-    <Dialog open={ammo !== null} onOpenChange={(open) => { if (!open) onClose() }}>
+    <Dialog open={ammo !== null} onOpenChange={(open) => { if (!open && !submitting) onClose() }}>
       <DialogContent className="max-w-md">
         <DialogHeader><DialogTitle className="text-sm">{t("inv.addStock")} — {ammo?.caliber}</DialogTitle></DialogHeader>
         {ammo && (
@@ -1539,8 +1559,8 @@ function AmmoReceiveDialog({ ammo, shipments, onClose }: {
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-1">
-                <Button size="sm" variant="outline" onClick={onClose}>{t("common.cancel")}</Button>
-                <Button size="sm" onClick={handleConfirmPackages}>{t("common.confirm")}</Button>
+                <Button size="sm" variant="outline" onClick={onClose} disabled={Boolean(submitting)}>{t("common.cancel")}</Button>
+                <Button size="sm" onClick={() => void handleConfirmPackages()} disabled={Boolean(submitting)}>{submitting === "packages" && <Loader2 className="size-3.5 animate-spin" />}{t("common.confirm")}</Button>
               </div>
             </TabsContent>
 
@@ -1566,8 +1586,8 @@ function AmmoReceiveDialog({ ammo, shipments, onClose }: {
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-1">
-                <Button size="sm" variant="outline" onClick={onClose}>{t("common.cancel")}</Button>
-                <Button size="sm" onClick={handleConfirmRounds}>{t("common.confirm")}</Button>
+                <Button size="sm" variant="outline" onClick={onClose} disabled={Boolean(submitting)}>{t("common.cancel")}</Button>
+                <Button size="sm" onClick={() => void handleConfirmRounds()} disabled={Boolean(submitting)}>{submitting === "rounds" && <Loader2 className="size-3.5 animate-spin" />}{t("common.confirm")}</Button>
               </div>
             </TabsContent>
           </Tabs>
@@ -1583,6 +1603,7 @@ function AmmoPackageDialog({ ammo, onClose }: { ammo: Ammunition | null; onClose
 
   const [packageType, setPackageType] = useState<PackageType>("Carton")
   const [unitsPerPackage, setUnitsPerPackage] = useState("50")
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // const lastAmmoId = ammo?.id ?? null
   const [resetKey, setResetKey] = useState<string | null>(null)
@@ -1595,16 +1616,21 @@ function AmmoPackageDialog({ ammo, onClose }: { ammo: Ammunition | null; onClose
   }, [ammo, resetKey])
 
   const handleConfirm = async () => {
-    if (!ammo) return
+    if (!ammo || isSubmitting) return
     const units = Number(unitsPerPackage)
     if (!Number.isFinite(units) || units <= 0) { toast.error(t("inv.unitsPerPkgMustBePositive")); return }
-    const res = await updateAmmoPackage({ itemId: ammo.id, packageType, unitsPerPackage: units })
-    if (res.success) { toast.success(t("toast.packageUpdated")); onClose() }
-    else toast.error(res.error ?? t("toast.packageUpdateFailed"))
+    setIsSubmitting(true)
+    try {
+      const res = await updateAmmoPackage({ itemId: ammo.id, packageType, unitsPerPackage: units })
+      if (res.success) { toast.success(t("toast.packageUpdated")); onClose() }
+      else toast.error(res.error ?? t("toast.packageUpdateFailed"))
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
-    <Dialog open={ammo !== null} onOpenChange={(open) => { if (!open) onClose() }}>
+    <Dialog open={ammo !== null} onOpenChange={(open) => { if (!open && !isSubmitting) onClose() }}>
       <DialogContent className="max-w-sm">
         <DialogHeader><DialogTitle className="text-sm">{t("inv.packageSettings")} — {ammo?.caliber}</DialogTitle></DialogHeader>
         {ammo && (
@@ -1618,8 +1644,8 @@ function AmmoPackageDialog({ ammo, onClose }: { ammo: Ammunition | null; onClose
             <div><Label className="text-xs">{t("inv.unitsPerPkg")}</Label><Input type="number" min={1} value={unitsPerPackage} onChange={(e) => setUnitsPerPackage(e.target.value)} className="h-8 text-xs" /></div>
             <p className="text-[10px] text-muted-foreground">{t("inv.packageChangeNote")}</p>
             <div className="flex justify-end gap-2 pt-1">
-              <Button size="sm" variant="outline" onClick={onClose}>{t("common.cancel")}</Button>
-              <Button size="sm" onClick={handleConfirm}>{t("common.confirm")}</Button>
+              <Button size="sm" variant="outline" onClick={onClose} disabled={isSubmitting}>{t("common.cancel")}</Button>
+              <Button size="sm" onClick={() => void handleConfirm()} disabled={isSubmitting}>{isSubmitting && <Loader2 className="size-3.5 animate-spin" />}{t("common.confirm")}</Button>
             </div>
           </div>
         )}
@@ -1646,7 +1672,7 @@ function CurrencySelect({ value, onChange, currencies }: { value: string; onChan
   )
 }
 
-function AddAccessoryForm({ onAdd }: { onAdd: (name: string, type: string, qty: number, threshold: number, price: number, currency: string, retailPrice: number, wholesalePrice: number, retailMode: PricingMode, wholesaleMode: PricingMode, costs: ProductAdditionalCostInput[]) => void }) {
+function AddAccessoryForm({ onAdd }: { onAdd: (name: string, type: string, qty: number, threshold: number, price: number, currency: string, retailPrice: number, wholesalePrice: number, retailMode: PricingMode, wholesaleMode: PricingMode, costs: ProductAdditionalCostInput[]) => Promise<void> }) {
   const { t } = useI18n()
   const { transactionCurrency, currencyPresentation } = useCurrency()
   const [name, setName] = useState("")
@@ -1658,6 +1684,7 @@ function AddAccessoryForm({ onAdd }: { onAdd: (name: string, type: string, qty: 
   const [costs, setCosts] = useState<ProductAdditionalCostInput[]>([])
   const [retail, setRetail] = useState({ value: "", mode: "auto" as PricingMode })
   const [wholesale, setWholesale] = useState({ value: "", mode: "auto" as PricingMode })
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const settings = useStore((state) => state.settings)
   const finalCost = useMemo(() => {
     try {
@@ -1676,7 +1703,9 @@ function AddAccessoryForm({ onAdd }: { onAdd: (name: string, type: string, qty: 
       <PricingSection purchasePrice={price} onPurchasePriceChange={setPrice} currency={currency} onCurrencyChange={setCurrency} quantity={Math.max(1, Number(qty) || 1)} onQuantityChange={(value) => setQty(String(value))} additionalCosts={costs} onAdditionalCostsChange={setCosts} finalCost={finalCost} retailPrice={retail.value} retailPriceMode={retail.mode} onRetailChange={setRetail} wholesalePrice={wholesale.value} wholesalePriceMode={wholesale.mode} onWholesaleChange={setWholesale} />
       <Button
         size="sm"
-        onClick={() => {
+        disabled={isSubmitting}
+        onClick={async () => {
+          if (isSubmitting) return
           const quantity = Number(qty)
           const min = Number(threshold)
           const unitPrice = Number(price)
@@ -1686,16 +1715,22 @@ function AddAccessoryForm({ onAdd }: { onAdd: (name: string, type: string, qty: 
           if (!Number.isFinite(unitPrice) || unitPrice < 0) return toast.error(t("inv.priceMustBePositive"))
           if (!areProductCostsValid(costs)) return toast.error(t("cost.checkAmount"))
           if (!pricingValuesAreValid(finalCost, retail.value, wholesale.value, settings.minProfitMarginPercent)) return toast.error(t("pricing.invalidPrice"))
-          onAdd(name.trim(), type, quantity, min, unitPrice, currency, Number(retail.value), Number(wholesale.value), retail.mode, wholesale.mode, costs)
+          setIsSubmitting(true)
+          try {
+            await onAdd(name.trim(), type, quantity, min, unitPrice, currency, Number(retail.value), Number(wholesale.value), retail.mode, wholesale.mode, costs)
+          } finally {
+            setIsSubmitting(false)
+          }
         }}
       >
+        {isSubmitting && <Loader2 className="size-3.5 animate-spin" />}
         {t("common.add")}
       </Button>
     </div>
   )
 }
 
-function AddAmmunitionForm({ onAdd }: { onAdd: (caliber: string, packageType: PackageType, unitsPerPackage: number, fullPackages: number, looseRounds: number, safetyThreshold: number, price: number, currency: string, retailPrice: number, wholesalePrice: number, retailMode: PricingMode, wholesaleMode: PricingMode, costs: ProductAdditionalCostInput[]) => void }) {
+function AddAmmunitionForm({ onAdd }: { onAdd: (caliber: string, packageType: PackageType, unitsPerPackage: number, fullPackages: number, looseRounds: number, safetyThreshold: number, price: number, currency: string, retailPrice: number, wholesalePrice: number, retailMode: PricingMode, wholesaleMode: PricingMode, costs: ProductAdditionalCostInput[]) => Promise<void> }) {
   const { t } = useI18n()
   const { transactionCurrency, currencyPresentation } = useCurrency()
   const [caliber, setCaliber] = useState(AMMUNITION_CALIBERS[0])
@@ -1709,6 +1744,7 @@ function AddAmmunitionForm({ onAdd }: { onAdd: (caliber: string, packageType: Pa
   const [costs, setCosts] = useState<ProductAdditionalCostInput[]>([])
   const [retail, setRetail] = useState({ value: "", mode: "auto" as PricingMode })
   const [wholesale, setWholesale] = useState({ value: "", mode: "auto" as PricingMode })
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const settings = useStore((state) => state.settings)
   const finalCost = useMemo(() => {
     try {
@@ -1731,7 +1767,9 @@ function AddAmmunitionForm({ onAdd }: { onAdd: (caliber: string, packageType: Pa
       <PricingSection purchasePrice={price} onPurchasePriceChange={setPrice} currency={currency} onCurrencyChange={setCurrency} quantity={1} onQuantityChange={() => undefined} showQuantity={false} additionalCosts={costs} onAdditionalCostsChange={setCosts} finalCost={finalCost} retailPrice={retail.value} retailPriceMode={retail.mode} onRetailChange={setRetail} wholesalePrice={wholesale.value} wholesalePriceMode={wholesale.mode} onWholesaleChange={setWholesale} />
       <Button
         size="sm"
-        onClick={() => {
+        disabled={isSubmitting}
+        onClick={async () => {
+          if (isSubmitting) return
           const units = Number(unitsPerPackage)
           const packages = Number(fullPackages)
           const loose = Number(looseRounds)
@@ -1744,9 +1782,15 @@ function AddAmmunitionForm({ onAdd }: { onAdd: (caliber: string, packageType: Pa
           if (!Number.isFinite(unitPrice) || unitPrice < 0) return toast.error(t("inv.priceMustBePositive"))
           if (!areProductCostsValid(costs)) return toast.error(t("cost.checkAmount"))
           if (!pricingValuesAreValid(finalCost, retail.value, wholesale.value, settings.minProfitMarginPercent)) return toast.error(t("pricing.invalidPrice"))
-          onAdd(caliber, packageType, units, packages, loose, threshold, unitPrice, currency, Number(retail.value), Number(wholesale.value), retail.mode, wholesale.mode, costs)
+          setIsSubmitting(true)
+          try {
+            await onAdd(caliber, packageType, units, packages, loose, threshold, unitPrice, currency, Number(retail.value), Number(wholesale.value), retail.mode, wholesale.mode, costs)
+          } finally {
+            setIsSubmitting(false)
+          }
         }}
       >
+        {isSubmitting && <Loader2 className="size-3.5 animate-spin" />}
         {t("common.add")}
       </Button>
     </div>

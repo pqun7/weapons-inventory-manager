@@ -1,5 +1,5 @@
-export const MANIFEST_SCHEMA_VERSION = "1.3"
-export const MANIFEST_PROMPT_VERSION = "shipment-manifest-v4"
+export const MANIFEST_SCHEMA_VERSION = "1.4"
+export const MANIFEST_PROMPT_VERSION = "shipment-manifest-v7"
 
 export type ManifestWorkflowStatus =
   | "draft"
@@ -30,6 +30,23 @@ export interface ManifestValidationIssue {
   severity: "warning" | "error" | "conflict"
   message: string
   details?: Record<string, unknown>
+}
+
+export interface ManifestExtractionAnomaly {
+  code: "quantity_serial_mismatch" | "duplicate_serial" | "missing_critical_field" | "low_confidence" | "field_conflict" | "incomplete_extraction"
+  severity: "warning" | "error"
+  message: string
+  itemRowIndex?: number
+  fieldName?: string
+  details?: Record<string, unknown>
+}
+
+export interface ManifestExtractionVerification {
+  qualityScore: number
+  evidenceCoverage: number
+  complete: boolean
+  anomalyCounts: { warnings: number; errors: number }
+  anomalies: ManifestExtractionAnomaly[]
 }
 
 export interface ManifestReviewItem {
@@ -128,6 +145,7 @@ export interface ShipmentManifestReview {
   promptVersion: string | null
   schemaVersion: string
   validationSummary: { valid: number; needsReview: number; invalid: number; duplicate: number; conflict: number }
+  extractionVerification?: ManifestExtractionVerification
   items: ManifestReviewItem[]
   issues: ManifestValidationIssue[]
   createdAt: string
@@ -168,6 +186,7 @@ export interface ManifestExtractionResult {
   promptVersion: string
   schemaVersion: string
   rawExtraction: Record<string, unknown>
+  verification?: ManifestExtractionVerification
   items: ManifestExtractedItem[]
 }
 
@@ -252,16 +271,22 @@ export function normalizeCaliber(value: string | null | undefined): string | nul
   const raw = value.trim().normalize("NFKC").replace(/[×✕]/g, "x").replace(/\s+/g, " ")
   const compact = raw.toLowerCase().replace(/\s/g, "").replace(/,/g, ".")
   if (/^9(?:mm)?$/.test(compact)) return "9mm"
-  if (/^9x19(?:mm)?$/.test(compact)) return "9x19mm"
-  if (/^(12ga|12gauge)$/.test(compact)) return "12 GA"
-  if (/^12\/(?:65|70|71|76|89)$/.test(compact)) return `12 GA (${compact})`
-  if (/^(20ga|20gauge)$/.test(compact)) return "20 GA"
-  if (/^20\/(?:70|76)$/.test(compact)) return `20 GA (${compact})`
-  if (/^5\.5(?:mm)?$/.test(compact)) return "5.5mm"
-  if (/^4\.5(?:mm)?$/.test(compact)) return "4.5mm"
-  if (/^7\.62(?:mm)?$/.test(compact)) return "7.62mm"
-  if (/^7\.65(?:mm)?$/.test(compact)) return "7.65mm"
-  if (compact === ".22lr") return ".22 LR"
+  if (/^9(?:mm)?blank$/.test(compact)) return "9mm blank"
+  const metricCartridge = compact.match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)(?:mm)?(r)?$/)
+  if (metricCartridge) return `${metricCartridge[1]}x${metricCartridge[2]}${metricCartridge[3] ? "R" : ""}mm`
+  const gauge = compact.match(/^(10|12|16|20|28|410)(?:ga|gauge)$/)?.[1]
+  if (gauge) return `${gauge} GA`
+  const shellLength = compact.match(/^(10|12|16|20|28|410)\/(65|67\.5|70|71|73|76|89)$/)
+  if (shellLength) return `${shellLength[1]} GA (${shellLength[1]}/${shellLength[2]})`
+  const metric = compact.match(/^(4\.5|5\.5|5\.56|6\.35|6\.5|7\.62|7\.65|9|10)(?:mm)?$/)?.[1]
+  if (metric) return `${metric}mm`
+  const inchAliases: Record<string, string> = {
+    ".22lr": ".22 LR", "22lr": ".22 LR", ".223rem": ".223 Rem", "223rem": ".223 Rem",
+    ".308win": ".308 Win", "308win": ".308 Win", ".380acp": ".380 ACP", "380acp": ".380 ACP",
+    ".45acp": ".45 ACP", "45acp": ".45 ACP", ".32acp": ".32 ACP", "32acp": ".32 ACP",
+    ".40s&w": ".40 S&W", "40s&w": ".40 S&W", "30-06": ".30-06 Springfield",
+  }
+  if (inchAliases[compact]) return inchAliases[compact]
   return raw
 }
 

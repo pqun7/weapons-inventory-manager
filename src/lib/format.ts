@@ -3,7 +3,8 @@ import type { Language } from "./i18n/translations"
 
 const LOCALE_MAP: Record<Language, string> = {
   en: "en-US",
-  ar: "ar-SA",
+  // Keep Arabic text and numerals while explicitly using the Gregorian calendar.
+  ar: "ar-SA-u-ca-gregory",
 }
 
 let _lang: Language = "en"

@@ -5,10 +5,17 @@ export interface ValidationResult {
   error?: string
 }
 
+function legacyWeaponTypeKey(weaponType: string): string {
+  const key = weaponType.normalize("NFKD").toLocaleLowerCase("en").replace(/[^\p{L}\p{N}]/gu, "")
+  if (key === "airrifle") return "Air rifle"
+  if (key === "blankpistol" || key === "blankfiringpistol") return "Blank pistol"
+  return weaponType
+}
+
 export function validateBrandTypePair(brand: string, weaponType: string): ValidationResult {
   if (!brand || !weaponType) return { valid: true }
   const forbiddenTypes = INVALID_BRAND_TYPE_PAIRS[brand]
-  if (forbiddenTypes && forbiddenTypes.includes(weaponType)) {
+  if (forbiddenTypes && forbiddenTypes.includes(legacyWeaponTypeKey(weaponType))) {
     return { valid: false, error: `Invalid combination: ${brand} does not make ${weaponType} weapons` }
   }
   return { valid: true }
@@ -16,7 +23,7 @@ export function validateBrandTypePair(brand: string, weaponType: string): Valida
 
 export function validateTypeCaliberPair(weaponType: string, caliber: string): ValidationResult {
   if (!weaponType || !caliber) return { valid: true }
-  const forbiddenCalibers = INVALID_TYPE_CALIBER_PAIRS[weaponType]
+  const forbiddenCalibers = INVALID_TYPE_CALIBER_PAIRS[legacyWeaponTypeKey(weaponType)]
   if (forbiddenCalibers && forbiddenCalibers.includes(caliber)) {
     return { valid: false, error: `Invalid combination: ${weaponType} cannot use ${caliber} caliber` }
   }

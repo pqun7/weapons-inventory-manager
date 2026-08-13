@@ -71,6 +71,7 @@ import { useCurrency } from "@/lib/currency-context"
 import { useI18n } from "@/lib/i18n"
 import { generateShipmentNumber } from "@/lib/format"
 import { manifestClient } from "@/lib/manifest-client"
+import { LOCAL_MANIFEST_FILE_ACCEPT, MANIFEST_FILE_ACCEPT, isLocallySupportedManifestFileName } from "@/lib/manifest-file-types"
 import { ShipmentCostEditor } from "./shipment-cost-editor"
 import type { Shipment, ShipmentAdditionalCostInput } from "@/lib/types"
 import {
@@ -92,9 +93,6 @@ interface Props {
 
 const PAGE_SIZE = 50
 type ManifestStep = "items" | "costs" | "shipment"
-const ACCEPT = ".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.webp"
-const LOCAL_ACCEPT = ".xlsx,.xls,.csv"
-
 const STEP_LABELS: { id: ManifestStep; labelKey: string; icon: React.ElementType }[] = [
   { id: "shipment", labelKey: "ship.manifestStepShipment", icon: FileText },
   { id: "items", labelKey: "ship.manifestStepItems", icon: FileSearch },
@@ -277,8 +275,7 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; e.target.value = ""
     if (!file) return
-    const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase()
-    if (!aiEnabled && !LOCAL_ACCEPT.split(",").includes(extension)) {
+    if (!aiEnabled && !isLocallySupportedManifestFileName(file.name)) {
       toast.error(t("ship.manifestLocalUnsupported"))
       return
     }
@@ -648,7 +645,7 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
                       </p>
                     </div>
                   )}
-                  <input ref={fileRef} type="file" accept={aiEnabled ? ACCEPT : LOCAL_ACCEPT} className="hidden" onChange={handleFile} />
+                  <input ref={fileRef} type="file" accept={aiEnabled ? MANIFEST_FILE_ACCEPT : LOCAL_MANIFEST_FILE_ACCEPT} className="hidden" onChange={handleFile} />
                 </div>
 
                 {/* Recent Reviews */}
@@ -747,6 +744,13 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
                         <SummaryCard label={t("ship.manifestStatus.invalid")} value={review.validationSummary.invalid} tone="bad" />
                         <SummaryCard label={t("ship.manifestConflicts")} value={review.validationSummary.duplicate + review.validationSummary.conflict} tone="bad" />
                         <SummaryCard label={t("ship.manifestReceipt")} value={receiptRequirements} tone={receiptRequirements ? "warn" : "good"} />
+                        {review.extractionVerification && (
+                          <SummaryCard
+                            label={t("ship.manifestExtractionQuality")}
+                            value={review.extractionVerification.qualityScore}
+                            tone={review.extractionVerification.complete && review.extractionVerification.qualityScore >= 90 ? "good" : "warn"}
+                          />
+                        )}
                         <div className="ms-auto hidden min-w-0 flex-1 justify-end lg:flex">
                           <div className="truncate text-end text-[10px] text-muted-foreground" title={`${aiProviderLabel(review.aiProvider, review.aiModel, t("ship.manifestLocalAnalysis"))} · ${t("ship.manifestTotalUnits", { count: totalQuantity.toLocaleString() })}`}>
                             {aiProviderLabel(review.aiProvider, review.aiModel, t("ship.manifestLocalAnalysis"))} · {t("ship.manifestUnits", { count: totalQuantity.toLocaleString() })}
@@ -763,6 +767,15 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
                           <span className="truncate">{review.processingWarning}</span>
                         </div>
                         <button onClick={() => setShowWarning(false)} className="shrink-0 rounded p-1 hover:bg-amber-500/20 transition-colors"><X className="size-3.5" /></button>
+                      </div>
+                    )}
+                    {review?.extractionVerification && !review.extractionVerification.complete && (
+                      <div className="mx-3 mt-2 flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                        <AlertTriangle className="size-3.5 shrink-0" />
+                        <span>{t("ship.manifestExtractionIncomplete", {
+                          warnings: review.extractionVerification.anomalyCounts.warnings,
+                          errors: review.extractionVerification.anomalyCounts.errors,
+                        })}</span>
                       </div>
                     )}
 

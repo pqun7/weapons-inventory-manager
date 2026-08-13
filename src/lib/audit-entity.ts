@@ -13,8 +13,8 @@ export function resolveAuditEntity(log: AuditLog): DialogEntityTarget | null {
   const metadata = parseAuditMetadata(log.metadata) ?? {}
   const normalized = (log.entityType ?? text(metadata, "entityType") ?? "").toLocaleLowerCase().replace(/[^a-z]/g, "")
   const candidates: Array<[DialogEntityKind, string[], boolean]> = [
-    ["invoice", ["invoiceId"], /invoice|sale|purchase|payment/.test(normalized)],
-    ["shipment", ["shipmentId"], /shipment|manifest|import/.test(normalized)],
+    ["invoice", ["invoiceId", "debtId", "receivableId", "payableId"], /invoice|sale|purchase|payment|debt|receivable|payable|duedate/.test(normalized)],
+    ["shipment", ["shipmentId"], normalized === "shipment" || normalized === "scheduledshipment"],
     ["weapon", ["weaponId"], /weapon|inventory/.test(normalized)],
     ["customer", ["customerId"], /customer/.test(normalized)],
     ["supplier", ["supplierId"], /supplier/.test(normalized)],

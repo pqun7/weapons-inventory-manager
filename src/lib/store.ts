@@ -138,7 +138,7 @@ export interface PaymentInput {
 export interface DueDateExtensionInput {
   invoiceId: string
   newDueDate: string
-  reason: string
+  reason?: string
 }
 
 export interface AddStockInput {

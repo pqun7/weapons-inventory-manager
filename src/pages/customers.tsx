@@ -27,6 +27,7 @@ import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { userFacingError } from "@/lib/user-facing-error"
+import { useNav } from "@/lib/nav"
 
 type CustomerTab = "all" | "dealers" | "direct"
 type CustomerSummary = {
@@ -176,10 +177,10 @@ export function CustomersPage() {
   const deleteCustomer = useStore((s) => s.deleteCustomer)
   const refreshFromDb = useStore((s) => s.refreshFromDb)
   const { formatAccountingAggregate, formatInvoice, formatInvoiceLine, formatPayment } = useCurrency()
+  const { selectedCustomerId: selectedId, setSelectedCustomerId: setSelectedId } = useNav()
 
   const [search, setSearch] = useState("")
   const [tab, setTab] = useState<CustomerTab>("all")
-  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)

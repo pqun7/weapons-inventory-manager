@@ -18,6 +18,7 @@ import { useI18n } from "@/lib/i18n"
 import { useCurrency } from "@/lib/currency-context"
 import { toast } from "sonner"
 import { hasPermission } from "@/lib/rbac"
+import { formatDate } from "@/lib/format"
 
 export function CurrencyManagementPanel() {
   const { t } = useI18n()
@@ -284,7 +285,7 @@ export function CurrencyManagementPanel() {
                           <TableCell className="py-1.5 text-[11px] tabular-nums">{c.decimalPrecision}</TableCell>
                           <TableCell className="py-1.5 text-[11px] tabular-nums">{c.lastKnownRate.toFixed(4)}</TableCell>
                           <TableCell className="py-1.5 text-[11px] text-muted-foreground">
-                            {c.lastRateUpdatedAt ? new Date(c.lastRateUpdatedAt).toLocaleDateString() : "—"}
+                            {c.lastRateUpdatedAt ? formatDate(c.lastRateUpdatedAt) : "—"}
                           </TableCell>
                           <TableCell className="py-1.5">
                             <div className="flex items-center gap-1.5">

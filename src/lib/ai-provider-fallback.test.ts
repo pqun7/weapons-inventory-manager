@@ -3,6 +3,30 @@ import { analyzeManifestWithAi, classifyAiHttpFailure, readAiFallbackConfig, use
 
 afterEach(() => vi.unstubAllGlobals())
 
+const itemConfidence = Object.fromEntries([
+  "productName", "category", "productType", "weaponType", "manufacturer", "model", "caliber", "sku", "productCode",
+  "actionType", "feedingType", "serialNumber", "quantity", "unitPrice", "totalPrice", "currency", "countryOfOrigin",
+].map((field) => [field, 0.8]))
+const shipmentConfidence = Object.fromEntries([
+  "shipmentNumber", "supplier", "supplierReference", "invoiceNumber", "manifestNumber", "shipmentDate", "expectedArrivalDate", "origin", "destination", "currency",
+].map((field) => [field, 0]))
+
+function validExtractionJson(): string {
+  return JSON.stringify({
+    shipment: {
+      shipmentNumber: null, supplier: null, supplierReference: null, invoiceNumber: null, manifestNumber: null,
+      shipmentDate: null, expectedArrivalDate: null, origin: null, destination: null, currency: null, confidence: shipmentConfidence,
+    },
+    items: [{
+      productName: "Test item", category: null, productType: "accessory", weaponType: null, manufacturer: null, model: null,
+      caliber: null, actionType: null, feedingType: null, sku: null, productCode: null, serialNumber: null, serialNumbers: [],
+      quantity: 1, unitPrice: null, totalPrice: null, currency: null, countryOfOrigin: null, confidence: itemConfidence,
+      source: { sheet: "Manifest", page: null, row: 2, column: "A", text: "Test item" }, rawDataJson: "{}",
+    }],
+    ambiguities: [],
+  })
+}
+
 describe("shipment manifest AI fallback", () => {
   it("enables DeepSeek with two retries and all requested failure categories by default", () => {
     const config = readAiFallbackConfig({})
@@ -48,11 +72,7 @@ describe("shipment manifest AI fallback", () => {
     process.env.DEEPSEEK_API_KEY = "deepseek-test-key"
     process.env.DEEPSEEK_FALLBACK_ENABLED = "true"
     process.env.DEEPSEEK_MAX_RETRIES = "0"
-    const extractedJson = JSON.stringify({
-      shipment: { shipmentNumber: null, confidence: {} },
-      items: [{ productName: "Test item", quantity: 1, serialNumbers: [], confidence: {}, source: {}, rawDataJson: "{}" }],
-      ambiguities: [],
-    })
+    const extractedJson = validExtractionJson()
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "Invalid API key" } }), { status: 401 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: "deepseek-request", choices: [{ message: { content: extractedJson } }] }), { status: 200 }))
@@ -69,6 +89,35 @@ describe("shipment manifest AI fallback", () => {
       expect(result?.requestId).toBe("deepseek-request")
       expect(result?.fallbackReason).toBe("OpenAI was unavailable; DeepSeek fallback completed the analysis.")
       expect(result?.items).toHaveLength(1)
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value == null) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
+  })
+
+  it("rejects a deeply malformed fallback payload instead of coercing missing fields", async () => {
+    const previous = {
+      CHATGPT_API_KEY: process.env.CHATGPT_API_KEY,
+      DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
+      DEEPSEEK_FALLBACK_ENABLED: process.env.DEEPSEEK_FALLBACK_ENABLED,
+      DEEPSEEK_MAX_RETRIES: process.env.DEEPSEEK_MAX_RETRIES,
+    }
+    process.env.CHATGPT_API_KEY = "invalid-openai-test-key"
+    process.env.DEEPSEEK_API_KEY = "deepseek-test-key"
+    process.env.DEEPSEEK_FALLBACK_ENABLED = "true"
+    process.env.DEEPSEEK_MAX_RETRIES = "0"
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "Invalid API key" } }), { status: 401 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ shipment: {}, items: [{}], ambiguities: [] }) } }] }), { status: 200 })))
+    try {
+      await expect(analyzeManifestWithAi({
+        fileName: "manifest.xlsx",
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        bytes: new Uint8Array(),
+        nativeExtraction: { kind: "spreadsheet", sheets: [], text: "Product | Qty\nTest item | 1", raw: {} },
+      })).rejects.toThrow(/schema violation/i)
     } finally {
       for (const [key, value] of Object.entries(previous)) {
         if (value == null) delete process.env[key]

@@ -12,7 +12,8 @@ Armory Store is an open-source desktop ERP for regulated inventory retailers. It
 ## Why Armory Store
 
 - **Serialized inventory integrity** — track weapons by unique serial number, classification, caliber, condition, status, supplier, shipment, and storage location. Atomic database operations reject duplicates and keep intake consistent.
-- **Intelligent shipment intake** — import XLSX, XLS, CSV, PDF, and image manifests; combine deterministic local parsing with optional AI extraction; review confidence, validation issues, edits, and duplicate conflicts before receipt.
+- **Intelligent shipment intake** — import XLSX, XLS, CSV, DOC, DOCX, PDF, and image manifests; combine deterministic local parsing with optional AI extraction; review confidence, validation issues, edits, and duplicate conflicts before receipt.
+- **Arabic manifest normalization** — preserve the original source evidence while storing and displaying Arabic weapon descriptions through consistent English product names, weapon types, subtypes, and calibers.
 - **End-to-end shipment workflow** — manage draft, review, scheduled, delayed, arrived, received, failed, and cancelled states with documents, timeline events, landed-cost allocation, and reconciliation.
 - **Sales and receivables** — create retail or wholesale sales, reserve or sell inventory, track invoices and partial payments, identify overdue balances, extend due dates, and void records through controlled workflows.
 - **Multi-currency accounting** — preserve the original amount, transaction-time exchange rate, accounting value, rate source, and immutable historical context rather than recalculating old transactions.
@@ -28,7 +29,7 @@ Armory Store is an open-source desktop ERP for regulated inventory retailers. It
 | UI | React 19, TypeScript, Rsbuild, Tailwind CSS 4, Radix UI |
 | State and validation | Zustand, Zod, React Hook Form |
 | Data | Supabase PostgreSQL, Auth, RLS, Realtime, Edge Functions |
-| Documents | SheetJS plus local PDF/image/spreadsheet parsing |
+| Documents | SheetJS plus structural OOXML/legacy Word parsing, embedded-image detection, and optional AI extraction for PDF/images |
 | Optional AI | OpenAI with configurable DeepSeek fallback |
 | Quality | Vitest, Testing Library, TypeScript project references, Python `unittest` |
 
@@ -85,7 +86,7 @@ Armory Store is an open-source desktop ERP for regulated inventory retailers. It
 
 ## Optional AI manifest analysis
 
-AI analysis is optional for each upload from the **Shipment manifest workspace**. The switch is enabled by default to preserve the existing extraction flow; users can turn it off before choosing a file. When it is off, the document is not sent to an AI provider and XLSX, XLS, and CSV files are processed with the local deterministic parser only. PDF and image manifests require AI analysis because the application does not include a local OCR engine.
+AI analysis is optional for each upload from the **Shipment manifest workspace**. The switch is enabled by default to preserve the existing extraction flow; users can turn it off before choosing a file. When it is off, the document is not sent to an AI provider and XLSX, XLS, CSV, DOC, and DOCX files are processed with the local deterministic parser only. PDF and image manifests require AI analysis because the application does not include a local OCR engine.
 
 To enable OpenAI analysis, add these desktop-only variables to `.env.local` during development. For a packaged application, place the same values in a `.env` file beside the executable or in the application's user-data directory. Never prefix AI secrets with `VITE_`.
 
@@ -94,7 +95,7 @@ CHATGPT_API_KEY=your-openai-api-key
 CHATGPT_MODEL=gpt-4.1
 ```
 
-DeepSeek can optionally remain the existing fallback for spreadsheet manifests when OpenAI fails. Configure it with:
+DeepSeek can optionally remain the existing text fallback for spreadsheet and Word manifests when OpenAI fails. Configure it with:
 
 ```env
 DEEPSEEK_API_KEY=your-deepseek-api-key
