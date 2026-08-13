@@ -89,7 +89,7 @@ export function CommandBar() {
     <CommandDialog
       open={commandBarOpen}
       onOpenChange={setCommandBarOpen}
-      title="Command Bar"
+      title={t("command.title")}
       description={t("cmd.search")}
     >
       <CommandInput
@@ -102,7 +102,7 @@ export function CommandBar() {
 
         {!debouncedQuery && pinnedItems.length > 0 && (
           <>
-            <CommandGroup heading="Pinned">
+            <CommandGroup heading={t("cmd.pinned")}>
               {pinnedItems.map((item) => (
                 <CommandItem key={item} onSelect={() => { setQuery(item); }}>
                   <Pin className="size-4 text-primary" />
@@ -116,7 +116,7 @@ export function CommandBar() {
 
         {!debouncedQuery && searchHistory.length > 0 && (
           <>
-            <CommandGroup heading="Recent Searches">
+            <CommandGroup heading={t("cmd.recentSearches")}>
               {searchHistory.map((q) => (
                 <CommandItem key={q} onSelect={() => { setQuery(q); }}>
                   <Search className="size-4 text-muted-foreground" />
@@ -129,7 +129,7 @@ export function CommandBar() {
         )}
 
         {results.weapons.length > 0 && (
-          <CommandGroup heading="Weapons">
+          <CommandGroup heading={t("nav.inventory")}>
             {results.weapons.map((w) => (
               <CommandItem
                 key={w.id}
@@ -141,7 +141,7 @@ export function CommandBar() {
                 <Package className="size-4 text-muted-foreground" />
                 <div className="flex flex-col">
                   <span className="text-sm font-medium">{w.brand} {w.model}</span>
-                  <span className="text-xs text-muted-foreground">SN: {w.serialNumber} — {t(`status.${w.status}`)}</span>
+                  <span className="text-xs text-muted-foreground">{t("bulk.serial")}: {w.serialNumber} — {t(`status.${w.status}`)}</span>
                 </div>
                 {debouncedQuery && (
                   <CommandShortcut onSelect={() => togglePin(w.serialNumber)}>
@@ -154,13 +154,13 @@ export function CommandBar() {
         )}
 
         {results.customers.length > 0 && (
-          <CommandGroup heading="Customers">
+          <CommandGroup heading={t("nav.customers")}>
             {results.customers.map((c) => (
               <CommandItem key={c.id} onSelect={() => handleSelect(() => navigate("customers"))}>
                 <Users className="size-4 text-muted-foreground" />
                 <div className="flex flex-col">
                   <span className="text-sm font-medium">{c.name}</span>
-                  <span className="text-xs text-muted-foreground">{c.id}{c.isWholesaleBuyer ? " — Wholesale" : ""}</span>
+                  <span className="text-xs text-muted-foreground">{c.id}{c.isWholesaleBuyer ? ` — ${t("cust.wholesale")}` : ""}</span>
                 </div>
               </CommandItem>
             ))}
@@ -168,7 +168,7 @@ export function CommandBar() {
         )}
 
         {results.suppliers.length > 0 && (
-          <CommandGroup heading="Suppliers">
+          <CommandGroup heading={t("nav.suppliers")}>
             {results.suppliers.map((s) => (
               <CommandItem key={s.id} onSelect={() => handleSelect(() => navigate("suppliers"))}>
                 <Users className="size-4 text-muted-foreground" />
@@ -182,13 +182,13 @@ export function CommandBar() {
         )}
 
         {results.invoices.length > 0 && (
-          <CommandGroup heading="Invoices">
+          <CommandGroup heading={t("nav.invoices")}>
             {results.invoices.map((i) => (
               <CommandItem key={i.id} onSelect={() => handleSelect(() => navigate("financials"))}>
                 <Receipt className="size-4 text-muted-foreground" />
                 <div className="flex flex-col">
                   <span className="text-sm font-medium">{i.invoiceNumber}</span>
-                  <span className="text-xs text-muted-foreground">{i.customerName} — {formatInvoice(i, "balance")} bal.</span>
+                  <span className="text-xs text-muted-foreground">{i.customerName} — {t("common.balance")}: {formatInvoice(i, "balance")}</span>
                 </div>
               </CommandItem>
             ))}
@@ -196,13 +196,13 @@ export function CommandBar() {
         )}
 
         {results.shipments.length > 0 && (
-          <CommandGroup heading="Shipments">
+          <CommandGroup heading={t("nav.shipments")}>
             {results.shipments.map((s) => (
               <CommandItem key={s.id} onSelect={() => handleSelect(() => navigate("shipments"))}>
                 <Truck className="size-4 text-muted-foreground" />
                 <div className="flex flex-col">
                   <span className="text-sm font-medium">{s.shipmentNumber}</span>
-                  <span className="text-xs text-muted-foreground">{t(`status.${s.status}`)} — {s.totalExpectedItems} items</span>
+                  <span className="text-xs text-muted-foreground">{t(`status.${s.status}`)} — {s.totalExpectedItems} {t("common.items")}</span>
                 </div>
               </CommandItem>
             ))}

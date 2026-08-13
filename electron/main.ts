@@ -26,6 +26,9 @@ const runtimeEnvironmentKeys = new Set([
   "CHATGPT_MODEL",
   "DEEPSEEK_API_KEY",
   "DEEPSEEK_MODEL",
+  "DEEPSEEK_FALLBACK_ENABLED",
+  "DEEPSEEK_MAX_RETRIES",
+  "DEEPSEEK_FALLBACK_ON",
 ])
 
 function loadRuntimeEnvironment(): void {

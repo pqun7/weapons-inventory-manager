@@ -310,7 +310,7 @@ export function SalesPage() {
   // ---------- Handlers ----------
   const handleAddWeapon = useCallback((weapon: Weapon) => {
     if (!Number.isFinite(modePrice(weapon)) || !Number.isFinite(landedCostPrice(weapon))) {
-      toast.error("This item has no authoritative currency valuation")
+      toast.error(t("sales.missingCurrencyValuation"))
       return
     }
     setSelectedWeapons((prev) => (prev.find((w) => w.id === weapon.id) ? prev : [...prev, weapon]))
@@ -339,7 +339,7 @@ export function SalesPage() {
     if (!ammo) return
     if (ammoLines.find((l) => l.ammo.id === ammo.id)) { toast.error(t('sales.caliberAlreadyAdded', { caliber })); return }
     const unitPrice = inventoryModePrice(ammo)
-    if (!Number.isFinite(unitPrice)) { toast.error("This item has no authoritative currency valuation"); return }
+    if (!Number.isFinite(unitPrice)) { toast.error(t("sales.missingCurrencyValuation")); return }
     setAmmoLines((prev) => [...prev, { ammo, quantity: "1", unitPrice, sellMode: "round", packageInput: "" }])
 
     setAmmoPicker("")
@@ -353,7 +353,7 @@ export function SalesPage() {
     if (!accessory) return
     if (accessoryLines.find((l) => l.accessory.id === accessory.id)) { toast.error(t('sales.accessoryAlreadyAdded', { name: accessory.name })); return }
     const unitPrice = inventoryModePrice(accessory)
-    if (!Number.isFinite(unitPrice)) { toast.error("This item has no authoritative currency valuation"); return }
+    if (!Number.isFinite(unitPrice)) { toast.error(t("sales.missingCurrencyValuation")); return }
     setAccessoryLines((prev) => [...prev, { accessory, quantity: "1", unitPrice }])
     setAccessoryPicker("")
   }
@@ -375,9 +375,9 @@ export function SalesPage() {
   }, [])
 
   const handleAddPendingDocument = useCallback(() => {
-    if (!pendingFile) return toast.error("No file selected")
+    if (!pendingFile) return toast.error(t("sales.noFileSelected"))
     const name = newDocName.trim() || pendingFileName.trim()
-    if (!name) return toast.error("Document name required")
+    if (!name) return toast.error(t("sales.documentNameRequired"))
     const reader = new FileReader()
     reader.onload = () => {
       setDocuments((prev) => [...prev, { name, data: reader.result as string }])
@@ -427,7 +427,7 @@ export function SalesPage() {
     setConfirmOpen(false)
     if (!invoiceNumber.trim()) { setInvoiceNumberError(true); toast.error(t('sales.invoiceNum')); return }
     if (hasStockIssues) { toast.error(t('sales.stockExceedsAvailable')); return }
-    if (hasPricingIssues) { toast.error("One or more items have no authoritative currency valuation"); return }
+    if (hasPricingIssues) { toast.error(t("sales.itemsMissingCurrencyValuation")); return }
     if (marginViolation && !approved) { toast.error(t('sales.managerApprovalReq')); return }
 
     let customerId = selectedCustomerId

@@ -2,6 +2,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useCurrency } from "@/lib/currency-context"
+import { useI18n } from "@/lib/i18n"
 import type { PricingMode, ProductAdditionalCostInput } from "@/lib/types"
 import { PricingFields } from "./pricing-fields"
 import { ProductCostEditor } from "./product-cost-editor"
@@ -28,24 +29,25 @@ export interface PricingSectionProps {
 
 export function PricingSection(props: PricingSectionProps) {
     const { currencies, currencyPresentation } = useCurrency()
+    const { t } = useI18n()
     return (
         <div className="space-y-4">
             <div className={`grid grid-cols-1 gap-3 ${props.showQuantity === false ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
                 <div className="flex flex-col gap-1">
-                    <Label className="text-xs">Currency</Label>
+                    <Label className="text-xs">{t("ship.currency")}</Label>
                     <Select value={props.currency} onValueChange={props.onCurrencyChange}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>{currencies.map((item) => <SelectItem key={item.isoCode} value={item.isoCode}>{item.isoCode} — {currencyPresentation(item.isoCode).name}</SelectItem>)}</SelectContent>
                     </Select>
                 </div>
                 <div className="flex flex-col gap-1">
-                    <Label className="text-xs">Unit Purchase Price ({currencyPresentation(props.currency).compactSymbol})</Label>
+                    <Label className="text-xs">{t("pricing.unitPrice")} ({currencyPresentation(props.currency).compactSymbol})</Label>
                     <Input type="number" min={0} step="any" value={props.purchasePrice} onChange={(event) => props.onPurchasePriceChange(event.target.value)} className="h-8 text-xs" />
                     {props.errors?.purchasePrice && <span className="text-[10px] text-destructive">{props.errors.purchasePrice}</span>}
                 </div>
                 {props.showQuantity !== false && (
                     <div className="flex flex-col gap-1">
-                        <Label className="text-xs">Quantity</Label>
+                        <Label className="text-xs">{t("common.quantity")}</Label>
                         <Input
                             type="number"
                             min={1}

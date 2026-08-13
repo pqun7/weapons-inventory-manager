@@ -64,7 +64,7 @@ export function NotificationCenter() {
   const confirmArrival = async (shipmentId: string) => {
     setArrivalBusy(shipmentId)
     const result = await receiveScheduledShipment(shipmentId)
-    if (result.success) toast.success("Shipment received into inventory")
+    if (result.success) toast.success(t("ship.manifestReceivedSuccess"))
     else toast.error(result.error ?? "Unable to confirm shipment arrival")
     setArrivalBusy(null)
   }
@@ -147,8 +147,8 @@ export function NotificationCenter() {
                       <span className="mt-0.5 text-[10px] text-muted-foreground">{formatDateTime(n.date)}</span>
                       {scheduledShipment && (
                         <div className="mt-2 flex gap-1">
-                          <Button size="xs" className="h-6 text-[10px]" disabled={arrivalBusy === scheduledShipment.id} onClick={(event) => { event.stopPropagation(); void confirmArrival(scheduledShipment.id) }}>✓ Shipment arrived</Button>
-                          <Button size="xs" variant="outline" className="h-6 text-[10px]" onClick={(event) => { event.stopPropagation(); markRead(n.id); navigate("shipments") }}>Not arrived yet</Button>
+                          <Button size="xs" className="h-6 text-[10px]" disabled={arrivalBusy === scheduledShipment.id} onClick={(event) => { event.stopPropagation(); void confirmArrival(scheduledShipment.id) }}>✓ {t("ship.shipmentArrived")}</Button>
+                          <Button size="xs" variant="outline" className="h-6 text-[10px]" onClick={(event) => { event.stopPropagation(); markRead(n.id); navigate("shipments") }}>{t("ship.notArrivedYet")}</Button>
                         </div>
                       )}
                     </div>

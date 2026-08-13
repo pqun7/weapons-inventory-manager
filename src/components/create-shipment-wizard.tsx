@@ -446,7 +446,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
                       <Input
                         value={shipmentNumber}
                         onChange={(e) => setShipmentNumber(e.target.value)}
-                        placeholder="SH-..."
+                        placeholder={t("ship.shipmentNumberPlaceholder")}
                         className={cn("h-8 text-xs font-mono", !shipmentNumber.trim() && step === 0 && "border-destructive")}
                       />
                       <Button size="sm" variant="outline" className="h-8 shrink-0" onClick={() => setShipmentNumber(generateShipmentNumber(shipments))}>
@@ -492,7 +492,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <Label className="text-xs font-medium">{t("ship.shippingCarrier")}</Label>
-                    <Input value={shippingCarrier} onChange={(e) => setShippingCarrier(e.target.value)} placeholder="DHL, FedEx..." className="h-8 text-xs mt-1" />
+                    <Input value={shippingCarrier} onChange={(e) => setShippingCarrier(e.target.value)} placeholder={t("ship.shippingCarrierPlaceholder")} className="h-8 text-xs mt-1" />
                   </div>
                   <div>
                     <Label className="text-xs font-medium">{t("ship.containerNumber")}</Label>

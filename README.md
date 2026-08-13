@@ -83,6 +83,29 @@ Armory Store is an open-source desktop ERP for regulated inventory retailers. It
    npm run dev
    ```
 
+## Optional AI manifest analysis
+
+AI analysis is optional for each upload from the **Shipment manifest workspace**. The switch is enabled by default to preserve the existing extraction flow; users can turn it off before choosing a file. When it is off, the document is not sent to an AI provider and XLSX, XLS, and CSV files are processed with the local deterministic parser only. PDF and image manifests require AI analysis because the application does not include a local OCR engine.
+
+To enable OpenAI analysis, add these desktop-only variables to `.env.local` during development. For a packaged application, place the same values in a `.env` file beside the executable or in the application's user-data directory. Never prefix AI secrets with `VITE_`.
+
+```env
+CHATGPT_API_KEY=your-openai-api-key
+CHATGPT_MODEL=gpt-4.1
+```
+
+DeepSeek can optionally remain the existing fallback for spreadsheet manifests when OpenAI fails. Configure it with:
+
+```env
+DEEPSEEK_API_KEY=your-deepseek-api-key
+DEEPSEEK_MODEL=deepseek-v4-pro
+DEEPSEEK_FALLBACK_ENABLED=true
+DEEPSEEK_MAX_RETRIES=2
+DEEPSEEK_FALLBACK_ON=timeout,rate_limit,service_unavailable,invalid_api_key,invalid_response
+```
+
+Restart the Electron application after changing these variables. API keys are read only by the Electron main process and are never exposed to the React renderer.
+
 ## Database lifecycle commands
 
 Both maintenance commands load `.env.local` by default, acquire PostgreSQL advisory locks, validate their result before commit, and are preview-only unless `--confirm` is supplied.

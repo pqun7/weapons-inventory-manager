@@ -135,7 +135,7 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
     try {
       const result = await receiveScheduledShipment(shipment.id)
       if (!result.success) throw new Error(result.error ?? "Unable to confirm arrival")
-      toast.success("Shipment arrival confirmed and inventory received")
+      toast.success(t("ship.arrivalConfirmedReceived"))
     } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to confirm arrival") }
     finally { setArrivalBusy(false) }
   }
@@ -146,7 +146,7 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
       const result = await rescheduleShipment(shipment.id, newExpectedDate, delayReason)
       if (!result.success) throw new Error(result.error ?? "Unable to reschedule shipment")
       setRescheduleOpen(false); setDelayReason("")
-      toast.success("Shipment remains pending with a new expected date")
+      toast.success(t("ship.pendingNewExpectedDate"))
     } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to reschedule shipment") }
     finally { setArrivalBusy(false) }
   }
@@ -317,8 +317,8 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
                   <div className="flex items-center gap-2">
                     {shipment.workflowStatus === "scheduled" && shipment.status !== "Cancelled" && (
                       <>
-                        <Button size="sm" className="h-7 text-[11px]" disabled={arrivalBusy} onClick={confirmShipmentArrival}>✓ Shipment arrived</Button>
-                        <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={arrivalBusy} onClick={() => setRescheduleOpen(true)}>Not arrived yet</Button>
+                        <Button size="sm" className="h-7 text-[11px]" disabled={arrivalBusy} onClick={confirmShipmentArrival}>✓ {t("ship.shipmentArrived")}</Button>
+                        <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={arrivalBusy} onClick={() => setRescheduleOpen(true)}>{t("ship.notArrivedYet")}</Button>
                       </>
                     )}
                     <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => setEditingMeta(true)}>
@@ -326,7 +326,7 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
                     </Button>
                     {canEditShipmentContents(shipment, currentUser) && (
                       <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => setContentsEditorOpen(true)}>
-                        <Package className="size-3" /> Edit shipment contents
+                        <Package className="size-3" /> {t("ship.editShipmentContents")}
                       </Button>
                     )}
                   </div>
@@ -490,12 +490,12 @@ export function ShipmentDetailPanel({ shipment }: ShipmentDetailPanelProps) {
     </Card>
     <Dialog open={rescheduleOpen} onOpenChange={setRescheduleOpen}>
       <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Shipment not arrived</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t("ship.shipmentNotArrived")}</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <div><Label>New expected arrival date</Label><DatePicker value={newExpectedDate} onChange={setNewExpectedDate} required /></div>
-          <div><Label>Delay reason</Label><Textarea value={delayReason} onChange={(event) => setDelayReason(event.target.value)} placeholder="Record the reason for the delay" /></div>
+          <div><Label>{t("ship.newExpectedArrivalDate")}</Label><DatePicker value={newExpectedDate} onChange={setNewExpectedDate} required /></div>
+          <div><Label>{t("ship.delayReason")}</Label><Textarea value={delayReason} onChange={(event) => setDelayReason(event.target.value)} placeholder={t("ship.delayReasonPlaceholder")} /></div>
         </div>
-        <DialogFooter><Button variant="outline" onClick={() => setRescheduleOpen(false)}>Cancel</Button><Button disabled={arrivalBusy || !newExpectedDate || !delayReason.trim()} onClick={handleRescheduleShipment}>Save and remind later</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={() => setRescheduleOpen(false)}>{t("common.cancel")}</Button><Button disabled={arrivalBusy || !newExpectedDate || !delayReason.trim()} onClick={handleRescheduleShipment}>{t("ship.saveRemindLater")}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
     <ShipmentManifestImportDialog

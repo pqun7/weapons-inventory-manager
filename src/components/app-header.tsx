@@ -37,9 +37,9 @@ export function AppHeader() {
     <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/60" data-display-currency={displayCurrency}>
       <SidebarTrigger className="-ms-1 size-7" />
       <Separator orientation="vertical" className="me-1 h-4" />
-      <h1 className="text-sm font-semibold tracking-tight">{PAGE_TITLES[currentPage]}</h1>
+      <h1 className="min-w-0 truncate text-sm font-semibold tracking-tight">{PAGE_TITLES[currentPage]}</h1>
 
-      <div className="ms-4 hidden flex-1 items-center md:flex">
+      <div className="ms-4 hidden min-w-0 flex-1 items-center lg:flex">
         <Button
           variant="outline"
           className="h-7 w-full max-w-xs justify-start gap-2 text-xs text-muted-foreground"
@@ -55,18 +55,18 @@ export function AppHeader() {
         <Button
           variant="ghost"
           size="icon-sm"
-          className="md:hidden"
+          className="lg:hidden"
           onClick={() => setCommandBarOpen(true)}
         >
           <Search className="size-4" />
         </Button>
 
         <NotificationCenter />
-        <DisplayCurrencySelector />
+        <div className="hidden sm:block"><DisplayCurrencySelector /></div>
         <LanguageSwitcher />
         <ModeToggle />
         <Separator orientation="vertical" className="mx-0.5 h-4" />
-        <div className="flex items-center gap-1.5">
+        <div className="hidden items-center gap-1.5 sm:flex">
           <div className="flex size-7 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
             {currentUser.name.charAt(0)}
           </div>
@@ -80,8 +80,8 @@ export function AppHeader() {
         <Button
           variant="ghost"
           size="icon-sm"
-          title="Sign out"
-          aria-label="Sign out"
+          title={t("auth.signOut")}
+          aria-label={t("auth.signOut")}
           onClick={() => {
             void getSupabaseClient().auth.signOut().then(({ error }) => {
               if (error) {

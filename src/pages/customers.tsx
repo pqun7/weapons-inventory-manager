@@ -80,7 +80,7 @@ function CustomerForm({
       return
     }
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      toast.error("Enter a valid email address.")
+      toast.error(t("settings.validEmailRequired"))
       return
     }
     if (saving) return
@@ -117,7 +117,7 @@ function CustomerForm({
         </div>
         <div className="space-y-2">
           <Label className="text-xs">{t("cust.email")}</Label>
-          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@example.com" className="h-8 text-xs" />
+          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("settings.emailExample")} className="h-8 text-xs" />
         </div>
         <div className="space-y-2">
           <Label className="text-xs">{t("cust.address")}</Label>
@@ -727,7 +727,7 @@ export function CustomersPage() {
                             download={doc.name}
                             className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline"
                           >
-                            <Download className="size-3" /> Download
+                            <Download className="size-3" /> {t("common.download")}
                           </a>
                         </div>
                       ))}

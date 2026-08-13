@@ -4,6 +4,7 @@ import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react"
 import { createRoot } from "react-dom/client"
 import { Spinner } from "@/components/ui/spinner"
 import { AppRoot } from "./app-root"
+import { translations, type Language } from "@/lib/i18n/translations"
 
 
 const rootElement = document.getElementById("root")
@@ -13,14 +14,16 @@ if (!rootElement) {
 }
 
 const root = createRoot(rootElement)
+const bootLanguage = (document.documentElement.lang === "ar" ? "ar" : "en") as Language
+const bootText = (key: string) => translations[bootLanguage][key] ?? translations.en[key] ?? key
 
 function RendererFailure({ error }: { error: Error }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
       <div className="w-full max-w-lg rounded-xl border border-destructive/30 bg-card p-6 shadow-lg">
-        <h1 className="text-lg font-semibold text-destructive">Application failed to start</h1>
+        <h1 className="text-lg font-semibold text-destructive">{bootText("app.startFailed")}</h1>
         <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
-        <p className="mt-4 text-xs text-muted-foreground">Correct the configuration, then restart the application.</p>
+        <p className="mt-4 text-xs text-muted-foreground">{bootText("app.correctConfiguration")}</p>
       </div>
     </div>
   )
@@ -72,8 +75,8 @@ function BootShell() {
         }}
       >
         <Spinner className="size-8" />
-        <div style={{ marginTop: 12, fontSize: 14, fontWeight: 600 }}>Loading application…</div>
-        <div style={{ marginTop: 4, fontSize: 12, color: "#6b7280" }}>Preparing the interface</div>
+        <div style={{ marginTop: 12, fontSize: 14, fontWeight: 600 }}>{bootText("app.loadingApplication")}</div>
+        <div style={{ marginTop: 4, fontSize: 12, color: "#6b7280" }}>{bootText("app.preparingInterface")}</div>
       </div>
     </div>
   )

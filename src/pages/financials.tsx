@@ -171,7 +171,7 @@ export function FinancialsPage() {
     if (!selectedInvoiceId) return
     const amount = Number(payAmount)
     if (!amount || amount <= 0) {
-      toast.error("Please enter a valid amount")
+      toast.error(t("fin.validAmountRequired"))
       return
     }
     const result = await DebtService.registerPayment({
@@ -193,7 +193,7 @@ export function FinancialsPage() {
 
   const handleExtend = async () => {
     if (!selectedInvoiceId || !newDueDate) {
-      toast.error("Please select a new due date")
+      toast.error(t("fin.newDueDateRequired"))
       return
     }
     const result = await DebtService.extendDueDate({
@@ -441,7 +441,7 @@ export function FinancialsPage() {
                               <div>{formatPayment(p, "original")}</div>
                               {p.currency !== p.accountingCurrency && (
                                 <div className="text-[9px] font-normal text-muted-foreground">
-                                  ≈ {formatPayment(p, "accounting")} · rate {p.exchangeRate} · {p.exchangeRateDate ? formatDateShort(p.exchangeRateDate) : "—"}
+                                  ≈ {formatPayment(p, "accounting")} · {t("fin.exchangeRate")} {p.exchangeRate} · {p.exchangeRateDate ? formatDateShort(p.exchangeRateDate) : "—"}
                                 </div>
                               )}
                             </TableCell>
@@ -619,7 +619,7 @@ export function FinancialsPage() {
                                 <div>{formatPayment(p, "original")}</div>
                                 {p.currency !== p.accountingCurrency && (
                                   <div className="text-[9px] font-normal text-muted-foreground">
-                                    ≈ {formatPayment(p, "accounting")} · rate {p.exchangeRate} · {p.exchangeRateDate ? formatDateShort(p.exchangeRateDate) : "—"}
+                                    ≈ {formatPayment(p, "accounting")} · {t("fin.exchangeRate")} {p.exchangeRate} · {p.exchangeRateDate ? formatDateShort(p.exchangeRateDate) : "—"}
                                   </div>
                                 )}
                               </TableCell>

@@ -139,6 +139,8 @@ export interface ManifestUploadInput {
   fileName: string
   mimeType: string
   bytes: Uint8Array
+  /** Defaults to true to preserve the existing AI-first extraction flow. */
+  aiEnabled?: boolean
 }
 
 export type ManifestExtractedItem = Omit<ManifestReviewItem, "id" | "issues" | "status">

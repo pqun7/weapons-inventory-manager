@@ -468,7 +468,7 @@ export function CurrencyManagementPanel() {
                   rel="noreferrer"
                   className="underline underline-offset-2 hover:text-foreground"
                 >
-                  Rates by ExchangeRate-API
+                  {t("settings.ratesByProvider", { provider: "ExchangeRate-API" })}
                 </a>
               </div>
             </CardContent>

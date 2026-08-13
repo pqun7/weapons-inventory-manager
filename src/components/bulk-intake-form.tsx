@@ -309,7 +309,7 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
               {/* Weapon Details */}
               <div>
                 <h3 className="mb-3 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  <Package className="size-3.5" /> Weapon Details
+                  <Package className="size-3.5" /> {t("bulk.weaponDetails")}
                 </h3>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="flex flex-col gap-1">
@@ -363,7 +363,7 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
                       value={brand}
                       onValueChange={setBrand}
                       options={brandOptions}
-                      placeholder="e.g. Glock"
+                      placeholder={t("bulk.brandExample")}
                       searchPlaceholder={t("common.search")}
                       allowCreate onCreateNew={(v) => { md.createBrand(v); setBrand(v) }}
                       className="h-8 text-xs"
@@ -376,7 +376,7 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
                       value={model}
                       onValueChange={setModel}
                       options={modelOptions}
-                      placeholder="e.g. G17"
+                      placeholder={t("bulk.modelExample")}
                       searchPlaceholder={t("common.search")}
                       allowCreate onCreateNew={(v) => { md.createModel(v, brand); setModel(v) }}
                       className="h-8 text-xs"
@@ -389,7 +389,7 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
               {/* Pricing & Costs */}
               <div>
                 <h3 className="mb-3 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  <Banknote className="size-3.5" /> Pricing & Costs
+                  <Banknote className="size-3.5" /> {t("bulk.pricingAndCosts")}
                 </h3>
                 <PricingSection
                   purchasePrice={purchasePrice}

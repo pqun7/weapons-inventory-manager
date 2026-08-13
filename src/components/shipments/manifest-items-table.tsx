@@ -23,30 +23,25 @@ import {
 import { type ManifestItemPatch, type ManifestReviewItem } from "@/lib/shipment-manifest"
 import { cn } from "@/lib/utils"
 import { PricingSection } from "@/components/pricing-section"
+import { useI18n } from "@/lib/i18n"
 
 export type ShipmentItemsMode = "file" | "manual" | "edit"
 
 export type ManifestTableMasterData = ReturnType<typeof useDynamicMasterData>
 
-const STATUS_EXPLANATIONS: Record<ManifestReviewItem["status"], string> = {
-  valid: "All required product information is complete.",
-  needs_review: "Some required information is missing or still needs review.",
-  invalid: "One or more values are invalid.",
-  duplicate: "This product or one of its serial numbers is duplicated.",
-  conflict: "Some product values conflict with existing data.",
-}
-
 function StatusBadge({ status, reasons = [] }: { status: ManifestReviewItem["status"]; reasons?: readonly string[] }) {
+  const { t } = useI18n()
+  const statusExplanation = t(`ship.manifestItemStatusExplanation.${status}`)
   const explanation = reasons.length > 0
-    ? `${STATUS_EXPLANATIONS[status]} ${reasons.join(", ")}.`
-    : STATUS_EXPLANATIONS[status]
+    ? `${statusExplanation} ${reasons.join(", ")}.`
+    : statusExplanation
   const badge = status === "valid"
-    ? <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700">Valid</Badge>
+    ? <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700">{t("ship.manifestStatus.valid")}</Badge>
     : status === "duplicate"
-      ? <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-700">Duplicate</Badge>
+      ? <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-700">{t("ship.manifestStatus.duplicate")}</Badge>
       : status === "conflict" || status === "invalid"
-        ? <Badge className="border-red-500/30 bg-red-500/10 text-red-700">{status === "conflict" ? "Conflict" : "Invalid"}</Badge>
-        : <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-700">Review</Badge>
+        ? <Badge className="border-red-500/30 bg-red-500/10 text-red-700">{t(`ship.manifestStatus.${status}`)}</Badge>
+        : <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-700">{t("ship.manifestStatus.needs_review")}</Badge>
   return (
     <TooltipProvider delayDuration={250}>
       <Tooltip>
@@ -66,6 +61,7 @@ function InlineManifestCell({
   className?: string
   onCommit: (value: string | number | null) => Promise<void> | void
 }) {
+  const { t } = useI18n()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value == null ? "" : String(value))
   const [busy, setBusy] = useState(false)
@@ -93,7 +89,7 @@ function InlineManifestCell({
     )
   }
   return (
-    <button type="button" onClick={() => setEditing(true)} title="Click to edit" className={cn("min-h-8 w-full min-w-0 truncate rounded-md px-1.5 py-1 text-start text-[10px] transition-colors hover:bg-primary/5 hover:ring-1 hover:ring-primary/20", className)}>
+    <button type="button" onClick={() => setEditing(true)} title={t("ship.manifestClickToEdit")} className={cn("min-h-8 w-full min-w-0 truncate rounded-md px-1.5 py-1 text-start text-[10px] transition-colors hover:bg-primary/5 hover:ring-1 hover:ring-primary/20", className)}>
       {value == null || value === "" ? <span className="text-muted-foreground">{placeholder}</span> : value}
     </button>
   )
@@ -151,6 +147,7 @@ export function ManifestItemsTable({
   onToggleSelected, onSelectVisible, onEdit, itemsForBulkEdit, onAddItem, onDelete, onBulkDelete,
   onPatch, onBulkPatch, onProcessingChange,
 }: ManifestItemsTableProps) {
+  const { t } = useI18n()
   const [editing, setEditing] = useState<ManifestReviewItem | null>(null)
   const [editingIds, setEditingIds] = useState<string[]>([])
   const [draft, setDraft] = useState<ManifestItemPatch>({})
@@ -199,7 +196,7 @@ export function ManifestItemsTable({
     try {
       const isBulk = editingIds.length > 1
       const requested = isBulk ? changedManifestPatch(initialDraft, draft) : draft
-      if (isBulk && Object.keys(requested).length === 0) throw new Error("Change at least one field")
+      if (isBulk && Object.keys(requested).length === 0) throw new Error(t("ship.manifestChangeOneField"))
 
       const sourceItems = itemsForBulkEdit ?? items
       const targetItems = sourceItems.filter((item) => editingIds.includes(item.id))
@@ -234,10 +231,10 @@ export function ManifestItemsTable({
           <Checkbox
             checked={allSelected ? true : someSelected ? "indeterminate" : false}
             onCheckedChange={(checked) => onSelectVisible(checked === true)}
-            aria-label={allSelected ? "Deselect visible items" : "Select visible items"}
+            aria-label={t(allSelected ? "ship.manifestDeselectVisible" : "ship.manifestSelectVisible")}
           />
           <span className="text-xs text-muted-foreground">
-            {selected.size > 0 ? `${selected.size} selected` : "Select rows"}
+            {selected.size > 0 ? t("ship.manifestSelectedCount", { count: selected.size }) : t("ship.manifestSelectRows")}
           </span>
         </div>
 
@@ -245,7 +242,7 @@ export function ManifestItemsTable({
           {selectedItems.length > 1 && (
             <Button size="sm" variant="outline" onClick={openBulkEdit}>
               <Pencil className="mr-1 size-3.5" />
-              Edit {selectedItems.length} selected
+              {t("ship.manifestEditSelected", { count: selectedItems.length })}
             </Button>
           )}
 
@@ -255,13 +252,13 @@ export function ManifestItemsTable({
               variant="outline"
               className="text-red-600 hover:bg-red-500/10 hover:text-red-700"
               onClick={() => {
-                if (confirm(`Delete ${selectedItems.length} selected row(s) ? `)) {
+                if (confirm(t("ship.manifestDeleteSelectedConfirm", { count: selectedItems.length }))) {
                   void onBulkDelete(selectedItems);
                 }
               }}
             >
               <Trash2 className="mr-1 size-3.5" />
-              Delete {selectedItems.length} selected
+              {t("ship.manifestDeleteSelected", { count: selectedItems.length })}
             </Button>
           )}
         </div>
@@ -270,8 +267,8 @@ export function ManifestItemsTable({
       <div className="h-full overflow-auto custom-scrollbar" data-mode={mode}>
         <div className="min-w-[1340px] w-full">
           <div className="sticky top-0 z-20 grid grid-cols-[32px_60px_52px_86px_minmax(140px,1.5fr)_minmax(95px,1fr)_minmax(95px,1fr)_minmax(80px,1fr)_minmax(80px,1fr)_minmax(70px,.8fr)_48px_minmax(100px,1.2fr)_88px_84px] items-center gap-1 border-b bg-muted/95 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground shadow-sm backdrop-blur">
-            <Checkbox checked={allSelected ? true : someSelected ? "indeterminate" : false} onCheckedChange={(checked) => onSelectVisible(checked === true)} aria-label={allSelected ? "Deselect visible items" : "Select visible items"} />
-            <span>Actions</span><span>Src</span><span>Type</span><span>Product</span><span>Weapon type</span><span>Sub-type</span><span>Maker</span><span>Model</span><span>Caliber</span><span>Qty</span><span>Serials</span><span>Price</span><span>Status</span>
+            <Checkbox checked={allSelected ? true : someSelected ? "indeterminate" : false} onCheckedChange={(checked) => onSelectVisible(checked === true)} aria-label={t(allSelected ? "ship.manifestDeselectVisible" : "ship.manifestSelectVisible")} />
+            <span>{t("common.actions")}</span><span>{t("ship.manifestSourceShort")}</span><span>{t("common.type")}</span><span>{t("cost.product")}</span><span>{t("ship.manifestWeaponType")}</span><span>{t("ship.manifestSubtype")}</span><span>{t("ship.manifestMaker")}</span><span>{t("ship.manifestModel")}</span><span>{t("ship.manifestCaliber")}</span><span>{t("ship.manifestQuantityShort")}</span><span>{t("ship.serials")}</span><span>{t("common.price")}</span><span>{t("common.status")}</span>
           </div>
 
           {items.map((item) => {
@@ -291,18 +288,18 @@ export function ManifestItemsTable({
                       ? "border-s-2 border-s-amber-500 bg-amber-500/[0.10] hover:bg-amber-500/[0.14]"
                       : "hover:bg-muted/20",
               )}>
-                <Checkbox checked={selected.has(item.id)} onCheckedChange={(checked) => onToggleSelected(item.id, checked === true)} aria-label={`Select row ${item.rowIndex} `} />
+                <Checkbox checked={selected.has(item.id)} onCheckedChange={(checked) => onToggleSelected(item.id, checked === true)} aria-label={t("ship.manifestSelectRow", { number: item.rowIndex })} />
                 <div className="flex items-center">
-                  <Button size="icon" variant="ghost" className="size-7" onClick={() => openEdit(item)} aria-label={`Edit row ${item.rowIndex} `}><Pencil className="size-3.5" /></Button>
-                  {onDelete && <Button size="icon" variant="ghost" className="size-7 text-red-600 hover:bg-red-500/10 hover:text-red-700" onClick={() => void onDelete(item)} aria-label={`Delete row ${item.rowIndex} `}><Trash2 className="size-3.5" /></Button>}
+                  <Button size="icon" variant="ghost" className="size-7" onClick={() => openEdit(item)} aria-label={t("ship.manifestEditRow", { number: item.rowIndex })}><Pencil className="size-3.5" /></Button>
+                  {onDelete && <Button size="icon" variant="ghost" className="size-7 text-red-600 hover:bg-red-500/10 hover:text-red-700" onClick={() => void onDelete(item)} aria-label={t("ship.manifestDeleteRow", { number: item.rowIndex })}><Trash2 className="size-3.5" /></Button>}
                 </div>
                 <button type="button" onClick={() => openEdit(item)} className="min-w-0 truncate text-start font-mono text-[9px] text-muted-foreground hover:text-primary">#{item.rowIndex}</button>
                 <Select value={item.productType ?? "__none"} onValueChange={(value) => void onPatch(item, { productType: value === "__none" ? null : value as ManifestItemPatch["productType"] })}>
                   <SelectTrigger className="h-8 min-w-0 px-2 text-[10px]"><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="__none">Unmapped</SelectItem><SelectItem value="weapon">Weapon</SelectItem><SelectItem value="ammunition">Ammunition</SelectItem><SelectItem value="accessory">Accessory</SelectItem></SelectContent>
+                  <SelectContent><SelectItem value="__none">{t("ship.manifestUnmapped")}</SelectItem><SelectItem value="weapon">{t("ship.prodType.weapon")}</SelectItem><SelectItem value="ammunition">{t("ship.prodType.ammunition")}</SelectItem><SelectItem value="accessory">{t("ship.prodType.accessory")}</SelectItem></SelectContent>
                 </Select>
-                <button type="button" onClick={() => openEdit(item)} title={item.productName ?? "Open row"} className="min-h-8 min-w-0 truncate rounded-md px-1.5 py-1 text-start text-[10px] font-medium hover:bg-primary/5 hover:ring-1 hover:ring-primary/20">
-                  {item.productName || <span className="text-muted-foreground">Row {item.rowIndex}</span>}
+                <button type="button" onClick={() => openEdit(item)} title={item.productName ?? t("ship.manifestOpenRow")} className="min-h-8 min-w-0 truncate rounded-md px-1.5 py-1 text-start text-[10px] font-medium hover:bg-primary/5 hover:ring-1 hover:ring-primary/20">
+                  {item.productName || <span className="text-muted-foreground">{t("ship.manifestRow", { number: item.rowIndex })}</span>}
                 </button>
                 <InlineManifestCell value={item.weaponType} onCommit={(value) => onPatch(item, { weaponType: value as string | null })} />
                 <InlineManifestCell value={item.category} onCommit={(value) => onPatch(item, { category: value as string | null })} />
@@ -310,19 +307,19 @@ export function ManifestItemsTable({
                 <InlineManifestCell value={item.model} onCommit={(value) => onPatch(item, { model: value as string | null })} />
                 <InlineManifestCell value={item.caliber} onCommit={(value) => onPatch(item, { caliber: value as string | null })} />
                 <InlineManifestCell value={item.quantity} type="number" onCommit={(value) => onPatch(item, { quantity: value as number | null })} className="text-center tabular-nums" />
-                <button type="button" onClick={() => openEdit(item)} className="min-w-0 truncate rounded-md px-1.5 text-start font-mono text-[9px] hover:bg-primary/5">{item.serialNumbers.length ? `${item.serialNumbers.length} serials` : <span className="text-muted-foreground">No serials</span>}</button>
+                <button type="button" onClick={() => openEdit(item)} className="min-w-0 truncate rounded-md px-1.5 text-start font-mono text-[9px] hover:bg-primary/5">{item.serialNumbers.length ? t("ship.manifestSerialCount", { count: item.serialNumbers.length }) : <span className="text-muted-foreground">{t("ship.manifestNoSerials")}</span>}</button>
                 <div className="flex items-center gap-0.5"><InlineManifestCell value={item.unitPrice} type="number" onCommit={(value) => onPatch(item, { unitPrice: value as number | null })} className="tabular-nums" /><span className="text-[8px] text-muted-foreground">{item.currency ?? currency}</span></div>
-                <div className="min-w-0"><StatusBadge status={effectiveStatus} reasons={[...item.issues.map((issue) => `Row ${item.source.row ?? item.rowIndex}: ${issue.message} `), ...missingFields.map((field) => `Row ${item.source.row ?? item.rowIndex}: missing ${field} `)]} /></div>
+                <div className="min-w-0"><StatusBadge status={effectiveStatus} reasons={[...item.issues.map((issue) => t("ship.manifestRowIssue", { number: item.source.row ?? item.rowIndex, issue: issue.message })), ...missingFields.map((field) => t("ship.manifestRowMissing", { number: item.source.row ?? item.rowIndex, field }))]} /></div>
               </div>
             )
           })}
 
-          {items.length === 0 && <div className="p-12 text-center text-sm text-muted-foreground">No matching items</div>}
+          {items.length === 0 && <div className="p-12 text-center text-sm text-muted-foreground">{t("ship.manifestNoMatchingItems")}</div>}
 
           {onAddItem && (
             <div className="sticky start-0 flex w-full min-w-[1340px] justify-center border-b bg-muted/20 p-2">
               <Button type="button" size="sm" variant="outline" onClick={onAddItem}>
-                <Plus className="size-3.5" /> Add line item
+                <Plus className="size-3.5" /> {t("ship.addLineItem")}
               </Button>
             </div>
           )}
@@ -334,12 +331,12 @@ export function ManifestItemsTable({
           <DialogHeader className="shrink-0 border-b px-4 py-3">
             <DialogTitle className="flex items-center gap-2 text-sm">
               <Layers3 className="size-4 text-primary" />
-              {editingIds.length > 1 ? `Edit ${editingIds.length} selected rows` : `Edit row ${editing?.rowIndex ?? ""} `}
+              {editingIds.length > 1 ? t("ship.manifestEditSelectedRows", { count: editingIds.length }) : t("ship.manifestEditRow", { number: editing?.rowIndex ?? "" })}
             </DialogTitle>
             {editing && editingIds.length === 1 && (
               <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                 <FileSearch className="size-3.5" />
-                Source {editing.source.sheet ?? "document"} · row {editing.source.row ?? "—"}
+                {t("ship.manifestSourceRow", { source: editing.source.sheet ?? t("ship.manifestDocument"), row: editing.source.row ?? "—" })}
               </p>
             )}
           </DialogHeader>
@@ -348,24 +345,24 @@ export function ManifestItemsTable({
             <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 pb-6">
               {editingIds.length > 1 && (
                 <div className="mb-4 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
-                  Shared values are shown directly. Empty fields represent mixed values and remain unchanged unless you enter a new value.
+                  {t("ship.manifestBulkEditHelp")}
                 </div>
               )}
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <Card className="sm:col-span-2">
-                  <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-xs font-medium"><Layers3 className="size-3.5 text-primary" />Product identification</CardTitle></CardHeader>
+                  <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-xs font-medium"><Layers3 className="size-3.5 text-primary" />{t("ship.manifestProductIdentification")}</CardTitle></CardHeader>
                   <CardContent className="grid gap-3 sm:grid-cols-2">
                     <div>
-                      <Label className="text-xs font-medium">Product type</Label>
+                      <Label className="text-xs font-medium">{t("ship.manifestProductType")}</Label>
                       <Select value={draft.productType ?? "__none"} onValueChange={(value) => updateDraft({ productType: value === "__none" ? null : value as ManifestItemPatch["productType"] })}>
                         <SelectTrigger className={cn("mt-1 h-9 text-xs", missingClass("productType"))}><SelectValue /></SelectTrigger>
-                        <SelectContent><SelectItem value="__none">Unmapped</SelectItem><SelectItem value="weapon">Weapon</SelectItem><SelectItem value="ammunition">Ammunition</SelectItem><SelectItem value="accessory">Accessory</SelectItem></SelectContent>
+                        <SelectContent><SelectItem value="__none">{t("ship.manifestUnmapped")}</SelectItem><SelectItem value="weapon">{t("ship.prodType.weapon")}</SelectItem><SelectItem value="ammunition">{t("ship.prodType.ammunition")}</SelectItem><SelectItem value="accessory">{t("ship.prodType.accessory")}</SelectItem></SelectContent>
                       </Select>
                     </div>
                     <div>
                       <Label className="text-xs font-medium">
-                        {draft.productType === "ammunition" ? "Ammunition name" : draft.productType === "accessory" ? "Accessory name" : "Product name"}
+                        {draft.productType === "ammunition" ? t("ship.manifestAmmunitionName") : draft.productType === "accessory" ? t("ship.manifestAccessoryName") : t("ship.manifestProductName")}
                       </Label>
                       <Input className={cn("mt-1 h-9 text-xs", missingClass("productName"))} value={draft.productName ?? ""} onChange={(event) => updateDraft({ productName: event.target.value || null })} />
                     </div>
@@ -373,28 +370,28 @@ export function ManifestItemsTable({
                     {draft.productType === "weapon" && (
                       <>
                         <div>
-                          <Label className="text-xs font-medium">Weapon type</Label>
+                          <Label className="text-xs font-medium">{t("ship.manifestWeaponType")}</Label>
                           <SearchableCombobox
                             value={draft.weaponType ?? ""}
                             onValueChange={(value) => updateDraft({ weaponType: value || null, weaponTypeId: null, category: "", weaponSubtypeId: null })}
                             options={masterData.weaponTypeLabels}
-                            placeholder="Search or create weapon type..."
-                            searchPlaceholder="Type to search..."
+                            placeholder={t("ship.manifestSearchWeaponType")}
+                            searchPlaceholder={t("ship.manifestTypeToSearch")}
                             allowCreate
                             onCreateNew={(value) => { void masterData.createWeaponType(value); updateDraft({ weaponType: value, weaponTypeId: null, category: "", weaponSubtypeId: null }) }}
                             className={cn("mt-1 h-9 text-xs", missingClass("weaponTypeId"))}
                             invalid={missing.has("weaponTypeId")}
                           />
-                          <p className="mt-1 text-[10px] text-muted-foreground">Matched automatically and saved for future shipments.</p>
+                          <p className="mt-1 text-[10px] text-muted-foreground">{t("ship.manifestMatchedAutomatically")}</p>
                         </div>
                         <div>
-                          <Label className="text-xs font-medium">Subtype / category <span className="text-destructive">*</span></Label>
+                          <Label className="text-xs font-medium">{t("ship.manifestSubtypeCategory")} <span className="text-destructive">*</span></Label>
                           <SearchableCombobox
                             value={draft.category ?? ""}
                             onValueChange={(value) => updateDraft({ category: value || null, weaponSubtypeId: null })}
                             options={draft.weaponType ? masterData.getSubtypesFor(draft.weaponType) : []}
-                            placeholder="Search or create subtype..."
-                            searchPlaceholder="Type to search..."
+                            placeholder={t("ship.manifestSearchSubtype")}
+                            searchPlaceholder={t("ship.manifestTypeToSearch")}
                             allowCreate
                             onCreateNew={(value) => { if (draft.weaponType) void masterData.createWeaponSubtype(draft.weaponType, value); updateDraft({ category: value, weaponSubtypeId: null }) }}
                             className={cn("mt-1 h-9 text-xs", missingClass("weaponSubtypeId"))}
@@ -407,13 +404,13 @@ export function ManifestItemsTable({
                     {(draft.productType === "weapon" || draft.productType === "accessory") && (
                       <>
                         <div>
-                          <Label className="text-xs font-medium">{draft.productType === "accessory" ? "Accessory type" : "Manufacturer"}</Label>
+                          <Label className="text-xs font-medium">{draft.productType === "accessory" ? t("ship.manifestAccessoryType") : t("ship.manifestManufacturer")}</Label>
                           <SearchableCombobox
                             value={draft.manufacturer ?? ""}
                             onValueChange={(value) => updateDraft({ manufacturer: value || null, brandId: null, model: null, modelId: null })}
                             options={masterData.brandLabels}
-                            placeholder="Search or create brand..."
-                            searchPlaceholder="Type to search..."
+                            placeholder={t("ship.manifestSearchBrand")}
+                            searchPlaceholder={t("ship.manifestTypeToSearch")}
                             allowCreate
                             onCreateNew={(value) => { void masterData.createBrand(value); updateDraft({ manufacturer: value, brandId: null, model: null, modelId: null }) }}
                             className={cn("mt-1 h-9 text-xs", missingClass("brandId"))}
@@ -421,13 +418,13 @@ export function ManifestItemsTable({
                           />
                         </div>
                         <div>
-                          <Label className="text-xs font-medium">{draft.productType === "accessory" ? "Accessory name" : "Model"}</Label>
+                          <Label className="text-xs font-medium">{draft.productType === "accessory" ? t("ship.manifestAccessoryName") : t("ship.manifestModel")}</Label>
                           <SearchableCombobox
                             value={draft.model ?? ""}
                             onValueChange={(value) => updateDraft({ model: value || null, modelId: null })}
                             options={masterData.modelLabels}
-                            placeholder="Search or create model..."
-                            searchPlaceholder="Type to search..."
+                            placeholder={t("ship.manifestSearchModel")}
+                            searchPlaceholder={t("ship.manifestTypeToSearch")}
                             allowCreate
                             onCreateNew={(value) => { void masterData.createModel(value, draft.manufacturer ?? ""); updateDraft({ model: value, modelId: null }) }}
                             className={cn("mt-1 h-9 text-xs", missingClass("modelId"))}
@@ -439,13 +436,13 @@ export function ManifestItemsTable({
 
                     {draft.productType !== "accessory" && (
                       <div>
-                        <Label className="text-xs font-medium">Caliber</Label>
+                        <Label className="text-xs font-medium">{t("ship.manifestCaliber")}</Label>
                         <SearchableCombobox
                           value={draft.caliber ?? ""}
                           onValueChange={(value) => updateDraft({ caliber: value || null, caliberId: null })}
                           options={draft.productType === "weapon" && draft.weaponType && draft.category ? masterData.getCalibersFor(draft.weaponType, draft.category) : masterData.caliberLabels}
-                          placeholder="Search or create caliber..."
-                          searchPlaceholder="Type to search..."
+                          placeholder={t("ship.manifestSearchCaliber")}
+                          searchPlaceholder={t("ship.manifestTypeToSearch")}
                           allowCreate
                           onCreateNew={(value) => { void masterData.createCaliber(value); updateDraft({ caliber: value, caliberId: null }) }}
                           className={cn("mt-1 h-9 text-xs", missingClass("caliberId"))}
@@ -455,14 +452,14 @@ export function ManifestItemsTable({
                     )}
 
                     <div>
-                      <Label className="text-xs font-medium">Quantity</Label>
+                      <Label className="text-xs font-medium">{t("common.quantity")}</Label>
                       <Input type="number" min={1} className={cn("mt-1 h-9 text-xs", missingClass("quantity"))} value={draft.quantity ?? ""} onChange={(event) => updateDraft({ quantity: event.target.value ? Number(event.target.value) : null })} />
                     </div>
                   </CardContent>
                 </Card>
 
                 <Card className={cn("sm:col-span-2", missing.has("unitPrice") && "border-amber-500 bg-amber-500/[0.03] ring-1 ring-amber-500/20")}>
-                  <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-xs font-medium"><DollarSign className="size-3.5 text-primary" />Pricing & margins</CardTitle></CardHeader>
+                  <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-xs font-medium"><DollarSign className="size-3.5 text-primary" />{t("ship.manifestPricingMargins")}</CardTitle></CardHeader>
                   <CardContent>
                     <PricingSection
                       purchasePrice={draft.unitPrice == null ? "" : String(draft.unitPrice)}
@@ -498,7 +495,7 @@ export function ManifestItemsTable({
 
                 {draft.productType === "weapon" && editingIds.length === 1 && (
                   <Card className={cn("sm:col-span-2", missing.has("serialNumbers") && "border-amber-500 bg-amber-500/[0.03] ring-1 ring-amber-500/20")}>
-                    <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-xs font-medium"><Hash className="size-3.5 text-primary" />Serial numbers — one per line</CardTitle></CardHeader>
+                    <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-xs font-medium"><Hash className="size-3.5 text-primary" />{t("ship.manifestSerialsOnePerLine")}</CardTitle></CardHeader>
                     <CardContent>
                       <Textarea
                         className={cn("min-h-40 font-mono text-xs", missingClass("serialNumbers"))}
@@ -512,12 +509,12 @@ export function ManifestItemsTable({
                 )}
 
                 <Card className="sm:col-span-2">
-                  <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-xs font-medium"><MapPin className="size-3.5 text-primary" />Storage location</CardTitle></CardHeader>
+                  <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-xs font-medium"><MapPin className="size-3.5 text-primary" />{t("ship.manifestStorageLocation")}</CardTitle></CardHeader>
                   <CardContent>
                     <Select value={draft.storageLocationId ?? "__none"} onValueChange={(value) => updateDraft({ storageLocationId: value === "__none" ? null : value })}>
                       <SelectTrigger className={cn("h-9 text-xs", missingClass("storageLocationId"))}><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="__none">Select</SelectItem>
+                        <SelectItem value="__none">{t("common.select")}</SelectItem>
                         {masterData.storageLocations.map((row) => {
                           const warehouse = masterData.warehouses.find((candidate) => candidate.id === row.warehouse_id)
                           return <SelectItem key={row.id} value={row.id}>{warehouse?.label ?? row.warehouse_id} · {row.shelf}/{row.bin}</SelectItem>
@@ -528,7 +525,7 @@ export function ManifestItemsTable({
                 </Card>
 
                 <Card className="sm:col-span-2">
-                  <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-xs font-medium"><FileSearch className="size-3.5 text-primary" />Original source data</CardTitle></CardHeader>
+                  <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-xs font-medium"><FileSearch className="size-3.5 text-primary" />{t("ship.manifestOriginalSource")}</CardTitle></CardHeader>
                   <CardContent>
                     <p className="whitespace-pre-wrap break-all text-xs text-muted-foreground">{editing.source.text ?? JSON.stringify(editing.rawData)}</p>
                   </CardContent>
@@ -538,10 +535,10 @@ export function ManifestItemsTable({
           )}
 
           <DialogFooter className="shrink-0 border-t bg-background px-4 pt-3">
-            <Button variant="outline" onClick={closeEdit}>Cancel</Button>
+            <Button variant="outline" onClick={closeEdit}>{t("common.cancel")}</Button>
             <Button disabled={saving} onClick={() => void saveEdit().catch(() => undefined)}>
               {saving && <Loader2 className="size-4 animate-spin" />}
-              {editingIds.length > 1 ? `Apply to ${editingIds.length} rows` : "Save and revalidate"}
+              {editingIds.length > 1 ? t("ship.manifestApplyRows", { count: editingIds.length }) : t("ship.manifestSaveRevalidate")}
             </Button>
           </DialogFooter>
         </DialogContent>

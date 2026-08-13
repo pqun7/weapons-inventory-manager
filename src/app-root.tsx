@@ -5,6 +5,7 @@ import type { AppProps } from "./App.tsx"
 import { useSupabaseAuth } from "@/hooks/use-supabase-auth"
 import { AuthScreen } from "@/components/auth-screen"
 import { useSupabaseSync } from "@/hooks/use-supabase-sync"
+import { translations } from "@/lib/i18n/translations"
 
 type Language = "en" | "ar"
 
@@ -45,6 +46,8 @@ export function AppRoot() {
     const userPreferences = useStore((state) => state.userPreferences)
     const updateSettings = useStore((state) => state.updateSettings)
     const updateUserPreferences = useStore((state) => state.updateUserPreferences)
+    const lang = (settings.appLanguage ?? "en") as Language
+    const t = (key: string) => translations[lang][key] ?? translations.en[key] ?? key
 
     useEffect(() => {
         let cancelled = false
@@ -69,7 +72,7 @@ export function AppRoot() {
             <div className="flex h-screen items-center justify-center bg-background text-foreground">
                 <div className="space-y-2 text-center">
                     <div className="mx-auto size-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
-                    <p className="text-sm font-medium">Loading application...</p>
+                    <p className="text-sm font-medium">{t("app.loadingApplication")}</p>
                 </div>
             </div>
         )
@@ -78,6 +81,7 @@ export function AppRoot() {
     if (!auth.session) {
         return (
             <AuthScreen
+                lang={lang}
                 error={auth.error}
                 onResolve={auth.resolveAccount}
                 onSignIn={auth.signIn}
@@ -90,7 +94,7 @@ export function AppRoot() {
         return (
             <div className="flex h-screen items-center justify-center">
                 <div className="text-center space-y-2">
-                    <p className="text-destructive font-medium">Database initialization failed</p>
+                    <p className="text-destructive font-medium">{t("app.databaseInitFailed")}</p>
                     <p className="text-muted-foreground text-sm">{error}</p>
                 </div>
             </div>
@@ -102,14 +106,13 @@ export function AppRoot() {
             <div className="flex h-screen items-center justify-center bg-background text-foreground">
                 <div className="space-y-2 text-center">
                     <div className="mx-auto size-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
-                    <p className="text-sm font-medium">Loading inventory...</p>
+                    <p className="text-sm font-medium">{t("app.loadingInventory")}</p>
                 </div>
             </div>
         )
     }
 
     const { App } = modules
-    const lang = (settings.appLanguage ?? "en") as Language
     const handleLangChange = (newLang: Language) => {
         updateSettings({ appLanguage: newLang })
     }

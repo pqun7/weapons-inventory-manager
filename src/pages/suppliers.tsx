@@ -154,7 +154,7 @@ export function SuppliersPage() {
             <>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">{selected.name}</CardTitle>
-                <p className="text-[10px] text-muted-foreground">{selected.id} — Added {formatDate(selected.dateAdded)}</p>
+                <p className="text-[10px] text-muted-foreground">{selected.id} — {t("sup.addedOn")} {formatDate(selected.dateAdded)}</p>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -174,7 +174,7 @@ export function SuppliersPage() {
 
                 {selectedShipments.length > 0 && (
                   <div>
-                    <h4 className="mb-1.5 flex items-center gap-1.5 text-xs font-medium"><Truck className="size-3.5" /> Shipments ({selectedShipments.length})</h4>
+                    <h4 className="mb-1.5 flex items-center gap-1.5 text-xs font-medium"><Truck className="size-3.5" /> {t("nav.shipments")} ({selectedShipments.length})</h4>
                     <div className="flex flex-wrap gap-1.5">
                       {selectedShipments.map((sh) => (
                         <Badge key={sh.id} variant="outline" className="cursor-pointer text-[10px]" onClick={() => navigate("shipments")}>

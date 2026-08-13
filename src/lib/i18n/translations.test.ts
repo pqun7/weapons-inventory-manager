@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { ar, en } from "@/lib/i18n/translations"
 import { readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
+import * as ts from "typescript"
 
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -44,9 +45,58 @@ describe("translation catalog integrity", () => {
       for (const file of sourceFiles(root)) {
         const source = readFileSync(file, "utf8")
         for (const match of source.matchAll(/\bt\(\s*["']([^"'{}$]+)["']/g)) usedKeys.add(match[1])
+        for (const match of source.matchAll(/\b(?:titleKey|descriptionKey|actionKey)\s*:\s*["']([^"']+)["']/g)) usedKeys.add(match[1])
       }
     }
     const missing = [...usedKeys].filter((key) => !(key in en) || !(key in ar)).sort()
     expect(missing).toEqual([])
+  })
+
+  it("defines the translated dimensions used by the dashboard", () => {
+    const keys = [
+      ...["today", "week", "month", "quarter", "year", "custom"].map((value) => `dash.period.${value}`),
+      ...["weapon", "accessory", "ammunition"].map((value) => `dash.category.${value}`),
+      ...["active", "low", "out", "slow", "dead"].map((value) => `dash.inventory.status.${value}`),
+      ...["pending", "inTransit", "delayed"].map((value) => `dash.shipments.${value}`),
+      ...["high", "attention", "opportunity", "info"].map((value) => `dash.priority.${value}`),
+      "dash.compare.increase", "dash.compare.decrease",
+    ]
+    expect(keys.filter((key) => !(key in en) || !(key in ar))).toEqual([])
+  })
+
+  it("keeps visible feature UI copy behind the translation catalog", () => {
+    const visibleAttributes = new Set(["placeholder", "title", "aria-label", "alt", "heading", "description"])
+    const technicalCopy = new Set(["EUR", "Euro", "KB", "SHP-YYYY0001", "SHA-256:", "&nbsp;"])
+    const untranslated: string[] = []
+
+    for (const root of ["src/pages", "src/components"]) {
+      for (const file of sourceFiles(root)) {
+        if (file.replaceAll("\\", "/").includes("/components/ui/")) continue
+        const sourceText = readFileSync(file, "utf8")
+        const source = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+
+        const record = (node: ts.Node, value: string) => {
+          const copy = value.replace(/\s+/g, " ").trim()
+          if (!/[A-Za-z]{2}/.test(copy) || technicalCopy.has(copy)) return
+          const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
+          untranslated.push(`${file}:${line}: ${copy}`)
+        }
+        const visit = (node: ts.Node) => {
+          if (ts.isJsxText(node)) record(node, node.text)
+          if (ts.isJsxAttribute(node) && visibleAttributes.has(node.name.getText(source)) && node.initializer && ts.isStringLiteral(node.initializer)) {
+            record(node, node.initializer.text)
+          }
+          if (ts.isJsxExpression(node) && node.expression && ts.isStringLiteral(node.expression)) record(node, node.expression.text)
+          if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.expression.getText(source) === "toast") {
+            const message = node.arguments[0]
+            if (message && ts.isStringLiteral(message)) record(message, message.text)
+          }
+          ts.forEachChild(node, visit)
+        }
+        visit(source)
+      }
+    }
+
+    expect(untranslated).toEqual([])
   })
 })

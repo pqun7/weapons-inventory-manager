@@ -177,16 +177,27 @@ export async function extractShipmentManifest(input: ManifestUploadInput, progre
   if ([".xlsx", ".xls", ".csv"].includes(validated.extension)) native = await parseSpreadsheetBufferAsync(validated.bytes)
   progress?.({ stage: "extracting", percent: 38, message: "Extracting tables and text" })
   const heuristicItems = native ? heuristicSpreadsheetItems(native) : []
-  progress?.({ stage: "analyzing", percent: 55, message: "Analyzing document semantics" })
+  const aiEnabled = input.aiEnabled !== false
+  progress?.({
+    stage: "analyzing",
+    percent: 55,
+    message: aiEnabled ? "Analyzing document semantics with AI" : "Analyzing document locally",
+  })
   let ai: Awaited<ReturnType<typeof analyzeManifestWithAi>> = null
   let processingWarning: string | null = null
-  try {
-    ai = await analyzeManifestWithAi({ fileName: input.fileName, mimeType: validated.mimeType, bytes: validated.bytes, nativeExtraction: native, nativeItems: heuristicItems })
-  } catch (error) {
-    processingWarning = userFacingAiError(error)
-    if (!native) throw new Error(processingWarning)
+  if (aiEnabled) {
+    try {
+      ai = await analyzeManifestWithAi({ fileName: input.fileName, mimeType: validated.mimeType, bytes: validated.bytes, nativeExtraction: native, nativeItems: heuristicItems })
+    } catch (error) {
+      processingWarning = userFacingAiError(error)
+      if (!native) throw new Error(processingWarning)
+    }
   }
-  if (!ai && !native) throw new Error("AI extraction is required for PDF and image manifests")
+  if (!ai && !native) {
+    throw new Error(aiEnabled
+      ? "AI extraction is required for PDF and image manifests"
+      : "Local-only analysis supports XLSX, XLS, and CSV manifests. Enable AI analysis for PDF and image files.")
+  }
   const metadata = mergeMetadata(nativeMetadata(native), ai?.shipment)
   const items = mergeExtractedItems(heuristicItems, ai?.items ?? []).map(canonicalizeProductFields)
   if (items.length === 0) throw new Error("No shipment items could be extracted from this document")

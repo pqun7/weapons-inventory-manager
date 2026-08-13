@@ -81,6 +81,7 @@ type RpcName =
   | "admin_users_action"
   | "resolve_account"
   | "claim_account"
+  | "dashboard_analytics"
 
 type GenericRpc = {
   Args: Record<string, Json | undefined>
