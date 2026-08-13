@@ -147,7 +147,7 @@
     "concurrently": "^9.2.4",
     "cross-env": "^7.0.3",
     "electron": "^32.3.3",
-    "electron-builder": "^25.1.8",
+    "electron-builder": "^26.15.3",
     "electronmon": "^2.0.4",
     "jsdom": "^30.0.1",
     "nodemon": "^3.1.14",
