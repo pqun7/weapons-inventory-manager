@@ -12,7 +12,6 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
-import { Separator } from "@/components/ui/separator"
 import {
   useReactTable,
   getCoreRowModel,
@@ -257,7 +256,7 @@ export function FinancialsPage() {
           </div>
         </div>
 
-        {/* 👇 هنا بالضبط: أزرار الفلتر السريع + شريط الفلاتر المحفوظة */}
+        {/* Quick filter chips + saved filters bar */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1">
             {quickFilterChips.map((chip) => (
@@ -270,7 +269,7 @@ export function FinancialsPage() {
                   chip.key === "overdue" && quickFilter === chip.key && "bg-status-sold text-status-sold-fg hover:bg-status-sold/90",
                   chip.key === "overdue" && quickFilter !== chip.key && "text-status-sold border-status-sold/40 hover:bg-status-sold/10",
                 )}
-                onClick={() => setQuickFilterState(chip.key)}
+                onClick={() => setQuickFilter(chip.key)}  // ✅ استخدم setQuickFilter بدل setQuickFilterState
               >
                 {chip.label}
               </Button>
@@ -295,7 +294,7 @@ export function FinancialsPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* محتوى التبويب */}
+        {/* Tab content */}
         <TabsContent value="receivable" className="mt-0">
           <FinancialGrid
             invoices={filteredInvoices}
@@ -325,170 +324,7 @@ export function FinancialsPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Invoice Detail Dialog – main dialog, no nested dialogs inside */}
-      <Dialog open={!!selectedInvoiceId} onOpenChange={(open) => { if (!open) setSelectedInvoiceId(null); }}>
-        <DialogContent className="max-w-2xl">
-          {selectedInvoice && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-base">
-                  <Receipt className="size-4" />
-                  <span className="font-mono">{selectedInvoice.invoiceNumber}</span>
-                  <Badge variant="outline" className={cn("text-[10px]", invoiceStatusClass(selectedInvoice.status))}>
-                    {t(`status.${selectedInvoice.status}`)}
-                  </Badge>
-                </DialogTitle>
-                <DialogDescription className="text-xs">
-                  {selectedInvoice.customerName} — {formatDate(selectedInvoice.date)}
-                </DialogDescription>
-              </DialogHeader>
-
-              {/* Financial Summary Cards */}
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <StatBox label={t("fin.total")} value={fmtAmount(selectedInvoice, "totalOriginal")} />
-                <StatBox label={t("fin.invoiceType")} value={fmtAmount(selectedInvoice, "totalNegotiated")} />
-                <StatBox label={t("fin.paid")} value={fmtAmount(selectedInvoice, "totalPaid")} color="text-status-returned" />
-                <StatBox label={t("fin.balance")} value={fmtAmount(selectedInvoice, "balance")} color={selectedInvoice.balance > 0 ? "text-status-sold" : "text-status-returned"} />
-              </div>
-
-              {/* Due Date & Lifecycle */}
-              <div className="grid gap-2 rounded-md border p-3 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">{t("fin.newDueDate")}</span>
-                  <span className="font-medium">
-                    {formatDate(selectedInvoice.dueDate)} (
-                    {daysUntilDue(selectedInvoice.dueDate) >= 0
-                      ? `${daysUntilDue(selectedInvoice.dueDate)}d left`
-                      : `${Math.abs(daysUntilDue(selectedInvoice.dueDate))}d overdue`})
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">{t("common.status")}</span>
-                  <span className="font-medium flex items-center gap-1">
-                    <LifecycleIcon
-                      status={
-                        selectedInvoice.balance <= 0
-                          ? "Paid"
-                          : selectedInvoice.status === "Overdue"
-                            ? "Overdue"
-                            : "Pending"
-                      }
-                    />
-                    {selectedInvoice.balance <= 0
-                      ? t("status.Paid")
-                      : selectedInvoice.status === "Overdue"
-                        ? t("status.Overdue")
-                        : t("status.Pending")}
-                  </span>
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* Financial Lifecycle Timeline */}
-              <div>
-                <h4 className="mb-2 text-xs font-semibold">{t("fin.payments")}</h4>
-                <div className="flex flex-col gap-2">
-                  <TimelineEntry
-                    icon={<Receipt className="size-3" />}
-                    label={t("fin.invoiceNumber")}
-                    date={selectedInvoice.date}
-                    detail={fmtAmount(selectedInvoice, "totalNegotiated")}
-                  />
-                  {invoicePayments.map((p) => (
-                    <TimelineEntry
-                      key={p.id}
-                      icon={<DollarSign className="size-3" />}
-                      label={`${t("fin.registerPayment")} (${t(paymentMethodKey[p.method])})`}
-                      date={p.date}
-                      detail={`${formatPayment(p, "original")} → ${formatPayment(p, "accounting")} — ${p.employee}`}
-                    />
-                  ))}
-                  {selectedInvoice.status === "Paid" && (
-                    <TimelineEntry
-                      icon={<Check className="size-3" />}
-                      label={t("status.Paid")}
-                      date={selectedInvoice.date}
-                      detail={t("fin.paid")}
-                      color="text-status-returned"
-                    />
-                  )}
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* Payment Sub‑Ledger */}
-              <div>
-                <h4 className="mb-1.5 text-xs font-semibold">{t("fin.payments")} ({invoicePayments.length})</h4>
-                {invoicePayments.length > 0 ? (
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-muted/50">
-                          <TableHead className="h-7 text-[10px]">{t("common.date")}</TableHead>
-                          <TableHead className="h-7 text-[10px]">{t("fin.amount")}</TableHead>
-                          <TableHead className="h-7 text-[10px]">{t("fin.paymentMethod")}</TableHead>
-                          <TableHead className="h-7 text-[10px]">{t("common.name")}</TableHead>
-                          <TableHead className="h-7 text-[10px]">{t("common.notes")}</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {invoicePayments.map((p) => (
-                          <TableRow key={p.id}>
-                            <TableCell className="py-1 text-[10px]">{formatDateShort(p.date)}</TableCell>
-                            <TableCell className="py-1 text-[10px] font-medium tabular-nums">
-                              <div>{formatPayment(p, "original")}</div>
-                              {p.currency !== p.accountingCurrency && (
-                                <div className="text-[9px] font-normal text-muted-foreground">
-                                  ≈ {formatPayment(p, "accounting")} · {t("fin.exchangeRate")} {p.exchangeRate} · {p.exchangeRateDate ? formatDateShort(p.exchangeRateDate) : "—"}
-                                </div>
-                              )}
-                            </TableCell>
-                            <TableCell className="py-1 text-[10px]">{t(paymentMethodKey[p.method])}</TableCell>
-                            <TableCell className="py-1 text-[10px]">{p.employee}</TableCell>
-                            <TableCell className="py-1 text-[10px] text-muted-foreground">{p.notes}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                ) : (
-                  <span className="text-[11px] text-muted-foreground">{t("fin.noPayments")}</span>
-                )}
-              </div>
-
-              {/* Action Buttons (only when invoice is active) */}
-              {selectedInvoice.balance > 0 && !selectedInvoice.voided && (
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <Button size="sm" className="h-8 gap-1.5" onClick={() => setPayOpen(true)}>
-                    <DollarSign className="size-3.5" />
-                    {t("fin.registerPayment")}
-                  </Button>
-
-                  {currentUser.permissions.canExtendDueDates && (
-                    <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setExtendOpen(true)}>
-                      <Calendar className="size-3.5" />
-                      {t("fin.extendDueDate")}
-                    </Button>
-                  )}
-
-                  {currentUser.permissions.canVoidInvoices && (
-                    <Button size="sm" variant="outline" className="h-8 gap-1.5 text-status-sold" onClick={() => setVoidConfirmOpen(true)}>
-                      <X className="size-3.5" />
-                      {t("fin.voidInvoice")}
-                    </Button>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Separate dialogs for actions – avoid nesting inside main dialog */}
-      {/* Register Payment Dialog */}
-      {/* Invoice Detail Dialog – reorganized with internal tabs */}
+      {/* Invoice Detail Dialog – reorganized with internal tabs (ONLY ONE) */}
       <Dialog
         open={!!selectedInvoiceId}
         onOpenChange={(open) => {
@@ -792,7 +628,6 @@ function FinancialGrid({
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
   const [denseMode, setDenseMode] = useState(false)
 
-  // تعريف الأعمدة مع دعم الفرز والعرض الاختياري
   const columns = useMemo<ColumnDef<Invoice>[]>(
     () => [
       {
@@ -808,7 +643,8 @@ function FinancialGrid({
         accessorKey: "customerName",
         header: t("common.name"),
         cell: ({ row }) => (
-          <span className={cn("text-[10px]", row.original.status === "Overdue" && "font-medium text-status-sold")}>            {row.original.customerName}
+          <span className={cn("text-[10px]", row.original.status === "Overdue" && "font-medium text-status-sold")}>
+            {row.original.customerName}
           </span>
         ),
         size: 150,
@@ -911,8 +747,7 @@ function FinancialGrid({
         <StatBox label={t("fin.overdueBalance")} value={overdueDisplay} color="text-red-500" />
       </div>
 
-
-      {/* شريط البحث + الفلاتر المحفوظة */}
+      {/* شريط البحث */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -925,14 +760,13 @@ function FinancialGrid({
         </div>
         <SavedFiltersBar
           entityType="financials"
-          currentFilterState={{}} // سنضبطها لاحقًا
+          currentFilterState={{}}
           onLoadFilter={() => { }}
         />
       </div>
 
-      {/* شريط الفلاتر (مثال – يمكن تخصيصه) */}
+      {/* شريط الفلاتر */}
       <div className="flex items-center gap-2 flex-wrap">
-        {/* هنا يمكن إضافة أزرار فلاتر سريعة مثل الموجودة في الأعلى، وفلتر النوع، التاريخ، إلخ. */}
         <Button
           variant="outline"
           size="sm"
@@ -944,7 +778,7 @@ function FinancialGrid({
         </Button>
       </div>
 
-      {/* أدوات الجدول (إظهار الأعمدة + الكثافة) */}
+      {/* أدوات الجدول */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1">
           <DropdownMenu>
@@ -1036,7 +870,7 @@ function FinancialGrid({
                   className={cn(
                     "cursor-pointer border-b hover:bg-accent/50",
                     selectedInvoiceId === row.original.id && "bg-muted",
-                    row.original.status === "Overdue" && "bg-status-sold/5", // خلفية خفيفة جداً
+                    row.original.status === "Overdue" && "bg-status-sold/5",
                   )}
                   onClick={() => onSelect(row.original.id)}
                 >

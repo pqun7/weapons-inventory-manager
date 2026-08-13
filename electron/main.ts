@@ -5,6 +5,7 @@ import { performance } from "node:perf_hooks"
 import { fileURLToPath } from "node:url"
 import fs from "node:fs";
 import { registerManifestParserHandler } from "./ipc/manifest-parser-handler.js"
+import { initializeAutoUpdater } from "./updater.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -140,6 +141,9 @@ app.whenReady().then(async () => {
 
     createWindow()
     logBoot("window:created")
+
+    initializeAutoUpdater(() => mainWindow)
+    logBoot("auto-updater:initialized")
   } catch (err) {
     console.error("main: startup failed", err)
     app.quit()

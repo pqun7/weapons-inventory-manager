@@ -1,0 +1,80 @@
+name: Release Windows application
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-windows:
+    name: Build and publish Windows release
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify tag matches package version
+        shell: pwsh
+        run: |
+          $packageVersion = node -p "require('./package.json').version"
+          $tagVersion = "${{ github.ref_name }}" -replace '^v', ''
+          if ($packageVersion -ne $tagVersion) {
+            throw "Tag version $tagVersion does not match package.json version $packageVersion"
+          }
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Verify release credential
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
+            throw "Repository secret GH_TOKEN is not configured"
+          }
+
+      - name: Build, package, and publish release
+        run: npm run electron:publish:win
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Upload installer artifacts to workflow run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: armory-store-windows-${{ github.ref_name }}
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
+          if-no-files-found: warn
+          retention-days: 14

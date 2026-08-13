@@ -6,23 +6,60 @@
   "type": "module",
   "description": "Armory Store Management System - Desktop ERP for weapons retailers",
   "author": "Armory Store",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pqun7/weapons-inventory-manager.git"
+  },
   "main": "dist-electron/electron/main.js",
   "build": {
     "appId": "com.armory.store",
     "productName": "Armory Store",
+    "copyright": "Copyright © 2026 Armory Store",
     "directories": {
       "output": "release"
     },
     "files": [
-      "dist/**",
-      "dist-electron/**",
-      "package.json"
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json",
+      "!**/*.map",
+      "!**/*.test.*",
+      "!**/*.spec.*"
     ],
     "asar": true,
+    "compression": "maximum",
+    "electronUpdaterCompatibility": ">=2.16",
+    "generateUpdatesFilesForAllChannels": false,
     "win": {
-      "target": "nsis",
-      "signAndEditExecutable": false
-    }
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Armory-Store-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Armory Store",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "pqun7",
+        "repo": "weapons-inventory-manager",
+        "releaseType": "release",
+        "private": false
+      }
+    ]
   },
   "engines": {
     "node": ">=20.0.0"
@@ -42,8 +79,10 @@
     "test:supabase": "vitest run src/lib/supabase",
     "supabase:schema:apply": "python scripts/apply-supabase-migrations.py",
     "supabase:verify-auth": "python scripts/verify-supabase-auth.py",
-    "electron:build": "npm run build:electron && electron-builder",
-    "electron:build:win": "npm run build:electron && electron-builder --win",
+    "electron:pack": "npm run build:electron && electron-builder --dir",
+    "electron:build": "npm run build:electron && electron-builder --publish never",
+    "electron:build:win": "npm run build:electron && electron-builder --win nsis --publish never",
+    "electron:publish:win": "npm run build:electron && electron-builder --win nsis --publish always",
     "electron:build:mac": "npm run build:electron && electron-builder --mac",
     "electron:build:linux": "npm run build:electron && electron-builder --linux",
     "verify:supabase": "python scripts/verify-supabase-auth.py",
@@ -62,6 +101,8 @@
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
     "decimal.js": "^10.6.0",
+    "electron-log": "^5.4.4",
+    "electron-updater": "^6.8.9",
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^1.6.0",

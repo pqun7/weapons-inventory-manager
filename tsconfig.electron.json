@@ -36,6 +36,7 @@
   },
   "include": [
     "electron/main.ts",
+    "electron/updater.ts",
     "electron/preload.cts",
     "electron/ipc/manifest-parser-handler.ts",
     "electron/services/manifest-extraction-service.ts",
