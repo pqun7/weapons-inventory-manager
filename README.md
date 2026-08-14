@@ -27,7 +27,7 @@ Use this option on a trusted device owned by the store administrator:
    - **Project URL** from the **Connect** dialog or **Settings → API**.
    - **Publishable key** from **Settings → API Keys**. The legacy `anon` key may be used only for compatibility.
    - **Secret key** from **Settings → API Keys**. The legacy `service_role` key may be used only for compatibility.
-   - **PostgreSQL connection string** from the **Connect** dialog. Use a direct connection or the Session pooler on port `5432`, and make sure it includes `sslmode=require`. Do not use the Transaction pooler on port `6543` during setup.
+   - **PostgreSQL connection string** from the **Connect** dialog. Use a direct connection or the Session pooler on port `5432`. The application upgrades it to `sslmode=verify-full` and verifies it with the pinned Supabase CA. Do not use the Transaction pooler on port `6543` during setup.
 3. Start the application and select **I am the owner of a new store**.
 4. Enter the store name, Supabase values, the owner's name and email address, and a strong password.
 5. Accept the security warning, then click **Initialize Store**. Do not close the application during this stage.
@@ -125,10 +125,21 @@ A short, discoverable store code cannot be provided without operating a central 
    ```env
    VITE_SUPABASE_URL=https://PROJECT_REF.supabase.co
    VITE_SUPABASE_ANON_KEY=your-public-anon-or-publishable-key
-   SUPABASE_DB_URL=postgresql://postgres:ENCODED_PASSWORD@HOST:5432/postgres?sslmode=require
+   SUPABASE_DB_URL=postgresql://postgres:ENCODED_PASSWORD@HOST:5432/postgres?sslmode=verify-full
    ```
 
-   Omit both `VITE_` values to exercise the packaged first-run connection flow. Only public URL/key values may use the `VITE_` prefix. Database passwords, secret/service-role keys, administrator passwords, and AI keys must never be bundled into a renderer build.
+   Store these values only in the gitignored `.env.local` file and restrict access
+   to the operating-system account running the maintenance command. Never commit,
+   paste into issue reports, or prefix a database password, Secret/service-role key,
+   administrator password, or AI key with `VITE_`.
+
+   Omit both `VITE_` values to exercise the packaged first-run connection flow.
+   The packaged application is safer for store owners: database credentials and
+   the owner password remain in memory for the one-time setup and are not written
+   to device files or logs. The server Secret key is stored encrypted inside the
+   store owner's Supabase Vault, while only the public project connection and the
+   required authenticated session are retained on the device. PostgreSQL setup
+   uses the pinned Supabase CA with full certificate and hostname verification.
 
 3. Apply the database migrations.
 

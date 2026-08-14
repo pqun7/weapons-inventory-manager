@@ -1,4 +1,5 @@
 import { readFileSync, readdirSync, statSync } from "node:fs"
+import { X509Certificate } from "node:crypto"
 import { join, resolve } from "node:path"
 import { describe, expect, it } from "vitest"
 
@@ -47,6 +48,19 @@ describe("Supabase security boundary", () => {
     const buildConfig = read("rsbuild.config.ts")
     expect(buildConfig).toContain('process.env.ARMORY_GENERIC_BUILD === "true"')
     expect(buildConfig).toMatch(/filter\(\(\[key\]\) => !key\.includes\("SUPABASE"\)\)/)
+  })
+
+  it("pins the Supabase database CA and keeps full TLS verification enabled", () => {
+    const setupService = read("electron/services/store-installation-service.ts")
+    const pem = setupService.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/)?.[0]
+    expect(pem).toBeDefined()
+    const certificate = new X509Certificate(pem!)
+    expect(certificate.subject).toContain("CN=Supabase Root 2021 CA")
+    expect(certificate.issuer).toContain("CN=Supabase Root 2021 CA")
+    expect(setupService).toContain("ca: SUPABASE_DATABASE_CA_CERTIFICATE")
+    expect(setupService).toContain("rejectUnauthorized: true")
+    expect(setupService).not.toContain("rejectUnauthorized: false")
+    expect(setupService).toContain('parsed.searchParams.set("sslmode", "verify-full")')
   })
 
   it("exposes only non-sensitive installation metadata and keeps the installation table behind RLS", () => {
