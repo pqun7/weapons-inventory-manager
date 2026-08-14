@@ -21,6 +21,9 @@ import {
 const CONFIG_FILENAME = "store-connection.json"
 const MIGRATION_LOCK_ID = "armory-store-schema-migrations"
 const SETUP_LOCK_ID = "armory-store-initial-setup"
+const DATABASE_CONNECTION_TIMEOUT_MS = 90_000
+const DATABASE_QUERY_TIMEOUT_MS = 300_000
+const STORE_VERIFICATION_TIMEOUT_MS = 45_000
 
 // Supabase Postgres endpoints are signed by this private CA, which is not part
 // of the operating-system trust store. Pinning the provider CA keeps hostname
@@ -162,8 +165,10 @@ async function connectDatabase(databaseUrl: string): Promise<Client> {
       ca: SUPABASE_DATABASE_CA_CERTIFICATE,
       rejectUnauthorized: true,
     },
-    connectionTimeoutMillis: 15_000,
-    query_timeout: 60_000,
+    connectionTimeoutMillis: DATABASE_CONNECTION_TIMEOUT_MS,
+    query_timeout: DATABASE_QUERY_TIMEOUT_MS,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
     application_name: "armory-store-setup",
   })
   await client.connect()
@@ -308,7 +313,7 @@ export async function verifyStoreConnection(
       method: "POST",
       headers,
       body: "{}",
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(STORE_VERIFICATION_TIMEOUT_MS),
     })
   } catch {
     throw new Error("Could not reach the Supabase project. Check the URL and internet connection")
@@ -341,18 +346,23 @@ export async function initializeStore(
   rawInput: InitializeStoreInput,
   onProgress: (stage: StoreSetupProgressStage) => void,
 ): Promise<StoreSetupResult> {
+  let currentStage: StoreSetupProgressStage = "validating"
+  const reportProgress = (stage: StoreSetupProgressStage) => {
+    currentStage = stage
+    onProgress(stage)
+  }
   try {
-    onProgress("validating")
+    reportProgress("validating")
     const input = normalizeSetupInput(rawInput)
-    onProgress("migrating")
+    reportProgress("migrating")
     await applyMigrations(input.databaseUrl)
-    onProgress("configuring")
+    reportProgress("configuring")
     await configureServerCredentials(input)
-    onProgress("creating-owner")
+    reportProgress("creating-owner")
     await createPrimaryOwner(input)
-    onProgress("verifying")
+    reportProgress("verifying")
     const connection = await verifyStoreConnection(input.supabaseUrl, input.publishableKey)
-    onProgress("saving")
+    reportProgress("saving")
     saveStoredConnection(connection)
     return {
       connection,
@@ -360,7 +370,11 @@ export async function initializeStore(
       ownerIdentifier: input.ownerEmail,
     }
   } catch (error) {
-    throw sanitizedError(error)
+    const safeError = sanitizedError(error)
+    if (/timeout|timed out/i.test(safeError.message)) {
+      throw new Error(`Supabase setup timed out during ${currentStage}. Check the internet connection and try again.`)
+    }
+    throw safeError
   }
 }
 

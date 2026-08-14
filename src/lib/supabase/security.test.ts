@@ -63,6 +63,15 @@ describe("Supabase security boundary", () => {
     expect(setupService).toContain("stripPostgresSslQueryOptions(databaseUrl)")
   })
 
+  it("allows slow Supabase projects enough time to initialize safely", () => {
+    const setupService = read("electron/services/store-installation-service.ts")
+    expect(setupService).toContain("DATABASE_CONNECTION_TIMEOUT_MS = 90_000")
+    expect(setupService).toContain("DATABASE_QUERY_TIMEOUT_MS = 300_000")
+    expect(setupService).toContain("STORE_VERIFICATION_TIMEOUT_MS = 45_000")
+    expect(setupService).toContain("keepAlive: true")
+    expect(setupService).toContain("Supabase setup timed out during ${currentStage}")
+  })
+
   it("exposes only non-sensitive installation metadata and keeps the installation table behind RLS", () => {
     const installation = migration("20260814000100_independent_store_installation.sql")
     const metadataFunction = installation.match(/create or replace function public\.armory_installation_info\(\)[\s\S]*?\$\$;/i)?.[0]
