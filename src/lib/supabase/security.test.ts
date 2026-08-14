@@ -60,7 +60,7 @@ describe("Supabase security boundary", () => {
     expect(setupService).toContain("ca: SUPABASE_DATABASE_CA_CERTIFICATE")
     expect(setupService).toContain("rejectUnauthorized: true")
     expect(setupService).not.toContain("rejectUnauthorized: false")
-    expect(setupService).toContain('parsed.searchParams.set("sslmode", "verify-full")')
+    expect(setupService).toContain("stripPostgresSslQueryOptions(databaseUrl)")
   })
 
   it("exposes only non-sensitive installation metadata and keeps the installation table behind RLS", () => {

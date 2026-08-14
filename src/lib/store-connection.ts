@@ -27,6 +27,19 @@ export interface InitializeStoreInput {
   ownerPassword: string
 }
 
+const POSTGRES_SSL_QUERY_PARAMETERS = ["sslmode", "sslcert", "sslkey", "sslrootcert"] as const
+
+/**
+ * node-postgres lets TLS query parameters replace an explicitly supplied `ssl`
+ * object. Remove those parameters before the main process supplies its pinned
+ * Supabase CA so a copied connection string cannot weaken or discard the pin.
+ */
+export function stripPostgresSslQueryOptions(value: string): string {
+  const parsed = new URL(value)
+  for (const parameter of POSTGRES_SSL_QUERY_PARAMETERS) parsed.searchParams.delete(parameter)
+  return parsed.toString()
+}
+
 export interface StoreSetupResult {
   connection: StoreConnectionConfiguration
   connectionCode: string
