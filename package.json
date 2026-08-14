@@ -151,7 +151,7 @@
     "@types/word-extractor": "1.0.2",
     "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "^4.1.10",
-    "concurrently": "^9.2.4",
+    "concurrently": "^10.0.4",
     "cross-env": "^7.0.3",
     "electron": "^43.4.0",
     "electron-builder": "^26.15.3",
