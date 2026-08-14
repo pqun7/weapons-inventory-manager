@@ -9,6 +9,7 @@ import {
   createStoreConnectionCode,
   normalizeSupabaseUrl,
   parseStoreConnectionCode,
+  stripPostgresSslQueryOptions,
   validatePublishableKey,
   type InitializeStoreInput,
   type StoreConnectionConfiguration,
@@ -97,10 +98,9 @@ function validateDatabaseUrl(value: string, projectRef: string): string {
   if (parsed.hostname.toLowerCase() !== directHost || decodeURIComponent(parsed.username) !== "postgres") {
     if (!sessionPooler) throw new Error("The database connection string does not belong to the selected Supabase project")
   }
-  // The application supplies the pinned Supabase CA below, so upgrade copied
-  // dashboard URLs to full certificate and hostname verification automatically.
-  parsed.searchParams.set("sslmode", "verify-full")
-  return parsed.toString()
+  // TLS is configured explicitly in connectDatabase. node-postgres replaces an
+  // explicit CA object when SSL query parameters remain in the connection URL.
+  return stripPostgresSslQueryOptions(parsed.toString())
 }
 
 function normalizeSetupInput(input: InitializeStoreInput): InitializeStoreInput {
@@ -157,7 +157,7 @@ function resolveMigrationsDirectory(): string {
 
 async function connectDatabase(databaseUrl: string): Promise<Client> {
   const client = new Client({
-    connectionString: databaseUrl,
+    connectionString: stripPostgresSslQueryOptions(databaseUrl),
     ssl: {
       ca: SUPABASE_DATABASE_CA_CERTIFICATE,
       rejectUnauthorized: true,

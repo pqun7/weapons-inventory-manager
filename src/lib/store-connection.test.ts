@@ -4,6 +4,7 @@ import {
   createStoreConnectionCode,
   normalizeSupabaseUrl,
   parseStoreConnectionCode,
+  stripPostgresSslQueryOptions,
   validatePublishableKey,
 } from "./store-connection"
 
@@ -38,5 +39,15 @@ describe("store connection codes", () => {
 
   it("keeps the runtime compatibility version aligned with the latest migration", () => {
     expect(REQUIRED_SCHEMA_VERSION).toBe("20260814000100")
+  })
+
+  it("prevents PostgreSQL URL options from replacing the pinned TLS configuration", () => {
+    const value = stripPostgresSslQueryOptions(
+      "postgresql://postgres:password@db.abcdefghijklmnopqrst.supabase.co:5432/postgres?sslmode=verify-full&sslrootcert=other.crt&application_name=armory",
+    )
+    const parsed = new URL(value)
+    expect(parsed.searchParams.get("sslmode")).toBeNull()
+    expect(parsed.searchParams.get("sslrootcert")).toBeNull()
+    expect(parsed.searchParams.get("application_name")).toBe("armory")
   })
 })

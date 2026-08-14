@@ -27,7 +27,7 @@ Use this option on a trusted device owned by the store administrator:
    - **Project URL** from the **Connect** dialog or **Settings → API**.
    - **Publishable key** from **Settings → API Keys**. The legacy `anon` key may be used only for compatibility.
    - **Secret key** from **Settings → API Keys**. The legacy `service_role` key may be used only for compatibility.
-   - **PostgreSQL connection string** from the **Connect** dialog. Use a direct connection or the Session pooler on port `5432`. The application upgrades it to `sslmode=verify-full` and verifies it with the pinned Supabase CA. Do not use the Transaction pooler on port `6543` during setup.
+   - **PostgreSQL connection string** from the **Connect** dialog. Use a direct connection or the Session pooler on port `5432`. The application applies full certificate and hostname verification with the pinned Supabase CA. Do not use the Transaction pooler on port `6543` during setup.
 3. Start the application and select **I am the owner of a new store**.
 4. Enter the store name, Supabase values, the owner's name and email address, and a strong password.
 5. Accept the security warning, then click **Initialize Store**. Do not close the application during this stage.
