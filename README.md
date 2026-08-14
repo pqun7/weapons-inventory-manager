@@ -9,73 +9,73 @@ Armory Store is an open-source desktop ERP for regulated inventory retailers. It
 
 > This software helps manage records; it does not replace licensing, background checks, transfer procedures, tax rules, export controls, or any other legal obligation. Operators are responsible for configuring and using it in accordance with every law applicable to their jurisdiction.
 
-## إعداد متجر مستقل على Supabase
+## Setting Up a Standalone Store on Supabase
 
-نسخة Windows المنشورة **عامة وغير مرتبطة بمشروع Supabase خاص بالمطور**. النموذج الصحيح هو مشروع Supabase واحد لكل متجر أو شركة، وليس مشروعًا لكل جهاز:
+The published Windows build is **generic and is not connected to a Supabase project owned by the developer**. The intended model is one Supabase project per store or company, not one project per device:
 
-- موظفو المتجر الواحد يتصلون بالمشروع نفسه لكي يشاهدوا المخزون والمبيعات نفسها.
-- كل متجر مختلف ينشئ مشروع Supabase في حساب يملكه، ولذلك يتحمل حصته وفوترته ونسخه الاحتياطية بنفسه.
-- لا توجد خدمة مركزية أو سجل متاجر تابع للمطور، ولا تمر بيانات المتجر أو رموز الدخول عبر خادم وسيط.
-- إعداد قاعدة البيانات يتم مرة واحدة فقط بواسطة المالك. كل جهاز موظف يحتاج إلى ربط محلي مرة واحدة، ثم يحتفظ التطبيق بالاتصال على ذلك الجهاز.
+- Employees at the same store connect to the same project so they can access the same inventory and sales data.
+- Each separate store creates a Supabase project in an account it owns and is therefore responsible for its own quota, billing, and backups.
+- There is no developer-operated central service or store registry, and store data and access tokens never pass through an intermediary server.
+- The owner sets up the database only once. Each employee device must be linked locally once, after which the application retains the connection on that device.
 
-### الخيار الأول: إنشاء متجر جديد كمالك
+### Option One: Create a New Store as the Owner
 
-استخدم هذا الخيار على جهاز موثوق يملكه مدير المتجر:
+Use this option on a trusted device owned by the store administrator:
 
-1. أنشئ مشروعًا **جديدًا وفارغًا** من [Supabase Dashboard](https://supabase.com/dashboard). لا تستخدم مشروعًا يحتوي بيانات تطبيق آخر.
-2. من صفحة المشروع انسخ القيم التالية:
-   - **Project URL** من نافذة **Connect** أو **Settings → API**.
-   - **Publishable key** من **Settings → API Keys**. يمكن استخدام مفتاح `anon` القديم للتوافق فقط.
-   - **Secret key** من **Settings → API Keys**. يمكن استخدام `service_role` القديم للتوافق فقط.
-   - **PostgreSQL connection string** من نافذة **Connect**. استخدم Direct connection أو Session pooler على المنفذ `5432` وتأكد من وجود `sslmode=require`. لا تستخدم Transaction pooler على المنفذ `6543` في الإعداد.
-3. شغّل التطبيق واختر **أنا مالك متجر جديد**.
-4. أدخل اسم المتجر وقيم Supabase واسم المالك وبريده وكلمة مرور قوية.
-5. وافق على التحذير الأمني ثم اضغط **تهيئة المتجر**. لا تغلق التطبيق أثناء هذه المرحلة.
-6. ينفذ التطبيق محليًا، وبترتيب آمن:
-   - يتحقق أن العنوان والمفاتيح ورابط PostgreSQL تعود إلى مشروع Supabase نفسه.
-   - يطبق migrations المضمّنة بالترتيب مع checksum وقفل يمنع تنفيذ إعدادين متزامنين.
-   - يخزن Project URL ومفتاح الخادم مشفرين داخل **Supabase Vault** في مشروع المتجر.
-   - ينشئ حساب المالك كمدير رئيسي محمي.
-   - يتحقق من إصدار المخطط ثم يحفظ على الجهاز عنوان المشروع والمفتاح العام فقط.
-7. بعد النجاح احفظ **رمز ربط المتجر**، ثم انتقل إلى تسجيل الدخول ببريد المالك وكلمة المرور التي اخترتها.
+1. Create a **new, empty** project from the [Supabase Dashboard](https://supabase.com/dashboard). Do not use a project that contains data from another application.
+2. Copy the following values from the project page:
+   - **Project URL** from the **Connect** dialog or **Settings → API**.
+   - **Publishable key** from **Settings → API Keys**. The legacy `anon` key may be used only for compatibility.
+   - **Secret key** from **Settings → API Keys**. The legacy `service_role` key may be used only for compatibility.
+   - **PostgreSQL connection string** from the **Connect** dialog. Use a direct connection or the Session pooler on port `5432`, and make sure it includes `sslmode=require`. Do not use the Transaction pooler on port `6543` during setup.
+3. Start the application and select **I am the owner of a new store**.
+4. Enter the store name, Supabase values, the owner's name and email address, and a strong password.
+5. Accept the security warning, then click **Initialize Store**. Do not close the application during this stage.
+6. The application performs the following steps locally and in a safe order:
+   - Verifies that the URL, keys, and PostgreSQL connection string belong to the same Supabase project.
+   - Applies the bundled migrations in order, using checksums and a lock that prevents two setup processes from running concurrently.
+   - Stores the Project URL and server key encrypted in **Supabase Vault** within the store's project.
+   - Creates the owner's account as a protected primary administrator.
+   - Verifies the schema version, then saves only the project URL and public key on the device.
+7. After setup succeeds, save the **store connection code**, then sign in using the owner's email address and the password you chose.
 
-لا يُكتب Secret key أو PostgreSQL connection string في ملف إعدادات الجهاز أو السجلات. يبقيهما التطبيق في ذاكرة عملية Electron الموثوقة خلال طلب الإعداد فقط. يبقى مفتاح الخادم داخل Vault لأن عمليات إنشاء حسابات الموظفين وتفعيلها تحتاج إليه من داخل قاعدة البيانات.
+The Secret key and PostgreSQL connection string are never written to the device configuration file or logs. The application keeps them in the trusted Electron process memory only for the duration of the setup request. The server key remains in Vault because employee account creation and activation operations require it from within the database.
 
-### الخيار الثاني: الانضمام إلى متجر قائم
+### Option Two: Join an Existing Store
 
-ينفذ المدير الخطوات التالية أولًا:
+The administrator first completes the following steps:
 
-1. يسجل الدخول ثم يفتح **الإعدادات → المستخدمون → إضافة حساب**.
-2. ينشئ حسابًا مستقلًا للموظف ويحدد دوره وصلاحياته.
-3. يحفظ **رمز تفعيل المستخدم** الذي يظهر مرة واحدة وتنتهي صلاحيته بعد سبعة أيام.
-4. يفتح **الإعدادات → اتصال المتجر** وينسخ **رمز ربط المتجر**.
-5. يرسل الرمزين إلى الموظف عبر قناة موثوقة، ويفضل إرسالهما منفصلين.
+1. Sign in, then open **Settings → Users → Add Account**.
+2. Create a separate account for the employee and assign the appropriate role and permissions.
+3. Save the **user activation code**, which is shown once and expires after seven days.
+4. Open **Settings → Store Connection** and copy the **store connection code**.
+5. Send both codes to the employee through a trusted channel, preferably in separate messages.
 
-ثم ينفذ الموظف:
+The employee then completes these steps:
 
-1. يثبت النسخة نفسها ويختار **الانضمام إلى متجر** عند أول تشغيل.
-2. يلصق رمز ربط المتجر. يتحقق التطبيق من مشروع Supabase وإصدار المخطط قبل حفظ الاتصال.
-3. في شاشة الدخول يكتب الاسم أو البريد الذي أنشأه المدير.
-4. يدخل رمز تفعيل المستخدم ويختار كلمة مروره الخاصة. لا يطلب التطبيق رمز التفعيل مرة أخرى بعد نجاح هذه الخطوة.
+1. Install the same application version and select **Join a Store** on first launch.
+2. Paste the store connection code. The application verifies the Supabase project and schema version before saving the connection.
+3. On the sign-in screen, enter the name or email address created by the administrator.
+4. Enter the user activation code and choose a personal password. The application will not request the activation code again after this step succeeds.
 
-هناك رمزان مختلفان عمدًا:
+There are intentionally two different codes:
 
-| الرمز | المحتوى | الصلاحية | الغرض |
+| Code | Contents | Validity | Purpose |
 | --- | --- | --- | --- |
-| رمز ربط المتجر | Project URL والمفتاح العام فقط | قابل لإعادة الاستخدام داخل المتجر | تعريف الجهاز بمشروع المتجر؛ لا يسجل المستخدم ولا يتجاوز RLS |
-| رمز تفعيل المستخدم | قيمة عشوائية محفوظ hash لها في قاعدة البيانات | استخدام واحد، 7 أيام | إثبات أن المدير أنشأ حساب الموظف والسماح له بتعيين كلمة المرور |
+| Store connection code | Project URL and public key only | Reusable within the store | Connects the device to the store's project; it neither signs in the user nor bypasses RLS |
+| User activation code | A random value whose hash is stored in the database | One use, 7 days | Proves that the administrator created the employee account and allows the employee to set a password |
 
-لا يمكن توفير رمز متجر قصير قابل للاكتشاف دون تشغيل خدمة مركزية. لذلك رمز الربط أطول لكنه مستقل بالكامل ولا يستهلك أي بنية تحتية تابعة للمطور. المفتاح العام آمن للاستخدام في تطبيق سطح المكتب بحسب نموذج Supabase، بينما الحماية الفعلية للبيانات تفرضها المصادقة وPostgreSQL RLS.
+A short, discoverable store code cannot be provided without operating a central service. The connection code is therefore longer, but it is fully self-contained and consumes no developer-operated infrastructure. Under the Supabase security model, the public key is safe to use in a desktop application, while authentication and PostgreSQL RLS provide the actual data protection.
 
-### الإدارة والاستعادة والأعطال الشائعة
+### Administration, Recovery, and Common Issues
 
-- يستطيع المدير إعادة نسخ رمز الربط أو فصل جهازه من **الإعدادات → اتصال المتجر**. الفصل يحذف الاتصال والجلسة من الجهاز فقط ولا يحذف مشروع Supabase.
-- إذا ظهر `incompatible schema`، يجب على مالك المشروع تحديث مخطط قاعدة البيانات قبل أن يستطيع الموظفون ربط إصدار التطبيق الجديد.
-- إذا تعذر اتصال PostgreSQL على شبكة IPv4، استخدم **Session pooler** على المنفذ `5432` بدل Direct connection. لا تستخدم المنفذ `6543` لتطبيق migrations.
-- إذا فشل إنشاء المالك بعد إنشاء مستخدم Auth جزئيًا وتعذر تنظيفه آليًا، احذف ذلك المستخدم من **Authentication → Users** في Supabase ثم أعد المحاولة.
-- لا ترسل Secret key أو `service_role` أو PostgreSQL connection string أو كلمة مرور المالك إلى الموظفين أو دعم غير موثوق.
-- فعّل Supabase backups/PITR بحسب خطة المتجر، وأنشئ نسخة نظام من داخل التطبيق قبل الترقيات المهمة.
-- للترقية من نسخة قديمة مرتبطة عبر `VITE_SUPABASE_*`، طبّق آخر migrations على المشروع أولًا. بعد ذلك يستطيع المدير نسخ رمز الربط من صفحة **اتصال المتجر** ثم استخدام النسخة العامة على بقية الأجهزة.
+- The administrator can copy the connection code again or disconnect the device from **Settings → Store Connection**. Disconnecting removes only the connection and session from that device; it does not delete the Supabase project.
+- If `incompatible schema` appears, the project owner must update the database schema before employees can connect the new application version.
+- If a PostgreSQL connection is unavailable on an IPv4 network, use the **Session pooler** on port `5432` instead of a direct connection. Do not use port `6543` to apply migrations.
+- If owner creation fails after an Auth user has been partially created and automatic cleanup is unsuccessful, delete that user from **Authentication → Users** in Supabase, then try again.
+- Never send the Secret key, `service_role` key, PostgreSQL connection string, or owner password to employees or untrusted support personnel.
+- Enable Supabase backups/PITR according to the store's plan, and create a system backup from within the application before major upgrades.
+- To upgrade from an older version connected through `VITE_SUPABASE_*`, first apply the latest migrations to the project. The administrator can then copy the connection code from **Store Connection** and use the generic build on the remaining devices.
 
 ## Why Armory Store
 
