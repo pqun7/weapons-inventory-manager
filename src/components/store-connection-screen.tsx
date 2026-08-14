@@ -259,7 +259,7 @@ export function StoreConnectionScreen() {
                     </AlertDescription>
                   </Alert>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label={t.storeName} help={t.storeNameExample}><Input required maxLength={120} placeholder={rtl ? "متجر الرياض للأسلحة" : "Riyadh Armory Store"} value={setup.storeName} onChange={(e) => update("storeName", e.target.value)} /></Field>
+                    <Field label={t.storeName} help={t.storeNameExample}><Input required maxLength={120} placeholder={rtl ? "متجر للأسلحة" : "Armory Store"} value={setup.storeName} onChange={(e) => update("storeName", e.target.value)} /></Field>
                     <Field label={t.projectUrl} help={t.projectUrlExample}><Input required dir="ltr" placeholder={PROJECT_URL_EXAMPLE} value={setup.supabaseUrl} onChange={(e) => update("supabaseUrl", e.target.value)} /></Field>
                   </div>
                   <Field label={t.publishableKey} help={t.publishableKeyExample}><PasswordInput required dir="ltr" autoComplete="off" placeholder={t.publishableKeyPlaceholder} value={setup.publishableKey} onChange={(e) => update("publishableKey", e.target.value)} /></Field>
