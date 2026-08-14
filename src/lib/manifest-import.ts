@@ -2,6 +2,7 @@
 import type { WorkBook, } from "xlsx"
 import type { ShipmentLineItemInput } from "./store"
 import type { StorageLocation } from "./types"
+import { assertSafeSpreadsheetFile, assertSafeSpreadsheetRows } from "./spreadsheet-limits"
 
 export interface ParsedManifestRow {
   productType: string
@@ -59,6 +60,17 @@ export async function parseManifestFile(file: File): Promise<ManifestImportResul
   const lineItems: ShipmentLineItemInput[] = []
   const XLSX = await import("xlsx")
 
+  try {
+    assertSafeSpreadsheetFile(file)
+  } catch (error) {
+    return {
+      lineItems: [],
+      errors: [error instanceof Error ? error.message : "Invalid spreadsheet"],
+      warnings,
+      totalRows: 0,
+      validRows: 0,
+    }
+  }
 
   let wb: WorkBook
   try {
@@ -75,6 +87,17 @@ export async function parseManifestFile(file: File): Promise<ManifestImportResul
 
   const ws = wb.Sheets[sheetName]
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" })
+  try {
+    assertSafeSpreadsheetRows(rows.length)
+  } catch (error) {
+    return {
+      lineItems: [],
+      errors: [error instanceof Error ? error.message : "Spreadsheet row limit exceeded"],
+      warnings,
+      totalRows: rows.length,
+      validRows: 0,
+    }
+  }
 
   if (rows.length === 0) {
     return { lineItems: [], errors: ["Sheet is empty."], warnings, totalRows: 0, validRows: 0 }

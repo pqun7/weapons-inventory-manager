@@ -204,9 +204,6 @@ export function ManifestItemsTable({
       else await Promise.all(targetItems.map((item) => Promise.resolve(onPatch(item, requested))))
 
       closeEdit()
-    } catch (error) {
-      // The parent owns backend/local validation and is responsible for surfacing the error.
-      throw error
     } finally {
       setSaving(false)
       onProcessingChange?.(false)

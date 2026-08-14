@@ -6,6 +6,9 @@ import { useSupabaseAuth } from "@/hooks/use-supabase-auth"
 import { AuthScreen } from "@/components/auth-screen"
 import { useSupabaseSync } from "@/hooks/use-supabase-sync"
 import { translations } from "@/lib/i18n/translations"
+import { StoreConnectionScreen } from "@/components/store-connection-screen"
+import { bundledSupabaseConfiguration, configureSupabaseClient } from "@/lib/supabase/client"
+import type { StoreConnectionConfiguration } from "@/lib/store-connection"
 
 type Language = "en" | "ar"
 
@@ -38,6 +41,51 @@ async function loadAppModules(): Promise<LoadedModules> {
 }
 
 export function AppRoot() {
+    const [connectionLoading, setConnectionLoading] = useState(true)
+    const [connection, setConnection] = useState<StoreConnectionConfiguration | null>(null)
+    const [connectionError, setConnectionError] = useState<string | null>(null)
+
+    useEffect(() => {
+        let active = true
+        const load = async () => {
+            try {
+                const stored = window.electronAPI?.storeConnection
+                    ? await window.electronAPI.storeConnection.get()
+                    : { success: true, data: null }
+                if (!stored.success) throw new Error(stored.error ?? "Could not read the store connection")
+                const selected = stored.data?.connection ?? bundledSupabaseConfiguration()
+                if (selected) configureSupabaseClient(selected)
+                if (active) setConnection(selected)
+            } catch (error) {
+                if (active) setConnectionError(error instanceof Error ? error.message : "Could not read the store connection")
+            } finally {
+                if (active) setConnectionLoading(false)
+            }
+        }
+        void load()
+        return () => { active = false }
+    }, [])
+
+    if (connectionLoading) return <BootLoading />
+    if (connectionError) {
+        return <div className="flex h-screen items-center justify-center p-6"><p className="max-w-lg text-center text-sm text-destructive">{connectionError}</p></div>
+    }
+    if (!connection) return <StoreConnectionScreen />
+    return <ConnectedAppRoot />
+}
+
+function BootLoading() {
+    return (
+        <div className="flex h-screen items-center justify-center bg-background text-foreground">
+            <div className="space-y-2 text-center">
+                <div className="mx-auto size-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+                <p className="text-sm font-medium">Armory Store</p>
+            </div>
+        </div>
+    )
+}
+
+function ConnectedAppRoot() {
     const [modules, setModules] = useState<LoadedModules | null>(null)
     const auth = useSupabaseAuth()
     const { ready, error } = useAppBootstrap(!auth.loading && auth.session !== null)

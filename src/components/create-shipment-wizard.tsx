@@ -280,7 +280,9 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
             ? Number(cost.amount || 0)
             : Number(calculatePercentageCost(CurrencyService.convert(item.purchasePrice, item.currency ?? currency, cost.currency), cost.percentageRate || "0", currencies.find((candidate) => candidate.isoCode === cost.currency)?.decimalPrecision ?? 2))
           productAdditional = sumMoney([productAdditional, multiplyMoney(CurrencyService.convert(amount, cost.currency, currency), item.quantity)])
-        } catch { }
+        } catch {
+          // Invalid optional costs are excluded from the preview and validated on submit.
+        }
       }
     }
     let shipmentAdditional = 0
@@ -290,7 +292,9 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
           ? Number(cost.amount || 0)
           : Number(calculatePercentageCost(CurrencyService.convert(productSubtotal, currency, cost.currency), cost.percentageRate || "0", currencies.find((candidate) => candidate.isoCode === cost.currency)?.decimalPrecision ?? 2))
         shipmentAdditional = sumMoney([shipmentAdditional, CurrencyService.convert(amount, cost.currency, currency)])
-      } catch { }
+      } catch {
+        // Invalid optional costs are excluded from the preview and validated on submit.
+      }
     }
     const additionalTotal = sumMoney([productAdditional, shipmentAdditional])
     return { weapons, ammo, accessories, totalItems: weapons + ammo + accessories, productSubtotal, productAdditional, shipmentAdditional, additionalTotal, totalCost: sumMoney([productSubtotal, additionalTotal]), totalRetail: sumMoney(retailValues) }

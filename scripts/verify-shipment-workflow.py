@@ -10,6 +10,8 @@ from pathlib import Path
 
 import psycopg
 
+from workflow_test_data import ensure_workflow_prerequisites
+
 
 def load_env(path: Path) -> None:
     for raw in path.read_text(encoding="utf-8-sig").splitlines() if path.exists() else []:
@@ -33,6 +35,7 @@ def main() -> None:
     marker = uuid.uuid4().hex.upper()
     with psycopg.connect(database_url) as connection:
         with connection.cursor() as cursor:
+            ensure_workflow_prerequisites(cursor, marker)
             cursor.execute("select auth_user_id, id from public.users where auth_user_id is not null and is_active order by case when role = 'Admin' then 0 else 1 end, id limit 1")
             actor = cursor.fetchone()
             cursor.execute("select id from public.suppliers order by id limit 1")

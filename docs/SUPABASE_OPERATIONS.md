@@ -2,9 +2,17 @@
 
 The desktop application uses Supabase PostgreSQL as its only operational database. Electron performs local document parsing for shipment manifests but does not open, create, back up, or restore any local database.
 
-## Public renderer environment
+## Generic release and runtime connection
 
-Only these variables are allowed in a renderer build:
+Public releases do not embed a Supabase project. On first launch, the owner can
+initialize a new project once or a staff device can import a store connection
+code. Electron stores only the project URL, publishable/anon key, installation
+ID, store label, and schema version in the application's user-data directory.
+The Auth storage key is namespaced by installation ID so sessions cannot leak
+between store projects.
+
+These renderer variables remain optional for local development and legacy
+private builds:
 
 ```env
 VITE_SUPABASE_URL=https://PROJECT_REF.supabase.co
@@ -12,6 +20,17 @@ VITE_SUPABASE_ANON_KEY=PUBLIC_ANON_OR_PUBLISHABLE_KEY
 ```
 
 Never expose a service-role/secret key, a database password, an AI provider key, or an administrator password through a `VITE_` variable, preload API, or renderer source.
+
+During one-time owner setup, Electron main validates the project URL, public
+key, server key, and PostgreSQL connection string; applies the packaged
+migrations with checksums and advisory locking; stores the server key and
+project URL in the owner's Supabase Vault; creates the protected primary owner;
+then persists only public client configuration. Privileged setup values are
+never written to application configuration or returned to the renderer.
+
+Store connection codes are portable because they contain only the project URL
+and public client key. They are not authentication credentials: a user account,
+password/activation claim, and RLS authorization are still required.
 
 ## Apply PostgreSQL migrations
 
@@ -32,7 +51,13 @@ The apply script processes every file under `supabase/migrations` in filename or
 
 ## Edge Functions
 
-Administrator account management is isolated in the deployed `admin-users` Edge Function. Configure its service-role credentials only in Supabase Function secrets, never in the desktop renderer:
+The current renderer uses authenticated database RPCs for administrator account
+management. Those RPCs read the store-owned server credential from Supabase
+Vault. The legacy `admin-users` Edge Function is not part of the production path
+and should not be deployed unless the application is deliberately migrated to
+it and its origin policy is configured.
+
+For that legacy deployment only:
 
 ```powershell
 supabase secrets set SUPABASE_URL=https://PROJECT_REF.supabase.co SUPABASE_SERVICE_ROLE_KEY=SERVER_SIDE_SECRET

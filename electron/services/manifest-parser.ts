@@ -1210,15 +1210,14 @@ function parseBufferInWorker(bytes: Uint8Array, format: ParserWorkerFormat): Pro
       workerData: { format, bytes: Buffer.from(bytes) },
     })
     let settled = false
-    let timer: ReturnType<typeof setTimeout> | undefined
     const finish = (callback: () => void) => {
       if (settled) return
       settled = true
-      if (timer) clearTimeout(timer)
+      clearTimeout(timer)
       callback()
       void worker.terminate()
     }
-    timer = setTimeout(() => finish(() => reject(new Error(`${format === "word" ? "Word document" : "Spreadsheet"} parsing timed out`))), MANIFEST_PARSE_TIMEOUT_MS)
+    const timer = setTimeout(() => finish(() => reject(new Error(`${format === "word" ? "Word document" : "Spreadsheet"} parsing timed out`))), MANIFEST_PARSE_TIMEOUT_MS)
     worker.once("message", (message: { ok: true; extraction: NativeExtraction } | { ok: false; error: string }) => {
       finish(() => message.ok ? resolve(message.extraction) : reject(new Error(message.error)))
     })

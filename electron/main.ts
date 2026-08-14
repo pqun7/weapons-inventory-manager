@@ -5,7 +5,9 @@ import { performance } from "node:perf_hooks"
 import { fileURLToPath } from "node:url"
 import fs from "node:fs";
 import { registerManifestParserHandler } from "./ipc/manifest-parser-handler.js"
+import { registerStoreInstallationHandlers } from "./ipc/store-installation-handler.js"
 import { initializeAutoUpdater } from "./updater.js"
+import { isAllowedExternalUrl } from "../src/lib/external-url.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -74,7 +76,7 @@ function createWindow(): BrowserWindow {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   })
 
@@ -84,10 +86,26 @@ function createWindow(): BrowserWindow {
     logBoot("window:shown")
   })
 
-  // Prevent new windows (open in external browser)
+  const openExternalUrl = (url: string): void => {
+    if (!isAllowedExternalUrl(url)) {
+      console.warn(`[security] Blocked external URL protocol: ${url.slice(0, 120)}`)
+      return
+    }
+    void shell.openExternal(url).catch((error: unknown) => {
+      console.error("Failed to open external URL", error)
+    })
+  }
+
+  // Keep remote content outside the privileged desktop window.
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    openExternalUrl(details.url)
     return { action: "deny" }
+  })
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    const currentUrl = mainWindow?.webContents.getURL()
+    if (url === currentUrl) return
+    event.preventDefault()
+    openExternalUrl(url)
   })
 
   // Dev-only error/log forwarding (cleaned up on window close)
@@ -136,6 +154,8 @@ app.whenReady().then(async () => {
   logBoot("app.whenReady")
   try {
     loadRuntimeEnvironment()
+    registerStoreInstallationHandlers()
+    logBoot("store-installation:registered")
     registerManifestParserHandler()
     logBoot("manifest-parser:registered")
 

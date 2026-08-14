@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CurrencyManagementPanel } from "@/components/currency-management-panel"
 import { MasterDataPanel } from "@/components/master-data-panel"
+import { StoreConnectionPanel } from "@/components/store-connection-panel"
 import { getSupabaseClient } from "@/lib/supabase/client"
 import * as db from "@/lib/db"
 import { useStore } from "@/lib/store"
@@ -39,6 +40,7 @@ export function SettingsPage() {
     { value: "currencies", label: t("settings.currencyRegistry"), icon: Coins, visible: canViewCurrencies },
     { value: "master", label: t("settings.masterData"), icon: Layers, visible: true },
     { value: "users", label: t("settings.users"), icon: Users, visible: admin },
+    { value: "store-connection", label: t("settings.storeConnection"), icon: Database, visible: admin },
     { value: "backup", label: t("settings.backupData"), icon: Database, visible: true },
   ].filter((tab) => tab.visible), [admin, canViewCurrencies, t])
 
@@ -111,6 +113,7 @@ export function SettingsPage() {
             </Card>
           </TabsContent>
         )}
+        {admin && <TabsContent value="store-connection"><StoreConnectionPanel /></TabsContent>}
         <TabsContent value="backup"><BackupSettings user={currentUser} /></TabsContent>
       </Tabs>
 

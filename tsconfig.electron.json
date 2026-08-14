@@ -39,13 +39,16 @@
     "electron/updater.ts",
     "electron/preload.cts",
     "electron/ipc/manifest-parser-handler.ts",
+    "electron/ipc/store-installation-handler.ts",
+    "electron/services/store-installation-service.ts",
     "electron/services/manifest-extraction-service.ts",
     "electron/services/manifest-parser.ts",
     "electron/services/manifest-parser-worker.ts",
     "electron/services/openai-manifest-service.ts",
     "src/env.d.ts",
     "src/lib/manifest-file-types.ts",
-    "src/lib/shipment-manifest.ts"
+    "src/lib/shipment-manifest.ts",
+    "src/lib/store-connection.ts"
   ],
   "exclude": [
     "node_modules",

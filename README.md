@@ -1,6 +1,6 @@
 # Armory Store
 
-[![CI](https://github.com/pqun7/weapon_store/actions/workflows/ci.yml/badge.svg)](https://github.com/pqun7/weapon_store/actions/workflows/ci.yml)
+[![CI](https://github.com/pqun7/weapons-inventory-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/pqun7/weapons-inventory-manager/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js&logoColor=white)](package.json)
 [![Electron](https://img.shields.io/badge/Desktop-Electron-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
@@ -8,6 +8,74 @@
 Armory Store is an open-source desktop ERP for regulated inventory retailers. It brings serialized inventory, purchasing, shipment intake, sales, receivables, multi-currency accounting, user permissions, and operational audit history into one bilingual Electron application backed by Supabase PostgreSQL.
 
 > This software helps manage records; it does not replace licensing, background checks, transfer procedures, tax rules, export controls, or any other legal obligation. Operators are responsible for configuring and using it in accordance with every law applicable to their jurisdiction.
+
+## إعداد متجر مستقل على Supabase
+
+نسخة Windows المنشورة **عامة وغير مرتبطة بمشروع Supabase خاص بالمطور**. النموذج الصحيح هو مشروع Supabase واحد لكل متجر أو شركة، وليس مشروعًا لكل جهاز:
+
+- موظفو المتجر الواحد يتصلون بالمشروع نفسه لكي يشاهدوا المخزون والمبيعات نفسها.
+- كل متجر مختلف ينشئ مشروع Supabase في حساب يملكه، ولذلك يتحمل حصته وفوترته ونسخه الاحتياطية بنفسه.
+- لا توجد خدمة مركزية أو سجل متاجر تابع للمطور، ولا تمر بيانات المتجر أو رموز الدخول عبر خادم وسيط.
+- إعداد قاعدة البيانات يتم مرة واحدة فقط بواسطة المالك. كل جهاز موظف يحتاج إلى ربط محلي مرة واحدة، ثم يحتفظ التطبيق بالاتصال على ذلك الجهاز.
+
+### الخيار الأول: إنشاء متجر جديد كمالك
+
+استخدم هذا الخيار على جهاز موثوق يملكه مدير المتجر:
+
+1. أنشئ مشروعًا **جديدًا وفارغًا** من [Supabase Dashboard](https://supabase.com/dashboard). لا تستخدم مشروعًا يحتوي بيانات تطبيق آخر.
+2. من صفحة المشروع انسخ القيم التالية:
+   - **Project URL** من نافذة **Connect** أو **Settings → API**.
+   - **Publishable key** من **Settings → API Keys**. يمكن استخدام مفتاح `anon` القديم للتوافق فقط.
+   - **Secret key** من **Settings → API Keys**. يمكن استخدام `service_role` القديم للتوافق فقط.
+   - **PostgreSQL connection string** من نافذة **Connect**. استخدم Direct connection أو Session pooler على المنفذ `5432` وتأكد من وجود `sslmode=require`. لا تستخدم Transaction pooler على المنفذ `6543` في الإعداد.
+3. شغّل التطبيق واختر **أنا مالك متجر جديد**.
+4. أدخل اسم المتجر وقيم Supabase واسم المالك وبريده وكلمة مرور قوية.
+5. وافق على التحذير الأمني ثم اضغط **تهيئة المتجر**. لا تغلق التطبيق أثناء هذه المرحلة.
+6. ينفذ التطبيق محليًا، وبترتيب آمن:
+   - يتحقق أن العنوان والمفاتيح ورابط PostgreSQL تعود إلى مشروع Supabase نفسه.
+   - يطبق migrations المضمّنة بالترتيب مع checksum وقفل يمنع تنفيذ إعدادين متزامنين.
+   - يخزن Project URL ومفتاح الخادم مشفرين داخل **Supabase Vault** في مشروع المتجر.
+   - ينشئ حساب المالك كمدير رئيسي محمي.
+   - يتحقق من إصدار المخطط ثم يحفظ على الجهاز عنوان المشروع والمفتاح العام فقط.
+7. بعد النجاح احفظ **رمز ربط المتجر**، ثم انتقل إلى تسجيل الدخول ببريد المالك وكلمة المرور التي اخترتها.
+
+لا يُكتب Secret key أو PostgreSQL connection string في ملف إعدادات الجهاز أو السجلات. يبقيهما التطبيق في ذاكرة عملية Electron الموثوقة خلال طلب الإعداد فقط. يبقى مفتاح الخادم داخل Vault لأن عمليات إنشاء حسابات الموظفين وتفعيلها تحتاج إليه من داخل قاعدة البيانات.
+
+### الخيار الثاني: الانضمام إلى متجر قائم
+
+ينفذ المدير الخطوات التالية أولًا:
+
+1. يسجل الدخول ثم يفتح **الإعدادات → المستخدمون → إضافة حساب**.
+2. ينشئ حسابًا مستقلًا للموظف ويحدد دوره وصلاحياته.
+3. يحفظ **رمز تفعيل المستخدم** الذي يظهر مرة واحدة وتنتهي صلاحيته بعد سبعة أيام.
+4. يفتح **الإعدادات → اتصال المتجر** وينسخ **رمز ربط المتجر**.
+5. يرسل الرمزين إلى الموظف عبر قناة موثوقة، ويفضل إرسالهما منفصلين.
+
+ثم ينفذ الموظف:
+
+1. يثبت النسخة نفسها ويختار **الانضمام إلى متجر** عند أول تشغيل.
+2. يلصق رمز ربط المتجر. يتحقق التطبيق من مشروع Supabase وإصدار المخطط قبل حفظ الاتصال.
+3. في شاشة الدخول يكتب الاسم أو البريد الذي أنشأه المدير.
+4. يدخل رمز تفعيل المستخدم ويختار كلمة مروره الخاصة. لا يطلب التطبيق رمز التفعيل مرة أخرى بعد نجاح هذه الخطوة.
+
+هناك رمزان مختلفان عمدًا:
+
+| الرمز | المحتوى | الصلاحية | الغرض |
+| --- | --- | --- | --- |
+| رمز ربط المتجر | Project URL والمفتاح العام فقط | قابل لإعادة الاستخدام داخل المتجر | تعريف الجهاز بمشروع المتجر؛ لا يسجل المستخدم ولا يتجاوز RLS |
+| رمز تفعيل المستخدم | قيمة عشوائية محفوظ hash لها في قاعدة البيانات | استخدام واحد، 7 أيام | إثبات أن المدير أنشأ حساب الموظف والسماح له بتعيين كلمة المرور |
+
+لا يمكن توفير رمز متجر قصير قابل للاكتشاف دون تشغيل خدمة مركزية. لذلك رمز الربط أطول لكنه مستقل بالكامل ولا يستهلك أي بنية تحتية تابعة للمطور. المفتاح العام آمن للاستخدام في تطبيق سطح المكتب بحسب نموذج Supabase، بينما الحماية الفعلية للبيانات تفرضها المصادقة وPostgreSQL RLS.
+
+### الإدارة والاستعادة والأعطال الشائعة
+
+- يستطيع المدير إعادة نسخ رمز الربط أو فصل جهازه من **الإعدادات → اتصال المتجر**. الفصل يحذف الاتصال والجلسة من الجهاز فقط ولا يحذف مشروع Supabase.
+- إذا ظهر `incompatible schema`، يجب على مالك المشروع تحديث مخطط قاعدة البيانات قبل أن يستطيع الموظفون ربط إصدار التطبيق الجديد.
+- إذا تعذر اتصال PostgreSQL على شبكة IPv4، استخدم **Session pooler** على المنفذ `5432` بدل Direct connection. لا تستخدم المنفذ `6543` لتطبيق migrations.
+- إذا فشل إنشاء المالك بعد إنشاء مستخدم Auth جزئيًا وتعذر تنظيفه آليًا، احذف ذلك المستخدم من **Authentication → Users** في Supabase ثم أعد المحاولة.
+- لا ترسل Secret key أو `service_role` أو PostgreSQL connection string أو كلمة مرور المالك إلى الموظفين أو دعم غير موثوق.
+- فعّل Supabase backups/PITR بحسب خطة المتجر، وأنشئ نسخة نظام من داخل التطبيق قبل الترقيات المهمة.
+- للترقية من نسخة قديمة مرتبطة عبر `VITE_SUPABASE_*`، طبّق آخر migrations على المشروع أولًا. بعد ذلك يستطيع المدير نسخ رمز الربط من صفحة **اتصال المتجر** ثم استخدام النسخة العامة على بقية الأجهزة.
 
 ## Why Armory Store
 
@@ -25,7 +93,7 @@ Armory Store is an open-source desktop ERP for regulated inventory retailers. It
 
 | Layer | Technology |
 | --- | --- |
-| Desktop | Electron 32, electron-builder |
+| Desktop | Electron 43, electron-builder |
 | UI | React 19, TypeScript, Rsbuild, Tailwind CSS 4, Radix UI |
 | State and validation | Zustand, Zod, React Hook Form |
 | Data | Supabase PostgreSQL, Auth, RLS, Realtime, Edge Functions |
@@ -33,7 +101,7 @@ Armory Store is an open-source desktop ERP for regulated inventory retailers. It
 | Optional AI | OpenAI with configurable DeepSeek fallback |
 | Quality | Vitest, Testing Library, TypeScript project references, Python `unittest` |
 
-## Prerequisites
+## Developer prerequisites
 
 - Node.js 20 or newer and npm 10 or newer
 - Python 3.10 or newer
@@ -52,17 +120,15 @@ Armory Store is an open-source desktop ERP for regulated inventory retailers. It
    python -m pip install -r scripts/requirements-migration.txt
    ```
 
-2. Copy `.env.example` to `.env.local` and configure the required values.
+2. A generic release requires no `VITE_SUPABASE_*` values. For local development against an existing private project, copy `.env.example` to `.env.local` and optionally configure:
 
    ```env
    VITE_SUPABASE_URL=https://PROJECT_REF.supabase.co
    VITE_SUPABASE_ANON_KEY=your-public-anon-or-publishable-key
-   SUPABASE_URL=https://PROJECT_REF.supabase.co
-   SUPABASE_SERVICE_ROLE_KEY=your-server-side-service-role-key
    SUPABASE_DB_URL=postgresql://postgres:ENCODED_PASSWORD@HOST:5432/postgres?sslmode=require
    ```
 
-   Only `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are allowed in the renderer. Database passwords, service-role keys, administrator passwords, and AI keys must never use the `VITE_` prefix.
+   Omit both `VITE_` values to exercise the packaged first-run connection flow. Only public URL/key values may use the `VITE_` prefix. Database passwords, secret/service-role keys, administrator passwords, and AI keys must never be bundled into a renderer build.
 
 3. Apply the database migrations.
 
@@ -70,13 +136,14 @@ Armory Store is an open-source desktop ERP for regulated inventory retailers. It
    npm run supabase:schema:apply
    ```
 
-4. Configure and deploy the authentication Edge Functions.
+   Databases created before checksum tracking may preview and explicitly reconcile
+   the verified legacy baseline with `npm run supabase:schema:reconcile`; never use
+   that command for a genuinely unapplied migration.
 
-   ```bash
-   supabase secrets set SUPABASE_URL=https://PROJECT_REF.supabase.co SUPABASE_SERVICE_ROLE_KEY=YOUR_SECRET ALLOWED_ORIGINS=http://localhost:3000
-   supabase functions deploy account-auth --project-ref PROJECT_REF
-   supabase functions deploy admin-users --project-ref PROJECT_REF
-   ```
+4. Authentication uses the database RPCs installed by the migrations. The legacy
+   Edge Function implementations are not part of the renderer's production path
+   and should not be deployed unless the application is deliberately migrated to
+   that API and its allowed origins are restricted.
 
 5. Start the desktop development application.
 
@@ -165,15 +232,30 @@ The command refuses to run over existing business data. To return to a clean sys
 | `npm test` | Run the Vitest suite once |
 | `npm run test:coverage` | Run tests with coverage |
 | `npm run typecheck` | Run TypeScript project checks |
+| `npm run lint` | Run the zero-warning ESLint quality gate |
 | `npm run test:db-scripts` | Run safe unit tests for reset/seed helpers |
+| `npm run test:db-integrity` | Run read-only migration, RLS, relationship, constraint, and index checks against the configured database |
 | `npm run supabase:schema:apply` | Apply unapplied SQL migrations transactionally |
+| `npm run supabase:schema:reconcile` | Preview reconciliation of verified superseded baseline records; add `-- --confirm` to commit |
 | `npm run verify:supabase` | Verify Auth, RLS, inventory, and core database behavior |
 | `npm run reset-db` | Preview a full first-run reset; add `-- --confirm` to execute |
 | `npm run seed-db` | Preview the demo dataset; add `-- --confirm` to execute |
 
+## Signed Windows releases
+
+Production releases are created only from version tags matching `package.json`.
+The release workflow deliberately builds without any Supabase project variables,
+creates the generic installer, generates SHA-256 checksums, and publishes the EXE,
+blockmap, update metadata, and checksum file to GitHub Releases. Configure
+`CSC_LINK` and `CSC_KEY_PASSWORD` to Authenticode-sign public releases. The
+workflow verifies the installer and unpacked executable when signing credentials
+are available; unsigned development builds should be identified clearly.
+
 ## Architecture and security boundaries
 
-- The React renderer receives only the Supabase URL and public client key.
+- The React renderer receives only the selected store's Supabase URL and public client key. Generic release artifacts contain neither value.
+- One-time database/server credentials are accepted only by Electron main-process IPC, are sanitized from errors, are never returned through preload, and are persisted only inside the store owner's Supabase Vault.
+- Store connection codes contain only public client configuration. They never contain database passwords, secret/service-role keys, owner passwords, or user activation codes.
 - RLS and security-definer RPCs are the authoritative authorization boundary; hiding a UI control is not treated as security.
 - Administrator Auth operations run through Supabase server-side facilities using service-role credentials that are never bundled into Electron.
 - Document bytes are validated by extension, size, and signature before parsing. AI output is untrusted, schema-constrained, and reviewed before database intake.

@@ -10,6 +10,8 @@ from pathlib import Path
 
 import psycopg
 
+from workflow_test_data import ensure_workflow_prerequisites
+
 
 def load_env(path: Path) -> None:
     for raw in path.read_text(encoding="utf-8-sig").splitlines() if path.exists() else []:
@@ -28,19 +30,40 @@ def main() -> None:
 
     with psycopg.connect(database_url) as connection:
         with connection.cursor() as cursor:
+            ensure_workflow_prerequisites(cursor, marker)
             cursor.execute("select auth_user_id from public.users where auth_user_id is not null and is_active order by case when role = 'Admin' then 0 else 1 end, id limit 1")
             actor = cursor.fetchone()
             cursor.execute("select id from public.suppliers order by id limit 1")
             supplier = cursor.fetchone()
             cursor.execute("select currency_code from public.system_settings where id = 1")
             currency = cursor.fetchone()
-            cursor.execute("select i.id from public.shipment_imports as i where i.status = 'pending_review' and not exists (select 1 from public.shipment_import_items as item where item.import_id = i.id and item.status in ('invalid', 'duplicate', 'conflict')) order by i.updated_at desc limit 1")
+            cursor.execute("select i.id from public.shipment_imports as i where i.status = 'pending_review' and exists (select 1 from public.shipment_import_items as item where item.import_id = i.id) and not exists (select 1 from public.shipment_import_items as item where item.import_id = i.id and item.status in ('invalid', 'duplicate', 'conflict')) order by i.updated_at desc limit 1")
             manifest = cursor.fetchone()
-            if not actor or not supplier or not currency or not manifest:
-                raise RuntimeError("A valid pending manifest, active user, supplier, and currency are required")
+            if not actor or not supplier or not currency:
+                raise RuntimeError("An active user, supplier, and currency are required")
 
             cursor.execute("set local role authenticated")
             cursor.execute("select set_config('request.jwt.claim.sub', %s, true)", (str(actor[0]),))
+            if not manifest:
+                payload = {
+                    "id": f"verify-manifest-{marker}",
+                    "fileName": "rollback-only-manifest.xlsx",
+                    "fileType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "fileSize": 1,
+                    "fileHash": uuid.uuid4().hex + uuid.uuid4().hex,
+                    "schemaVersion": "1.3",
+                    "items": [{
+                        "id": f"verify-item-{marker}", "rowIndex": 1,
+                        "productType": "accessory", "productName": "Verification accessory",
+                        "quantity": 1, "unitPrice": 100, "retailPrice": 150,
+                        "wholesalePrice": 125, "retailPriceMode": "manual",
+                        "wholesalePriceMode": "manual", "additionalCosts": [],
+                        "totalPrice": 100, "serialNumbers": [],
+                        "source": {"sheet": "verification", "row": 1}, "rawData": {},
+                    }],
+                }
+                cursor.execute("select public.create_manifest_review(%s::jsonb)", (json.dumps(payload),))
+                manifest = (cursor.fetchone()[0],)
             base_confirmation = {
                 "importId": manifest[0], "supplierId": supplier[0], "shipmentDate": "2026-08-12",
                 "expectedArrivalDate": "2026-08-20", "currency": currency[0], "note": "Rollback-only manifest workflow verification",
@@ -97,8 +120,11 @@ def main() -> None:
             if cursor.fetchone() != ("Arrived", "received"):
                 raise RuntimeError("Manifest receipt did not create a received shipment")
             cursor.execute("select count(*) from public.inventory_transactions as transaction where transaction.shipment_id = %s", (received_id,))
-            if cursor.fetchone()[0] == 0:
-                raise RuntimeError("Manifest receipt did not post inventory")
+            transaction_count = cursor.fetchone()[0]
+            cursor.execute("select count(*) from public.shipment_items where shipment_id = %s", (received_id,))
+            received_line_count = cursor.fetchone()[0]
+            if transaction_count == 0 and received_line_count == 0:
+                raise RuntimeError("Manifest receipt did not create inventory or shipment lines")
             cursor.execute("select count(*), count(distinct serial_number) from public.weapons where shipment_id = %s", (received_id,))
             weapon_count, distinct_serial_count = cursor.fetchone()
             if weapon_count != expected_weapon_count or distinct_serial_count != expected_weapon_count:

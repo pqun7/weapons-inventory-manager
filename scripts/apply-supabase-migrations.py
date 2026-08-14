@@ -44,6 +44,11 @@ def main() -> int:
         metavar="VERSION_OR_FILENAME",
         help="Apply only the specified migration version or filename. May be repeated.",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Execute selected pending migrations in one transaction, then roll everything back.",
+    )
     args = parser.parse_args()
     load_dotenv(args.env_file)
     database_url = os.environ.get("SUPABASE_DB_URL")
@@ -87,7 +92,8 @@ def main() -> int:
                 "CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations ("
                 "version text PRIMARY KEY, statements text[] NOT NULL DEFAULT '{}', name text)"
             )
-        connection.commit()
+        if not args.dry_run:
+            connection.commit()
         for path in files:
             version = path.stem.split("_", 1)[0]
             sql = path.read_text(encoding="utf-8")
@@ -107,11 +113,15 @@ def main() -> int:
                         "INSERT INTO supabase_migrations.schema_migrations (version, statements, name) VALUES (%s, %s, %s)",
                         (version, [], f"{path.name}:{digest}"),
                     )
-                    connection.commit()
-                    print(f"applied {path.name}")
+                    if not args.dry_run:
+                        connection.commit()
+                    print(f"{'validated' if args.dry_run else 'applied'} {path.name}")
                 except Exception:
                     connection.rollback()
                     raise
+        if args.dry_run:
+            connection.rollback()
+            print("Dry run complete; all migration changes were rolled back.")
     return 0
 
 

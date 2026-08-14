@@ -43,8 +43,8 @@ export function ExcelToolbar() {
       const report = await analyzeExcelImport(file)
       setImportPreview(report)
       setImportOpen(true)
-    } catch {
-      toast.error(t("toast.importError"))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("toast.importError"))
     }
     if (fileInputRef.current) fileInputRef.current.value = ""
   }

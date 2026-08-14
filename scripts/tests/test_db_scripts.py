@@ -23,6 +23,8 @@ def load_script(name: str):
 
 reset_db = load_script("reset-db.py")
 seed_db = load_script("seed-db.py")
+check_public_env = load_script("check-public-env.py")
+reconcile_migrations = load_script("reconcile-supabase-migration-history.py")
 
 
 class FakeTriggerCursor:
@@ -59,6 +61,34 @@ class FakeSeedCursor:
 
 
 class DatabaseScriptTests(unittest.TestCase):
+    def test_reconciliation_is_limited_to_known_superseded_versions(self) -> None:
+        self.assertEqual(len(reconcile_migrations.SUPERSEDED_BASELINE_VERSIONS), 16)
+        self.assertEqual(
+            reconcile_migrations.SUCCESSOR_BY_VERSION["20260812002200"],
+            "20260812002300",
+        )
+        self.assertNotIn("20260813001000", reconcile_migrations.SUPERSEDED_BASELINE_VERSIONS)
+
+    def test_public_environment_allows_generic_runtime_configuration(self) -> None:
+        violations, missing = check_public_env.inspect_environment((), {})
+        self.assertEqual(violations, [])
+        self.assertEqual(missing, [])
+
+        violations, missing = check_public_env.inspect_environment((), {
+            "VITE_SUPABASE_URL": "https://example.supabase.co",
+            "VITE_SUPABASE_ANON_KEY": "public-key",
+        })
+        self.assertEqual(violations, [])
+        self.assertEqual(missing, [])
+
+    def test_public_environment_rejects_renderer_secrets_from_ci(self) -> None:
+        violations, _ = check_public_env.inspect_environment((), {
+            "VITE_SUPABASE_URL": "https://example.supabase.co",
+            "VITE_SUPABASE_ANON_KEY": "public-key",
+            "VITE_SUPABASE_SERVICE_ROLE_KEY": "must-not-be-bundled",
+        })
+        self.assertEqual(violations, ["environment:VITE_SUPABASE_SERVICE_ROLE_KEY"])
+
     def test_reset_baseline_has_required_application_rows(self) -> None:
         self.assertEqual(reset_db.BASELINE_TABLE_COUNTS, {"currencies": 4, "system_settings": 1})
         self.assertEqual({row[0] for row in reset_db.BASELINE_CURRENCIES}, {"USD", "SAR", "SDG", "EGP"})

@@ -8,7 +8,7 @@ import {
 } from "@tanstack/react-table"
 import {
   ArrowUpDown, ChevronLeft, ChevronRight, Plus, Search, Package, Boxes, Settings,
-  X, SlidersHorizontal, Eye, Pencil, Copy, MoveRight,
+  X, SlidersHorizontal, Eye, Pencil,
   ChevronDown, List, Columns, Loader2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -106,13 +106,10 @@ function distinctValuesFromWeapons(
 // ----------------------------------------------------------------------
 
 const RowActions = memo(function RowActions({
-  onView, onEdit, onDuplicate, onMove,
+  onView, onEdit,
 }: {
-  weapon: Weapon
   onView: () => void
   onEdit: () => void
-  onDuplicate: () => void
-  onMove: () => void
 }) {
   const { t } = useI18n()
   return (
@@ -128,12 +125,6 @@ const RowActions = memo(function RowActions({
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onEdit}>
           <Pencil className="mr-2 size-3.5" /> {t("common.edit")}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onDuplicate}>
-          <Copy className="mr-2 size-3.5" /> {t("common.duplicate")}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onMove}>
-          <MoveRight className="mr-2 size-3.5" /> {t("common.move")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -551,17 +542,10 @@ export function InventoryPage() {
         header: "",
         cell: ({ row }) => (
           <RowActions
-            weapon={row.original}
             onView={() => handleRowClick(row.original.id)}
             onEdit={() => {
               setSelectedWeaponId(row.original.id)
               setPanelOpen(true)
-            }}
-            onDuplicate={() => {
-              toast(t("toast.duplicateNotImplemented"))
-            }}
-            onMove={() => {
-              toast(t("toast.moveNotImplemented"))
             }}
           />
         ),

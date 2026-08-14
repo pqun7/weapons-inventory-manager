@@ -10,6 +10,8 @@ from pathlib import Path
 
 import psycopg
 
+from workflow_test_data import ensure_workflow_prerequisites
+
 
 def load_env(path: Path) -> None:
     for raw in path.read_text(encoding="utf-8-sig").splitlines() if path.exists() else []:
@@ -28,6 +30,7 @@ def main() -> None:
 
     with psycopg.connect(database_url) as connection:
         with connection.cursor() as cursor:
+            ensure_workflow_prerequisites(cursor, marker)
             cursor.execute(
                 "select count(*) from information_schema.columns "
                 "where table_schema = 'public' and table_name = 'shipment_import_items' and column_name = 'confidence_json'"

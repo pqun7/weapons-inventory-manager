@@ -11,6 +11,8 @@ from pathlib import Path
 
 import psycopg
 
+from workflow_test_data import ensure_workflow_prerequisites
+
 
 def load_env(path: Path) -> None:
     for raw in path.read_text(encoding="utf-8-sig").splitlines() if path.exists() else []:
@@ -31,6 +33,7 @@ def main() -> None:
                 cursor.execute("SELECT pg_get_functiondef('public.bulk_intake_weapons(jsonb)'::regprocedure)")
                 print(cursor.fetchone()[0])
                 return
+            ensure_workflow_prerequisites(cursor, uuid.uuid4().hex.upper())
             cursor.execute("SELECT auth_user_id FROM public.users WHERE auth_user_id IS NOT NULL AND is_active ORDER BY CASE WHEN role = 'Admin' THEN 0 ELSE 1 END, id LIMIT 1")
             actor = cursor.fetchone()
             if not actor:

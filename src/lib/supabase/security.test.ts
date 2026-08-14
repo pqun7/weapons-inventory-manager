@@ -37,6 +37,28 @@ describe("Supabase security boundary", () => {
     expect(read("src/lib/supabase/client.ts")).toMatch(/VITE_SUPABASE_ANON_KEY/)
   })
 
+  it("forces every packaged application build to omit developer Supabase values", () => {
+    const packageJson = JSON.parse(read("package.json")) as { scripts: Record<string, string> }
+    const packagingScripts = Object.entries(packageJson.scripts).filter(([name]) => name.startsWith("electron:") && name !== "electron:dev")
+    expect(packagingScripts.length).toBeGreaterThan(0)
+    for (const [name, command] of packagingScripts) {
+      expect(command, name).toContain("ARMORY_GENERIC_BUILD=true")
+    }
+    const buildConfig = read("rsbuild.config.ts")
+    expect(buildConfig).toContain('process.env.ARMORY_GENERIC_BUILD === "true"')
+    expect(buildConfig).toMatch(/filter\(\(\[key\]\) => !key\.includes\("SUPABASE"\)\)/)
+  })
+
+  it("exposes only non-sensitive installation metadata and keeps the installation table behind RLS", () => {
+    const installation = migration("20260814000100_independent_store_installation.sql")
+    const metadataFunction = installation.match(/create or replace function public\.armory_installation_info\(\)[\s\S]*?\$\$;/i)?.[0]
+    expect(installation).toContain("alter table public.app_installation enable row level security")
+    expect(installation).toContain("revoke all on table public.app_installation from public, anon, authenticated")
+    expect(installation).toContain("grant execute on function public.armory_installation_info() to anon, authenticated")
+    expect(metadataFunction).toBeDefined()
+    expect(metadataFunction).not.toMatch(/service_role|decrypted_secret|project_url|publishable/i)
+  })
+
   it("uses explicit columns in every active Supabase repository", () => {
     const repository = read("src/lib/db/index.ts")
     const manifestRepository = read("src/lib/manifest-client.ts")

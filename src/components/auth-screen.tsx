@@ -69,7 +69,11 @@ export function AuthScreen({ lang, error, onResolve, onSignIn, onCompleteFirstLo
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-muted/30 p-4" dir="auto">
+    <main
+      className="flex min-h-screen items-center justify-center bg-muted/30 p-4"
+      lang={lang}
+      dir={lang === "ar" ? "rtl" : "ltr"}
+    >
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <div className="mx-auto mb-2 flex size-11 items-center justify-center rounded-full bg-primary/10 text-primary">

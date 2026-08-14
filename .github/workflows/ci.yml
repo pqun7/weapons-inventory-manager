@@ -33,14 +33,20 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci
 
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
       - name: Install database script dependencies
         run: python -m pip install -r scripts/requirements-migration.txt
 
       - name: Type-check
         run: npm run typecheck
 
-      - name: Test application
-        run: npm test
+      - name: Lint
+        run: npm run lint
+
+      - name: Test application with coverage gates
+        run: npm run test:coverage
 
       - name: Test database maintenance scripts
         run: npm run test:db-scripts

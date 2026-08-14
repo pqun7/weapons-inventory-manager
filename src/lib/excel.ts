@@ -12,6 +12,7 @@ import type {
 } from "./types"
 import { useStore } from "./store"
 import { checksum } from "./format"
+import { assertSafeSpreadsheetFile, assertSafeSpreadsheetRows } from "./spreadsheet-limits"
 
 // ============ JSON Snapshot Engine ============
 
@@ -301,6 +302,7 @@ export interface ImportConflictReport {
 }
 
 export async function analyzeExcelImport(file: File): Promise<ImportConflictReport> {
+  assertSafeSpreadsheetFile(file)
   const arrayBuffer = await file.arrayBuffer()
   const XLSX = await import("xlsx")
   const wb = XLSX.read(arrayBuffer, { type: "array" })
@@ -316,6 +318,7 @@ export async function analyzeExcelImport(file: File): Promise<ImportConflictRepo
 
   if (wb.SheetNames.includes("Inventory")) {
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets["Inventory"])
+    assertSafeSpreadsheetRows(rows.length)
     const existingSerials = new Set(state.weapons.map((w) => w.serialNumber.toLowerCase()))
     rows.forEach((row) => {
       const sn = String(row["Serial Number"] ?? "").trim()
@@ -334,6 +337,7 @@ export async function analyzeExcelImport(file: File): Promise<ImportConflictRepo
 
   if (wb.SheetNames.includes("Sales")) {
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets["Sales"])
+    assertSafeSpreadsheetRows(rows.length)
     const existingInvoices = new Set(state.invoices.map((i) => i.invoiceNumber))
     rows.forEach((row) => {
       const inv = String(row["Invoice Number"] ?? "").trim()

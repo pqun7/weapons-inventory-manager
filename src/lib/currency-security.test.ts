@@ -2,31 +2,23 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 import { CurrencyService } from "@/lib/currency-service"
 
 vi.mock("@/lib/db", () => {
-  let rateStore: Map<string, string> = new Map([
+  const rateStore: Map<string, string> = new Map([
     ["USD", "1"],
     ["EUR", "0.92"],
     ["SAR", "3.75"],
     ["SDG", "600"],
   ])
-  let overrideStore: Map<string, { mode: string; manual_rate: string | null; updated_by: string; updated_at: string; reason: string }> = new Map()
-  let auditLog: Array<{ code: string; oldRate: string | null; newRate: string | null; changedBy: string; reason: string; changedAt: string }> = []
-  let inTx = false
+  const overrideStore: Map<string, { mode: string; manual_rate: string | null; updated_by: string; updated_at: string; reason: string }> = new Map()
+  const auditLog: Array<{ code: string; oldRate: string | null; newRate: string | null; changedBy: string; reason: string; changedAt: string }> = []
   let txFailed = false
 
   const engine = {
     init: vi.fn().mockResolvedValue(undefined),
     transaction: vi.fn(async (cb: () => unknown) => {
-      inTx = true
       txFailed = false
-      try {
-        const result = cb()
-        if (txFailed) throw new Error("Transaction failed")
-        inTx = false
-        return result
-      } catch (e) {
-        inTx = false
-        throw e
-      }
+      const result = cb()
+      if (txFailed) throw new Error("Transaction failed")
+      return result
     }),
     getCurrencies: vi.fn(() => ({
       data: Array.from(rateStore.entries()).map(([code, rate]) => ({
