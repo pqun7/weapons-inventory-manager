@@ -64,7 +64,7 @@
     ]
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=24.15.0"
   },
   "scripts": {
     "dev": "concurrently \"rsbuild dev\" \"wait-on tcp:3000 && cross-env RSBUILD_DEV_SERVER_URL=http://localhost:3000 nodemon\"",

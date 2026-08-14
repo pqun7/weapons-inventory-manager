@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/pqun7/weapons-inventory-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/pqun7/weapons-inventory-manager/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js&logoColor=white)](package.json)
+[![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-339933?logo=node.js&logoColor=white)](package.json)
 [![Electron](https://img.shields.io/badge/Desktop-Electron-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 
 Armory Store is an open-source desktop ERP for regulated inventory retailers. It brings serialized inventory, purchasing, shipment intake, sales, receivables, multi-currency accounting, user permissions, and operational audit history into one bilingual Electron application backed by Supabase PostgreSQL.
@@ -103,7 +103,7 @@ Armory Store is an open-source desktop ERP for regulated inventory retailers. It
 
 ## Developer prerequisites
 
-- Node.js 20 or newer and npm 10 or newer
+- Node.js 24.15 or newer and npm 11 or newer
 - Python 3.10 or newer
 - A Supabase project with direct PostgreSQL connection access
 - Supabase CLI for deploying Edge Functions
