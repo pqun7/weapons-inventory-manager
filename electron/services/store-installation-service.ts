@@ -21,6 +21,34 @@ const CONFIG_FILENAME = "store-connection.json"
 const MIGRATION_LOCK_ID = "armory-store-schema-migrations"
 const SETUP_LOCK_ID = "armory-store-initial-setup"
 
+// Supabase Postgres endpoints are signed by this private CA, which is not part
+// of the operating-system trust store. Pinning the provider CA keeps hostname
+// and certificate verification enabled instead of falling back to insecure TLS.
+// Source: Supabase Database Settings -> SSL Configuration (prod-ca-2021.crt).
+export const SUPABASE_DATABASE_CA_CERTIFICATE = `-----BEGIN CERTIFICATE-----
+MIIDxDCCAqygAwIBAgIUbLxMod62P2ktCiAkxnKJwtE9VPYwDQYJKoZIhvcNAQEL
+BQAwazELMAkGA1UEBhMCVVMxEDAOBgNVBAgMB0RlbHdhcmUxEzARBgNVBAcMCk5l
+dyBDYXN0bGUxFTATBgNVBAoMDFN1cGFiYXNlIEluYzEeMBwGA1UEAwwVU3VwYWJh
+c2UgUm9vdCAyMDIxIENBMB4XDTIxMDQyODEwNTY1M1oXDTMxMDQyNjEwNTY1M1ow
+azELMAkGA1UEBhMCVVMxEDAOBgNVBAgMB0RlbHdhcmUxEzARBgNVBAcMCk5ldyBD
+YXN0bGUxFTATBgNVBAoMDFN1cGFiYXNlIEluYzEeMBwGA1UEAwwVU3VwYWJhc2Ug
+Um9vdCAyMDIxIENBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqQXW
+QyHOB+qR2GJobCq/CBmQ40G0oDmCC3mzVnn8sv4XNeWtE5XcEL0uVih7Jo4Dkx1Q
+DmGHBH1zDfgs2qXiLb6xpw/CKQPypZW1JssOTMIfQppNQ87K75Ya0p25Y3ePS2t2
+GtvHxNjUV6kjOZjEn2yWEcBdpOVCUYBVFBNMB4YBHkNRDa/+S4uywAoaTWnCJLUi
+cvTlHmMw6xSQQn1UfRQHk50DMCEJ7Cy1RxrZJrkXXRP3LqQL2ijJ6F4yMfh+Gyb4
+O4XajoVj/+R4GwywKYrrS8PrSNtwxr5StlQO8zIQUSMiq26wM8mgELFlS/32Uclt
+NaQ1xBRizkzpZct9DwIDAQABo2AwXjALBgNVHQ8EBAMCAQYwHQYDVR0OBBYEFKjX
+uXY32CztkhImng4yJNUtaUYsMB8GA1UdIwQYMBaAFKjXuXY32CztkhImng4yJNUt
+aUYsMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAB8spzNn+4VU
+tVxbdMaX+39Z50sc7uATmus16jmmHjhIHz+l/9GlJ5KqAMOx26mPZgfzG7oneL2b
+VW+WgYUkTT3XEPFWnTp2RJwQao8/tYPXWEJDc0WVQHrpmnWOFKU/d3MqBgBm5y+6
+jB81TU/RG2rVerPDWP+1MMcNNy0491CTL5XQZ7JfDJJ9CCmXSdtTl4uUQnSuv/Qx
+Cea13BX2ZgJc7Au30vihLhub52De4P/4gonKsNHYdbWjg7OWKwNv/zitGDVDB9Y2
+CMTyZKG3XEu5Ghl1LEnI3QmEKsqaCLv12BnVjbkSeZsMnevJPs1Ye6TjjJwdik5P
+o/bKiIz+Fq8=
+-----END CERTIFICATE-----`
+
 interface StoredConfigurationEnvelope {
   format: "encrypted-v1" | "plain-v1"
   data: string
@@ -54,13 +82,14 @@ function validateDatabaseUrl(value: string, projectRef: string): string {
   } catch {
     throw new Error("The PostgreSQL connection string is invalid")
   }
+  const sslMode = parsed.searchParams.get("sslmode")
   if (!['postgres:', 'postgresql:'].includes(parsed.protocol)
     || parsed.port !== "5432"
     || parsed.pathname !== "/postgres"
     || !parsed.username
     || !parsed.password
-    || parsed.searchParams.get("sslmode") !== "require") {
-    throw new Error("Use a Supabase direct or session-pooler connection string on port 5432 with sslmode=require")
+    || (sslMode !== null && sslMode !== "require" && sslMode !== "verify-full")) {
+    throw new Error("Use a Supabase direct or session-pooler connection string on port 5432")
   }
   const directHost = `db.${projectRef}.supabase.co`
   const sessionPooler = parsed.hostname.endsWith(".pooler.supabase.com")
@@ -68,7 +97,10 @@ function validateDatabaseUrl(value: string, projectRef: string): string {
   if (parsed.hostname.toLowerCase() !== directHost || decodeURIComponent(parsed.username) !== "postgres") {
     if (!sessionPooler) throw new Error("The database connection string does not belong to the selected Supabase project")
   }
-  return value.trim()
+  // The application supplies the pinned Supabase CA below, so upgrade copied
+  // dashboard URLs to full certificate and hostname verification automatically.
+  parsed.searchParams.set("sslmode", "verify-full")
+  return parsed.toString()
 }
 
 function normalizeSetupInput(input: InitializeStoreInput): InitializeStoreInput {
@@ -126,7 +158,10 @@ function resolveMigrationsDirectory(): string {
 async function connectDatabase(databaseUrl: string): Promise<Client> {
   const client = new Client({
     connectionString: databaseUrl,
-    ssl: { rejectUnauthorized: true },
+    ssl: {
+      ca: SUPABASE_DATABASE_CA_CERTIFICATE,
+      rejectUnauthorized: true,
+    },
     connectionTimeoutMillis: 15_000,
     query_timeout: 60_000,
     application_name: "armory-store-setup",

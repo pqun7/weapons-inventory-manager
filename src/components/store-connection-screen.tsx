@@ -21,6 +21,25 @@ const COPY = {
     employeeTab: "الانضمام إلى متجر",
     ownerTitle: "إعداد Supabase مرة واحدة",
     ownerHelp: "أنشئ مشروع Supabase فارغًا، ثم أدخل بياناته هنا. تُستخدم بيانات الإدارة خلال الإعداد فقط ولا تُحفظ على هذا الجهاز.",
+    securityTitle: "بيانات الإعداد محمية",
+    securityHelp: "يتصل التطبيق مباشرة بمشروع Supabase الذي تملكه، ولا يرسل بيانات الإعداد إلى مطور التطبيق أو إلى خدمة وسيطة.",
+    securityDetails: [
+      "رابط قاعدة البيانات وكلمة مرورها وكلمة مرور المالك تبقى في الذاكرة أثناء الإعداد فقط، ولا تُكتب في ملفات الجهاز أو سجلات التطبيق.",
+      "يُحفظ مفتاح Secret مشفرًا داخل Supabase Vault في مشروعك فقط لإدارة الحسابات؛ ولا يُحفظ على هذا الجهاز.",
+      "يُحفظ على الجهاز رابط المشروع والمفتاح العام وبيانات المتجر والجلسة الضرورية فقط. اسم المالك وبريده يُحفظان في Supabase لإنشاء الحساب.",
+    ],
+    storeNameExample: "مثال: متجر الرياض للأسلحة",
+    projectUrlExample: "مثال: https://abcdefghijklmnopqrst.supabase.co",
+    publishableKeyExample: "مثال: sb_publishable_... من Project Settings → API Keys",
+    publishableKeyPlaceholder: "sb_publishable_...",
+    serverKeyExample: "مثال: sb_secret_... من Project Settings → API Keys",
+    serverKeyPlaceholder: "sb_secret_...",
+    databaseUrlExample: "الصق Direct connection أو Session pooler من Connect؛ سيُفرض التحقق الآمن تلقائيًا.",
+    ownerNameExample: "مثال: أيمن علي",
+    ownerEmailExample: "مثال: owner@example.com",
+    ownerEmailPlaceholder: "owner@example.com",
+    passwordHelp: "8 أحرف على الأقل، وتتضمن حرفًا كبيرًا وصغيرًا ورقمًا. لا تستخدم كلمة المرور التجريبية نفسها.",
+    privacyAcknowledgement: "أؤكد أنني قرأت طريقة معالجة البيانات وأفهم أن أسرار قاعدة البيانات لا تُحفظ على الجهاز، وأن مفتاح Secret سيُحفظ مشفرًا داخل Supabase Vault في مشروعي.",
     dashboard: "فتح Supabase Dashboard",
     storeName: "اسم المتجر",
     projectUrl: "Project URL",
@@ -62,6 +81,25 @@ const COPY = {
     employeeTab: "Join an existing store",
     ownerTitle: "One-time Supabase setup",
     ownerHelp: "Create an empty Supabase project, then enter its details here. Administrative credentials are used only during setup and are not stored on this device.",
+    securityTitle: "Your setup data is protected",
+    securityHelp: "The application connects directly to the Supabase project you own. Setup data is not sent to the application developer or an intermediary service.",
+    securityDetails: [
+      "The database URL, database password, and owner password stay in memory only during setup and are not written to device files or application logs.",
+      "The Secret key is stored encrypted inside Supabase Vault in your project for account administration; it is not stored on this device.",
+      "Only the project URL, public key, store metadata, and required session are saved on the device. The owner's name and email are stored in Supabase to create the account.",
+    ],
+    storeNameExample: "Example: Riyadh Armory Store",
+    projectUrlExample: "Example: https://abcdefghijklmnopqrst.supabase.co",
+    publishableKeyExample: "Example: sb_publishable_... from Project Settings → API Keys",
+    publishableKeyPlaceholder: "sb_publishable_...",
+    serverKeyExample: "Example: sb_secret_... from Project Settings → API Keys",
+    serverKeyPlaceholder: "sb_secret_...",
+    databaseUrlExample: "Paste Direct connection or Session pooler from Connect; full TLS verification is enforced automatically.",
+    ownerNameExample: "Example: Ayman Ali",
+    ownerEmailExample: "Example: owner@example.com",
+    ownerEmailPlaceholder: "owner@example.com",
+    passwordHelp: "Use 8+ characters with upper-case, lower-case, and a number. Do not reuse the example credentials.",
+    privacyAcknowledgement: "I confirm that I have read how setup data is handled. Database secrets are not stored on this device, and the Secret key will be encrypted inside Supabase Vault in my project.",
     dashboard: "Open Supabase Dashboard",
     storeName: "Store name",
     projectUrl: "Project URL",
@@ -110,13 +148,14 @@ const EMPTY_SETUP: InitializeStoreInput = {
 }
 
 const PROJECT_URL_EXAMPLE = "https://project-ref.supabase.co"
-const DATABASE_URL_EXAMPLE = "postgresql://...:5432/postgres?sslmode=require"
+const DATABASE_URL_EXAMPLE = "postgresql://postgres:YOUR_PASSWORD@db.PROJECT_REF.supabase.co:5432/postgres"
 
 export function StoreConnectionScreen() {
   const [language, setLanguage] = useState<Language>(() => navigator.language.toLowerCase().startsWith("ar") ? "ar" : "en")
   const [setup, setSetup] = useState(EMPTY_SETUP)
   const [confirmation, setConfirmation] = useState("")
   const [acknowledged, setAcknowledged] = useState(false)
+  const [privacyAcknowledged, setPrivacyAcknowledged] = useState(false)
   const [connectionCode, setConnectionCode] = useState("")
   const [working, setWorking] = useState(false)
   const [progress, setProgress] = useState<StoreSetupProgressStage | null>(null)
@@ -135,7 +174,7 @@ export function StoreConnectionScreen() {
   const initialize = async (event: FormEvent) => {
     event.preventDefault()
     setError("")
-    if (!desktop || Object.values(setup).some((value) => !value.trim()) || !acknowledged) {
+    if (!desktop || Object.values(setup).some((value) => !value.trim()) || !acknowledged || !privacyAcknowledged) {
       setError(t.required)
       return
     }
@@ -209,20 +248,31 @@ export function StoreConnectionScreen() {
               <CardContent>
                 <form className="grid gap-4" onSubmit={initialize}>
                   <a href="https://supabase.com/dashboard" target="_blank" rel="noreferrer" className="inline-flex w-fit items-center gap-1 text-sm font-medium text-primary hover:underline">{t.dashboard}<ExternalLink className="size-3.5" /></a>
+                  <Alert className="border-emerald-600/30 bg-emerald-500/5">
+                    <ShieldCheck className="text-emerald-600" />
+                    <AlertTitle>{t.securityTitle}</AlertTitle>
+                    <AlertDescription className="space-y-2">
+                      <p>{t.securityHelp}</p>
+                      <ul className="list-disc space-y-1 ps-5">
+                        {t.securityDetails.map((detail) => <li key={detail}>{detail}</li>)}
+                      </ul>
+                    </AlertDescription>
+                  </Alert>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label={t.storeName}><Input required maxLength={120} value={setup.storeName} onChange={(e) => update("storeName", e.target.value)} /></Field>
-                    <Field label={t.projectUrl}><Input required dir="ltr" placeholder={PROJECT_URL_EXAMPLE} value={setup.supabaseUrl} onChange={(e) => update("supabaseUrl", e.target.value)} /></Field>
+                    <Field label={t.storeName} help={t.storeNameExample}><Input required maxLength={120} placeholder={rtl ? "متجر الرياض للأسلحة" : "Riyadh Armory Store"} value={setup.storeName} onChange={(e) => update("storeName", e.target.value)} /></Field>
+                    <Field label={t.projectUrl} help={t.projectUrlExample}><Input required dir="ltr" placeholder={PROJECT_URL_EXAMPLE} value={setup.supabaseUrl} onChange={(e) => update("supabaseUrl", e.target.value)} /></Field>
                   </div>
-                  <Field label={t.publishableKey}><PasswordInput required dir="ltr" autoComplete="off" value={setup.publishableKey} onChange={(e) => update("publishableKey", e.target.value)} /></Field>
-                  <Field label={t.serverKey}><PasswordInput required dir="ltr" autoComplete="off" value={setup.serverKey} onChange={(e) => update("serverKey", e.target.value)} /></Field>
-                  <Field label={t.databaseUrl}><PasswordInput required dir="ltr" autoComplete="off" placeholder={DATABASE_URL_EXAMPLE} value={setup.databaseUrl} onChange={(e) => update("databaseUrl", e.target.value)} /></Field>
+                  <Field label={t.publishableKey} help={t.publishableKeyExample}><PasswordInput required dir="ltr" autoComplete="off" placeholder={t.publishableKeyPlaceholder} value={setup.publishableKey} onChange={(e) => update("publishableKey", e.target.value)} /></Field>
+                  <Field label={t.serverKey} help={t.serverKeyExample}><PasswordInput required dir="ltr" autoComplete="off" placeholder={t.serverKeyPlaceholder} value={setup.serverKey} onChange={(e) => update("serverKey", e.target.value)} /></Field>
+                  <Field label={t.databaseUrl} help={t.databaseUrlExample}><PasswordInput required dir="ltr" autoComplete="off" placeholder={DATABASE_URL_EXAMPLE} value={setup.databaseUrl} onChange={(e) => update("databaseUrl", e.target.value)} /></Field>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label={t.ownerName}><Input required maxLength={120} value={setup.ownerName} onChange={(e) => update("ownerName", e.target.value)} /></Field>
-                    <Field label={t.ownerEmail}><Input required type="email" dir="ltr" autoComplete="username" value={setup.ownerEmail} onChange={(e) => update("ownerEmail", e.target.value)} /></Field>
-                    <Field label={t.ownerPassword}><PasswordInput required autoComplete="new-password" value={setup.ownerPassword} onChange={(e) => update("ownerPassword", e.target.value)} /></Field>
+                    <Field label={t.ownerName} help={t.ownerNameExample}><Input required maxLength={120} placeholder={rtl ? "أيمن علي" : "Ayman Ali"} value={setup.ownerName} onChange={(e) => update("ownerName", e.target.value)} /></Field>
+                    <Field label={t.ownerEmail} help={t.ownerEmailExample}><Input required type="email" dir="ltr" autoComplete="username" placeholder={t.ownerEmailPlaceholder} value={setup.ownerEmail} onChange={(e) => update("ownerEmail", e.target.value)} /></Field>
+                    <Field label={t.ownerPassword} help={t.passwordHelp}><PasswordInput required autoComplete="new-password" value={setup.ownerPassword} onChange={(e) => update("ownerPassword", e.target.value)} /></Field>
                     <Field label={t.confirmPassword}><PasswordInput required autoComplete="new-password" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} /></Field>
                   </div>
                   <label className="flex items-start gap-2 rounded-md border p-3 text-sm"><Checkbox checked={acknowledged} onCheckedChange={(checked) => setAcknowledged(checked === true)} /><span>{t.acknowledgement}</span></label>
+                  <label className="flex items-start gap-2 rounded-md border border-emerald-600/30 bg-emerald-500/5 p-3 text-sm"><Checkbox checked={privacyAcknowledged} onCheckedChange={(checked) => setPrivacyAcknowledged(checked === true)} /><span>{t.privacyAcknowledgement}</span></label>
                   {!desktop && <Alert><Database /><AlertTitle>{t.desktopOnly}</AlertTitle></Alert>}
                   {working && progress && <div className="flex items-center gap-2 rounded-md bg-muted p-3 text-sm"><span className="size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />{t.stages[progress]}</div>}
                   <Button disabled={working || !desktop}>{working ? t.initializing : t.initialize}</Button>
@@ -247,6 +297,6 @@ export function StoreConnectionScreen() {
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="grid gap-1.5"><Label>{label}</Label>{children}</div>
+function Field({ label, help, children }: { label: string; help?: string; children: React.ReactNode }) {
+  return <div className="grid gap-1.5"><Label>{label}</Label>{children}{help && <p className="text-xs text-muted-foreground">{help}</p>}</div>
 }
