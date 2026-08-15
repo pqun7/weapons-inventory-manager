@@ -46,7 +46,7 @@ try {
   summary.initialization.firstOpenMs = Math.round(performance.now() - initializationStarted)
   assert.equal(fs.existsSync(testDbPath), true)
   assert.equal(path.dirname(testDbPath), databaseModule.getDbDirectory())
-  assert.equal(Number(db().pragma("user_version", { simple: true })), 12)
+  assert.equal(Number(db().pragma("user_version", { simple: true })), 13)
   assert.equal(Number(db().pragma("foreign_keys", { simple: true })), 1)
   assert.equal(String(db().pragma("journal_mode", { simple: true })).toLowerCase(), "wal")
   assert.equal(Number(db().pragma("busy_timeout", { simple: true })), 5000)
@@ -68,7 +68,7 @@ try {
 
   databaseModule.closeDatabase()
   await databaseModule.initDatabase()
-  assert.equal(Number(db().pragma("user_version", { simple: true })), 12)
+  assert.equal(Number(db().pragma("user_version", { simple: true })), 13)
   summary.initialization.idempotentReopen = true
 
   const administrator = auth.configureLocalAdministrator({
@@ -84,6 +84,13 @@ try {
   assert.equal(session.role, "Admin")
   assert.equal(auth.resolveLocalAccount("contract.admin").requiresActivation, false)
   summary.authentication = { passwordHash: "scrypt-v1", mainOwnedSession: true, primaryAdminId: session.userId }
+  assert.ok(db().prepare("SELECT id FROM invoices WHERE id = 'DEMO-INVOICE'").get())
+  op("dbDeleteDemoData")
+  assert.equal(db().prepare("SELECT id FROM invoices WHERE id = 'DEMO-INVOICE'").get(), undefined)
+  assert.equal(db().prepare("SELECT show_demo_data FROM system_settings WHERE id = 1").get().show_demo_data, 0)
+  op("dbResetDemoData")
+  assert.ok(db().prepare("SELECT id FROM invoices WHERE id = 'DEMO-INVOICE'").get())
+  summary.demoLifecycle = { freshInstallSeeded: true, deleteScoped: true, resetVerified: true }
 
   const weaponTypeId = op("dbInsertMasterWeaponType", "Test Pistol", 900)
   const subtypeId = op("dbInsertMasterWeaponSubtype", weaponTypeId, "Test 9mm", 900)
@@ -113,6 +120,20 @@ try {
     timeline: [], currency: "SAR", lineItems: [], documents: [], workflowStatus: "scheduled", plannedCosts: [], createdAt: new Date().toISOString(),
   }
   op("dbInsertShipment", shipment)
+  op("dbUpdateScheduledShipment", shipment.id, {
+    shipmentNumber: shipment.shipmentNumber, supplierId: supplier.id, shipmentDate: today,
+    expectedArrivalDate: future, totalExpectedItems: 0, attachments: [], notes: "partial draft",
+    currency: "SAR", lineItems: [{
+      id: "SLI-PARTIAL", productType: "weapon", weaponTypeId: "", weaponSubtypeId: "",
+      caliberId: "", brandId: "", modelId: "", storageLocationId: null,
+      quantity: 0, purchasePrice: 0, retailPrice: 0, wholesalePrice: 0,
+      serialNumbers: [], weaponTypeLabel: "", subTypeLabel: "", caliberLabel: "",
+      brandLabel: "", modelLabel: "",
+    }],
+  })
+  const savedDraftLines = JSON.parse(db().prepare("SELECT line_items FROM shipments WHERE id = ?").get(shipment.id).line_items)
+  assert.equal(savedDraftLines[0].id, "SLI-PARTIAL")
+  assert.equal(savedDraftLines[0].storageLocationId ?? null, null)
 
   const weapon = {
     id: "W-CONTRACT", serialNumber: "SERIAL-CONTRACT-0001", weaponTypeId, weaponSubtypeId: subtypeId,
@@ -143,6 +164,14 @@ try {
   op("dbUpdateWeapon", { ...weapon, notes: "updated" })
   op("dbUpdateAccessory", { ...accessory, quantity: 12, retailPrice: 65 })
   op("dbUpdateAmmunition", { ...ammunition, looseRounds: 10, retailPrice: 3.25 })
+  const intakeWithoutLocation = op("dbBulkIntakeWeapons", {
+    serialNumbers: ["SERIAL-NO-LOCATION-0001"], weaponTypeId, weaponSubtypeId: subtypeId,
+    caliberId, brandId, modelId, storageLocationId: null, condition: "Excellent",
+    purchasePrice: 900, retailPrice: 1200, wholesalePrice: 1100, supplierId: supplier.id,
+    shipmentId: null, currency: "SAR", notes: "optional location contract", additionalCosts: [],
+  })
+  assert.equal(intakeWithoutLocation.added, 1)
+  assert.equal(db().prepare("SELECT storage_location_id FROM weapons WHERE serial_number = ?").get("SERIAL-NO-LOCATION-0001").storage_location_id, null)
 
   op("dbInsertAuditLog", { id: "AUD-CONTRACT", timestamp: new Date().toISOString(), date: today, userId: session.userId, actionType: "Update", description: "contract audit", metadata: "{}" })
   op("dbInsertNotification", { id: "NTF-CONTRACT", type: "System", title: "Contract", message: "notification", date: today, read: false, entityId: weapon.id })
@@ -159,8 +188,19 @@ try {
   auth.signOutLocal()
   const employeeSession = auth.claimLocalAccount("employee.contract", createdUser.activationCode, "EmployeePass123")
   assert.equal(employeeSession.userId, createdUser.userId)
+  expectThrows(() => auth.createLocalActivationCode(createdUser.userId), /completed password setup/i)
   auth.signOutLocal()
   auth.signInLocal("contract.admin", "StrongPass123")
+
+  op("dbDeleteUser", createdUser.userId)
+  expectThrows(() => auth.resolveLocalAccount("employee.contract"), /not found|inactive/i)
+  const recreatedUser = op("dbInsertUser", {
+    id: "U-EMPLOYEE-REUSED", username: "employee.contract", name: "Contract Employee", role: "Employee",
+    permissions: { canImportExcel: false, canExportData: false, canViewReports: false, canManageUsers: false, canRegisterPayments: false, canVoidInvoices: false, canExtendDueDates: false, canDeleteRecords: false },
+    passwordSet: false, passwordHash: "",
+  })
+  assert.match(recreatedUser.activationCode, /^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/)
+  assert.equal(db().prepare("SELECT is_active FROM users WHERE id = ?").get(createdUser.userId).is_active, 0)
 
   const all = op("dbGetAll")
   const expectedContractKeys = ["weapons", "accessories", "ammunition", "shipments", "invoices", "payments", "customers", "suppliers", "auditLogs", "notifications", "users", "settings", "savedFilters", "inventoryProductTypes"]
@@ -169,6 +209,8 @@ try {
   assert.equal(all.accessories.find((row) => row.id === accessory.id).retailPrice, 65)
   assert.equal(all.ammunition.find((row) => row.id === ammunition.id).name, "Contract Ammo")
   assert.equal(all.customers.find((row) => row.id === customer.id).customFields.license, "L-2")
+  assert.equal(all.users.some((row) => row.id === createdUser.userId), false)
+  assert.equal(all.users.some((row) => row.id === recreatedUser.userId), true)
   summary.crud = {
     entities: ["users", "weapons", "weapon types", "subtypes", "calibers", "brands", "models", "storage locations", "suppliers", "customers", "shipments", "accessories", "ammunition", "audit logs", "settings", "notifications", "saved filters", "preferences"],
     providerContractKeys: expectedContractKeys,
@@ -189,6 +231,7 @@ try {
   const settings = op("dbGetSettings")
   const tax = Number(settings.taxPercent)
   const saleInput = {
+    operationId: crypto.randomUUID(),
     weaponIds: [weapon.id],
     lineItems: [{ itemType: "weapon", itemId: weapon.id, name: weapon.serialNumber, quantity: 1, unitPrice: 1500, total: 1500 }],
     customerId: customer.id, customerName: customer.name, mode: "Retail", invoiceNumber: "INV-CONTRACT-SALE",
@@ -198,17 +241,59 @@ try {
   const sale = op("dbCompleteSale", saleInput)
   assert.ok(sale.invoiceId)
   assert.equal(db().prepare("SELECT status FROM weapons WHERE id = ?").get(weapon.id).status, "Sold")
-  expectThrows(() => op("dbCompleteSale", { ...saleInput, invoiceNumber: "INV-CONTRACT-DUPLICATE" }), /already sold|not available/i)
+  const retriedSale = op("dbCompleteSale", saleInput)
+  assert.deepEqual(retriedSale, sale)
+  assert.equal(Number(db().prepare("SELECT COUNT(*) AS count FROM invoices WHERE id = ?").get(sale.invoiceId).count), 1)
+  expectThrows(() => op("dbCompleteSale", { ...saleInput, operationId: crypto.randomUUID(), invoiceNumber: "INV-CONTRACT-DUPLICATE" }), /already sold|not available/i)
   assert.equal(Number(db().prepare("SELECT COUNT(*) AS count FROM invoices WHERE invoice_number LIKE 'INV-CONTRACT-%'").get().count), 1)
   const invoiceBeforePayment = op("dbGetAll").invoices.find((row) => row.id === sale.invoiceId)
   const payment = op("dbRegisterPayment", { invoiceId: sale.invoiceId, amount: invoiceBeforePayment.balance, currency: "SAR", method: "cash", notes: "settled" })
   assert.equal(payment.newBalance, 0)
   assert.equal(db().prepare("SELECT status FROM invoices WHERE id = ?").get(sale.invoiceId).status, "Paid")
+
+  const atomicCustomerInput = {
+    operationId: crypto.randomUUID(), weaponIds: [],
+    lineItems: [{ itemType: "accessory", itemId: accessory.id, name: accessory.name, quantity: 1, unitPrice: 60, total: 60 }],
+    newCustomer: { name: "Atomic Customer", phone: "+966 555 100", email: "Atomic@Example.Test", address: "Riyadh", isWholesaleBuyer: false, wholesaleDiscountPercent: 0 },
+    mode: "Retail", invoiceNumber: "INV-ATOMIC-CUSTOMER", totalNegotiated: 60, totalOriginal: 60,
+    dueDate: future, attachments: [], notes: "rollback test", taxAmount: Number((60 * tax / 100).toFixed(2)),
+    paidAmount: 0, paymentMethod: "cash", date: today, currency: "SAR",
+  }
+  db().exec("CREATE TRIGGER reject_atomic_invoice BEFORE INSERT ON invoices WHEN NEW.invoice_number = 'INV-ATOMIC-CUSTOMER' BEGIN SELECT RAISE(ABORT, 'forced invoice failure'); END")
+  expectThrows(() => op("dbCompleteSale", atomicCustomerInput), /forced invoice failure/i)
+  assert.equal(db().prepare("SELECT id FROM customers WHERE lower(email) = 'atomic@example.test'").get(), undefined)
+  assert.equal(db().prepare("SELECT quantity FROM accessories WHERE id = ?").get(accessory.id).quantity, 12)
+  db().exec("DROP TRIGGER reject_atomic_invoice")
+  const atomicCustomerSale = op("dbCompleteSale", atomicCustomerInput)
+  assert.ok(atomicCustomerSale.invoiceId)
+  assert.equal(Number(db().prepare("SELECT COUNT(*) AS count FROM customers WHERE lower(email) = 'atomic@example.test'").get().count), 1)
+  const atomicCustomerRetry = op("dbCompleteSale", atomicCustomerInput)
+  assert.deepEqual(atomicCustomerRetry, atomicCustomerSale)
+
+  const priceOnlyStock = {
+    operationId: crypto.randomUUID(), itemType: "accessory", itemId: accessory.id,
+    quantityDelta: 0, costUpdate: { amount: 52, currency: "SAR" },
+    shipmentId: null, notes: "price-only correction", location: accessory.location,
+  }
+  const stockBefore = db().prepare("SELECT quantity FROM accessories WHERE id = ?").get(accessory.id).quantity
+  op("dbAdjustInventoryStock", priceOnlyStock)
+  assert.equal(db().prepare("SELECT quantity FROM accessories WHERE id = ?").get(accessory.id).quantity, stockBefore)
+  assert.equal(db().prepare("SELECT price FROM accessories WHERE id = ?").get(accessory.id).price, 52)
+  const priceAuditCount = tableCount("audit_logs")
+  op("dbAdjustInventoryStock", priceOnlyStock)
+  assert.equal(tableCount("audit_logs"), priceAuditCount)
+  expectThrows(() => op("dbAdjustInventoryStock", { ...priceOnlyStock, quantityDelta: 1 }), /different request/i)
+  const quantityOnlyStock = { ...priceOnlyStock, operationId: crypto.randomUUID(), quantityDelta: 3, costUpdate: undefined, notes: "quantity-only receipt" }
+  op("dbAdjustInventoryStock", quantityOnlyStock)
+  assert.equal(db().prepare("SELECT quantity FROM accessories WHERE id = ?").get(accessory.id).quantity, stockBefore + 3)
   summary.relationsAndTransactions = {
     foreignKeys: "enforced",
     uniqueSerials: "enforced",
     rollback: "verified",
     atomicSale: "verified",
+    idempotentSaleRetry: "verified",
+    atomicCustomerRollbackAndRetry: "verified",
+    independentIdempotentStockChanges: "verified",
     duplicateSale: "prevented",
     invoicePayment: "atomic",
   }
@@ -296,7 +381,7 @@ try {
     before.close()
     await databaseModule.initDatabase()
     const afterVersion = Number(db().pragma("user_version", { simple: true }))
-    assert.equal(afterVersion, 12)
+    assert.equal(afterVersion, 13)
     assert.equal(tableCount("users"), beforeUsers)
     assert.equal(db().prepare("PRAGMA integrity_check").get().integrity_check, "ok")
     assert.equal(db().prepare("PRAGMA foreign_key_check").all().length, 0)

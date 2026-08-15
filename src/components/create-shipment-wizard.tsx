@@ -53,7 +53,6 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
   const suppliers = useStore((s) => s.suppliers)
   const md = useDynamicMasterData()
   const { currencies, transactionCurrency, formatOriginal } = useCurrency()
-  const addSupplier = useStore((s) => s.addSupplier)
   const bulkCreate = useStore((s) => s.bulkCreateShipmentWithItems)
   const createShipment = useStore((s) => s.createShipment)
 
@@ -80,6 +79,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
   const [newSupName, setNewSupName] = useState("")
   const [newSupContact, setNewSupContact] = useState("")
   const [newSupPhone, setNewSupPhone] = useState("")
+  const [pendingSupplier, setPendingSupplier] = useState<{ name: string; contactPerson: string; phone: string; email: string; address: string } | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [tableProcessing, setTableProcessing] = useState(false)
 
@@ -89,6 +89,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
     setStep(0)
     setShipmentNumber("")
     setSupplierId("")
+    setPendingSupplier(null)
     setPurchaseOrderNumber("")
     setInvoiceNumber("")
     setShippingCarrier("")
@@ -216,22 +217,19 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
     updateLineItem(manifestItem.id, updates)
   }
 
-  const handleQuickAddSupplier = async () => {
+  const handleQuickAddSupplier = () => {
     if (!newSupName.trim()) { toast.error(t("common.name")); return }
-    const result = await addSupplier({
+    const draft = {
       name: newSupName.trim(), contactPerson: newSupContact.trim(),
       phone: newSupPhone.trim(), email: "", address: "",
-    })
-    if (result.success && result.supplier) {
-      setSupplierId(result.supplier.id)
-      toast.success(t("toast.shipmentCreated"))
-      setQuickAddSupplierOpen(false)
-      setNewSupName("")
-      setNewSupContact("")
-      setNewSupPhone("")
-    } else {
-      toast.error(result.error ?? "Failed")
     }
+    const existing = suppliers.find((supplier) => supplier.name.trim().toLocaleLowerCase() === draft.name.toLocaleLowerCase())
+    setPendingSupplier(existing ? null : draft)
+    setSupplierId(existing?.id ?? "__pending_supplier__")
+    setQuickAddSupplierOpen(false)
+    setNewSupName("")
+    setNewSupContact("")
+    setNewSupPhone("")
   }
 
   const stepValidation = useMemo(() => {
@@ -321,23 +319,21 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
           modelId = classification.modelId ?? ""
           caliberId = classification.caliberId ?? ""
         }
-        const storageLocation = item.productType === "weapon" ? md.storageLocations[0] : undefined
-        const warehouse = storageLocation ? md.warehouses.find((candidate) => candidate.id === storageLocation.warehouse_id) : undefined
         return {
           ...item,
           brandId, modelId, weaponTypeId, weaponSubtypeId, caliberId,
-          storageLocationId: storageLocation?.id ?? "",
+          storageLocationId: item.storageLocationId || null,
           brandLabel: item.brandLabel ?? "",
           modelLabel: item.modelLabel ?? "",
           weaponTypeLabel: item.weaponTypeLabel ?? "",
           subTypeLabel: item.subTypeLabel ?? "",
           caliberLabel: item.caliberLabel ?? "",
-          location: storageLocation ? { warehouse: warehouse?.label ?? "", shelf: storageLocation.shelf, bin: storageLocation.bin } : undefined,
+          location: item.location,
         }
       }))
 
       const shipment = {
-        shipmentNumber, supplierId, shipmentDate, expectedArrivalDate,
+        shipmentNumber, supplierId: pendingSupplier ? "" : supplierId, newSupplier: pendingSupplier ?? undefined, shipmentDate, expectedArrivalDate,
         totalExpectedItems: totals.totalItems, attachments: [], notes,
         purchaseOrderNumber, invoiceNumber, shippingCarrier, containerNumber,
         currency, purchaseDate,
@@ -468,11 +464,12 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
                         <Building2 className="size-3" /> {t("common.add")}
                       </Button>
                     </div>
-                    <Select value={supplierId} onValueChange={setSupplierId}>
+                    <Select value={supplierId} onValueChange={(value) => { setSupplierId(value); if (value !== "__pending_supplier__") setPendingSupplier(null) }}>
                       <SelectTrigger className={cn("mt-1 h-8 text-xs", !supplierId && step === 0 && "border-destructive")}>
                         <SelectValue placeholder={t("ship.supplier")} />
                       </SelectTrigger>
                       <SelectContent>
+                        {pendingSupplier && <SelectItem value="__pending_supplier__">{pendingSupplier.name} ({t("common.new")})</SelectItem>}
                         {suppliers.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
@@ -622,7 +619,7 @@ export function CreateShipmentWizard({ open, onOpenChange, prefillLineItems }: C
                   </h4>
                   <div className="grid grid-cols-2 gap-2 text-[11px]">
                     <div><span className="text-muted-foreground">{t("ship.shipmentNumber")}:</span> <span className="font-mono">{shipmentNumber}</span></div>
-                    <div><span className="text-muted-foreground">{t("ship.supplier")}:</span> {supplierMap[supplierId]}</div>
+                    <div><span className="text-muted-foreground">{t("ship.supplier")}:</span> {pendingSupplier?.name ?? supplierMap[supplierId]}</div>
                     <div><span className="text-muted-foreground">{t("ship.expectedArrival")}:</span> {formatDate(expectedArrivalDate)}</div>
                     <div><span className="text-muted-foreground">{t("ship.shippingCarrier")}:</span> {shippingCarrier || "—"}</div>
                   </div>

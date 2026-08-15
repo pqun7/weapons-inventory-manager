@@ -185,7 +185,9 @@ export function buildLocalDashboardAnalytics(data: AllData, range: DashboardDate
     return result
   }
   const categoryMetrics = accumulate((line) => `${line.category}:${line.segment}`, (line) => line.segment)
-  const productMetrics = accumulate((line) => `${line.category}:${line.productName.toLocaleLowerCase("en")}`, (line) => line.productName)
+  // Product identity is the persisted ID, never the display name. Two distinct
+  // SKUs/models may legitimately share a label and must not be merged.
+  const productMetrics = accumulate((line) => `${line.category}:${line.productId}`, (line) => line.productName)
   const salesSince = new Map<string, string>()
   for (const invoice of sales.filter((item) => dateValue(item.date) >= todayMs - 180 * dayMs)) {
     for (const line of invoice.lineItems) {

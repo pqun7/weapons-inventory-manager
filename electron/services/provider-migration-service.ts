@@ -356,6 +356,11 @@ function replaceSqliteData(snapshot: PortableSnapshot, input: MigrateSupabaseToS
   const database = getDb()
   const existing = sqliteTables()
   database.transaction(() => {
+    // Idempotency receipts are local execution metadata rather than business
+    // records. Clear them first so their restrictive invoice references cannot
+    // block an otherwise valid provider replacement.
+    if (existing.has("sale_operations")) database.prepare("DELETE FROM sale_operations").run()
+    if (existing.has("stock_operations")) database.prepare("DELETE FROM stock_operations").run()
     for (const table of [...PORTABLE_TABLES].reverse()) {
       if (snapshot.tables[table] && existing.has(table)) database.prepare(`DELETE FROM ${table}`).run()
     }

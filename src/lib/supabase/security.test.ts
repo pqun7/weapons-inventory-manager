@@ -38,6 +38,22 @@ describe("Supabase security boundary", () => {
     expect(read("src/lib/supabase/client.ts")).toMatch(/VITE_SUPABASE_ANON_KEY/)
   })
 
+  it("accepts owner-supplied provisioning values only for the one-time main-process setup", () => {
+    const screen = read("src/components/first-run-setup-screen.tsx")
+    const handler = read("electron/ipc/store-installation-handler.ts")
+    const setupService = read("electron/services/store-installation-service.ts")
+
+    expect(screen).toContain("supabaseUrl, publishableKey, serverKey, databaseUrl")
+    expect(screen).toContain('setServerKey("")')
+    expect(screen).toContain('setDatabaseUrl("")')
+    expect(handler).toContain("initializeStore({")
+    expect(handler).not.toContain("initializeStoreFromEnvironment({")
+    expect(setupService).toContain("saveStoredConnection(connection)")
+    expect(setupService).toContain("supabaseUrl: normalizeSupabaseUrl")
+    expect(setupService).toContain("publishableKey: validatePublishableKey")
+    expect(setupService).not.toMatch(/validatedStoredConnection[\s\S]{0,1200}(?:serverKey|databaseUrl|ownerPassword)/)
+  })
+
   it("forces every packaged application build to omit developer Supabase values", () => {
     const packageJson = JSON.parse(read("package.json")) as { scripts: Record<string, string> }
     const packagingScripts = Object.entries(packageJson.scripts).filter(([name]) => name.startsWith("electron:") && name !== "electron:dev")
@@ -132,6 +148,41 @@ describe("Supabase security boundary", () => {
     expect(migratedActivation).toContain("if account.auth_user_id is null then")
     expect(migratedActivation).toContain("created_auth_user_id := (auth_response ->> 'id')::uuid")
     expect(migratedActivation).toContain("if created_auth_user_id is not null then")
+  })
+
+  it("releases deleted account identities without losing historical user rows", () => {
+    const reusableIdentity = migration("20260815000700_reusable_deleted_user_identities.sql")
+    const deadlockFreeDelete = migration("20260815000800_deadlock_free_auth_user_deletion.sql")
+    const compatibleHttp = migration("20260815000900_provider_compatible_auth_http.sql")
+    const nativeHttp = migration("20260815001000_restore_native_auth_http_defaults.sql")
+    const decryptedVault = migration("20260815001100_restore_decrypted_vault_credentials.sql")
+    expect(reusableIdentity).toContain("where is_active and email is not null")
+    expect(reusableIdentity).toContain("where is_active and username is not null")
+    expect(reusableIdentity).toContain("release_conflicting_inactive_user_identities(clean_name, clean_email)")
+    expect(reusableIdentity).toContain("release_user_identity(target.id)")
+    expect(reusableIdentity).toContain("auth_admin_request('DELETE'")
+    expect(reusableIdentity).toContain("case when action_name = ''create''")
+    expect(reusableIdentity).toContain("else coalesce(user_payload ->> ''id'', p_request ->> ''userId'')")
+    expect(reusableIdentity).not.toContain("delete from public.users")
+    expect(deadlockFreeDelete.indexOf("auth_admin_request('DELETE'")).toBeLessThan(deadlockFreeDelete.indexOf("for update"))
+    expect(deadlockFreeDelete).toContain("ON DELETE SET NULL")
+    expect(compatibleHttp).toContain("http_reset_curlopt()")
+    expect(compatibleHttp).not.toContain("http_set_curlopt")
+    expect(nativeHttp).not.toContain("http_set_curlopt")
+    expect(nativeHttp).not.toContain("http_reset_curlopt")
+    expect(decryptedVault).toContain("decrypted.decrypted_secret into service_key")
+    expect(decryptedVault).toContain("decrypted.decrypted_secret into project_url")
+    expect(decryptedVault).not.toMatch(/select decrypted\.secret into/)
+  })
+
+  it("uses the supported Auth user update method and handles modern secret keys", () => {
+    const reliableActivation = migration("20260815001200_reliable_auth_user_activation.sql")
+    expect(reliableActivation).toContain("upper(p_method) = 'PATCH' then 'PUT'")
+    expect(reliableActivation).toContain("service_key not like 'sb_secret_%'")
+    expect(reliableActivation).toContain("decrypted.decrypted_secret into service_key")
+    expect(reliableActivation).toContain("auth_admin_request(''PUT''")
+    expect(reliableActivation).toContain("response_json ->> 'error_description'")
+    expect(reliableActivation).toContain("Auth API status")
   })
 
   it("keeps the production runtime independent from a local database", () => {

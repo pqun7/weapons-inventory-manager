@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { fetchDashboardAnalytics } from "@/lib/dashboard/service"
 import type { DashboardAnalytics, DashboardDateRange } from "@/lib/dashboard/types"
+import { dashboardAnalyticsCache as cache } from "@/lib/dashboard/cache"
 
 const CACHE_TTL_MS = 60_000
-const cache = new Map<string, { data: DashboardAnalytics; fetchedAt: number }>()
-
 export function useDashboardAnalytics(range: DashboardDateRange, enabled = true) {
   const key = `${range.start}:${range.end}`
   const requestId = useRef(0)

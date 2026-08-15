@@ -5,8 +5,9 @@ The desktop application uses Supabase PostgreSQL as its only operational databas
 ## Generic release and runtime connection
 
 Public releases do not embed a Supabase project. On first launch, the owner can
-initialize a new project once or a staff device can import a store connection
-code. Electron stores only the project URL, publishable/anon key, installation
+initialize their own new project once by entering its connection values in the
+protected first-run form, or a staff device can import a store connection code.
+Electron stores only the project URL, publishable/anon key, installation
 ID, store label, and schema version in the application's user-data directory.
 The Auth storage key is namespaced by installation ID so sessions cannot leak
 between store projects.
@@ -21,12 +22,25 @@ VITE_SUPABASE_ANON_KEY=PUBLIC_ANON_OR_PUBLISHABLE_KEY
 
 Never expose a service-role/secret key, a database password, an AI provider key, or an administrator password through a `VITE_` variable, preload API, or renderer source.
 
-During one-time owner setup, Electron main validates the project URL, public
-key, server key, and PostgreSQL connection string; applies the packaged
+During one-time owner setup, the renderer sends the form values once to Electron
+main over the isolated IPC bridge, then clears the server key, PostgreSQL URL,
+and owner password fields after the attempt. Electron main validates the project
+URL, public key, server key, and PostgreSQL connection string; applies the packaged
 migrations with checksums and advisory locking; stores the server key and
 project URL in the owner's Supabase Vault; creates the protected primary owner;
-then persists only public client configuration. Privileged setup values are
-never written to application configuration or returned to the renderer.
+then persists only public client configuration. The server key, PostgreSQL URL,
+database password, and owner password are never written to device configuration
+or logs and are never returned from Electron main to the renderer.
+
+If the selected project already contains Armory Store accounts, setup normally
+requires the existing primary owner's credentials. The owner can instead opt in
+to account replacement for a project dedicated exclusively to this store. That
+explicitly confirmed operation hard-deletes every Supabase Auth user in the
+selected project, anonymizes and disables historical application profiles so
+business/audit foreign keys remain valid, and creates one new primary owner. It
+does not delete business records, the Supabase project or organization, or any
+other Supabase project. Never enable replacement for a project shared with
+another application.
 
 Store connection codes are portable because they contain only the project URL
 and public client key. They are not authentication credentials: a user account,

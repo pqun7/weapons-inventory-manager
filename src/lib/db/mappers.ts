@@ -418,6 +418,12 @@ function parseValuation(value: unknown): MoneyValuation | undefined {
   }
 }
 
+function requiredFiniteNumber(value: unknown, field: string): number {
+  const normalized = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : Number.NaN
+  if (!Number.isFinite(normalized)) throw new Error(`${field} is missing or invalid in the database`)
+  return normalized
+}
+
 function parseLocation(warehouse: string, shelf: string, bin: string): StorageLocation {
   return { warehouse, shelf, bin }
 }
@@ -567,6 +573,13 @@ function shipmentToRow(s: Shipment): Record<string, unknown> {
     line_items: s.lineItems ?? [],
     documents: s.documents ?? [],
     total_cost_valuation: s.totalCostValuation ?? null,
+    workflow_status: s.workflowStatus ?? null,
+    import_id: s.importId ?? null,
+    arrival_note: s.arrivalNote ?? null,
+    delay_reason: s.delayReason ?? null,
+    last_arrival_prompt_at: s.lastArrivalPromptAt ?? null,
+    planned_costs: s.plannedCosts ?? [],
+    created_at: s.createdAt ?? new Date().toISOString(),
   }
 }
 
@@ -950,20 +963,21 @@ function rowToSettings(r: SettingsRow): SystemSettings {
     rateBaseCurrencyCode: r.rate_base_currency_code,
     supportedCurrencies: parseJSON(r.supported_currencies, ["USD", "SAR", "SDG", "EGP"]),
     currencyFrequency: parseJSON(r.currency_frequency, {}),
-    taxPercent: r.tax_percent,
+    taxPercent: requiredFiniteNumber(r.tax_percent, "Tax percent"),
     invoiceHeader: r.invoice_header,
     invoiceFooter: r.invoice_footer,
     storeLogo: r.store_logo,
-    thermalPrinterWidth: r.thermal_printer_width,
+    thermalPrinterWidth: requiredFiniteNumber(r.thermal_printer_width, "Thermal printer width"),
     labelFormat: r.label_format,
     hourlySnapshot: r.hourly_snapshot === true || r.hourly_snapshot === 1,
     dailyClosingPrompt: r.daily_closing_prompt === true || r.daily_closing_prompt === 1,
     weeklyVerification: r.weekly_verification === true || r.weekly_verification === 1,
-    minProfitMarginPercent: r.min_profit_margin_percent,
-    targetRetailMarginPercent: r.target_retail_margin_percent,
-    targetWholesaleMarginPercent: r.target_wholesale_margin_percent,
-    maximumMarkupPercent: r.maximum_markup_percent,
+    minProfitMarginPercent: requiredFiniteNumber(r.min_profit_margin_percent, "Minimum profit margin"),
+    targetRetailMarginPercent: requiredFiniteNumber(r.target_retail_margin_percent, "Target retail margin"),
+    targetWholesaleMarginPercent: requiredFiniteNumber(r.target_wholesale_margin_percent, "Target wholesale margin"),
+    maximumMarkupPercent: requiredFiniteNumber(r.maximum_markup_percent, "Maximum markup"),
     psychologicalPricing: r.psychological_pricing === true || r.psychological_pricing === 1,
+    showDemoData: r.show_demo_data === 1,
     theme: (r.theme as SystemSettings["theme"]) ?? "system",
     preferredDisplayCurrency: r.preferred_display_currency ?? undefined,
     appLanguage: r.app_language,
@@ -1000,6 +1014,7 @@ function settingsToRow(s: SystemSettings): Record<string, unknown> {
     target_wholesale_margin_percent: s.targetWholesaleMarginPercent,
     maximum_markup_percent: s.maximumMarkupPercent,
     psychological_pricing: s.psychologicalPricing,
+    show_demo_data: s.showDemoData ?? false,
     theme: s.theme ?? "system",
     preferred_display_currency: s.preferredDisplayCurrency ?? null,
     app_language: s.appLanguage ?? "en",

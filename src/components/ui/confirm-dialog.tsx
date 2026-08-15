@@ -9,7 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { AlertTriangle, Info, Trash2 } from "lucide-react"
+import { AlertTriangle, Info, Loader2, Trash2 } from "lucide-react"
 import { useI18n } from "@/lib/i18n"
 
 type ConfirmVariant = "default" | "destructive" | "warning"
@@ -24,6 +24,7 @@ interface ConfirmDialogProps {
   cancelLabel?: string
   variant?: ConfirmVariant
   onConfirm: () => void
+  pending?: boolean
 }
 
 const variantConfig: Record<ConfirmVariant, { icon: typeof Info; iconClass: string; buttonClass: string }> = {
@@ -42,6 +43,7 @@ export function ConfirmDialog({
   cancelLabel,
   variant = "default",
   onConfirm,
+  pending = false,
 }: ConfirmDialogProps) {
   const { t } = useI18n()
   const cfg = variantConfig[variant]
@@ -71,11 +73,13 @@ export function ConfirmDialog({
           </div>
         )}
         <AlertDialogFooter>
-          <AlertDialogCancel className="h-8 text-xs">{cancelLabel ?? t("common.cancel")}</AlertDialogCancel>
+          <AlertDialogCancel disabled={pending} className="h-8 text-xs">{cancelLabel ?? t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction
             className={cn("h-8 text-xs", cfg.buttonClass)}
-            onClick={(e) => { e.preventDefault(); onConfirm() }}
+            disabled={pending}
+            onClick={(e) => { e.preventDefault(); if (!pending) onConfirm() }}
           >
+            {pending && <Loader2 className="size-3.5 animate-spin" />}
             {confirmLabel ?? t("common.confirm")}
           </AlertDialogAction>
         </AlertDialogFooter>

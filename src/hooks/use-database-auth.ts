@@ -28,13 +28,13 @@ function readLoginEmail(value: unknown): string {
   return String((value as Record<string, unknown>).loginEmail)
 }
 
-export async function signOutActiveDatabase(): Promise<void> {
+export async function signOutActiveDatabase(options?: { localOnly?: boolean }): Promise<void> {
   if (getDatabaseProvider() === "sqlite") {
     const response = await window.electronAPI?.localAuth.signOut()
     if (!response?.success) throw new Error(response?.error ?? "Local sign-out failed")
     return
   }
-  const { error } = await getSupabaseClient().auth.signOut()
+  const { error } = await getSupabaseClient().auth.signOut(options?.localOnly ? { scope: "local" } : undefined)
   if (error) throw new Error(error.message)
 }
 

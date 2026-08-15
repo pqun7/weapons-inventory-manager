@@ -576,9 +576,18 @@ export async function dbDeleteCurrency(code: string): Promise<void> {
   if (error) throw new Error(`Delete currency: ${error.message}`)
 }
 
+export async function dbResetDemoData(): Promise<void> {
+  throw new Error("Demo data lifecycle is available for local SQLite stores")
+}
+
+export async function dbDeleteDemoData(): Promise<void> {
+  throw new Error("Demo data lifecycle is available for local SQLite stores")
+}
+
 export async function dbCompleteSale(input: SaleInput): Promise<{ invoiceId: string; invoiceNumber: string }> {
-  const { data, error } = await getSupabaseClient().rpc("complete_sale", {
-    p_customer_id: input.customerId, p_customer_name: input.customerName, p_mode: input.mode,
+  const { data, error } = await getSupabaseClient().rpc("complete_sale_v2", {
+    p_operation_id: input.operationId, p_customer_id: input.customerId ?? null,
+    p_new_customer: (input.newCustomer ?? null) as unknown as Json, p_mode: input.mode,
     p_invoice_number: input.invoiceNumber, p_line_items: input.lineItems as unknown as Json,
     p_total_original: input.totalOriginal, p_total_negotiated: input.totalNegotiated,
     p_tax_amount: input.taxAmount, p_due_date: input.dueDate, p_paid_amount: input.paidAmount ?? 0,
@@ -613,7 +622,7 @@ export async function dbUpdateWeaponNotes(weaponId: string, notes: string): Prom
   if (error) throw new Error(error.message)
 }
 
-export async function dbUpdateWeaponLocation(weaponId: string, storageLocationId: string): Promise<void> {
+export async function dbUpdateWeaponLocation(weaponId: string, storageLocationId: string | null): Promise<void> {
   const { error } = await getSupabaseClient().rpc("update_weapon_location", {
     p_weapon_id: weaponId, p_storage_location_id: storageLocationId,
   })
@@ -740,15 +749,12 @@ export async function dbUpdateScheduledShipment(shipmentId: string, patch: Shipm
 }
 
 export async function dbAdjustInventoryStock(input: AddStockInput): Promise<void> {
-  const { error } = await getSupabaseClient().rpc("adjust_inventory_stock", {
+  const { error } = await getSupabaseClient().rpc("adjust_inventory_stock_v2", {
+    p_operation_id: input.operationId,
     p_item_type: input.itemType,
     p_item_id: input.itemId,
-    p_quantity: input.quantity ?? 0,
-    p_packages: input.packages ?? 0,
-    p_loose_rounds: input.looseRounds ?? 0,
-    p_price: input.price ?? null,
-    p_purchase_price: input.purchasePrice ?? null,
-    p_currency: input.currency ?? null,
+    p_quantity_delta: input.quantityDelta,
+    p_cost_update: (input.costUpdate ?? null) as unknown as Json,
     p_shipment_id: input.shipmentId ?? null,
     p_notes: input.notes ?? "",
     p_location: (input.location ?? null) as unknown as Json,
@@ -871,4 +877,3 @@ export async function dbReplaceProductCosts(productType: string, productId: stri
   })
   if (error) throw new Error(error.message)
 }
-

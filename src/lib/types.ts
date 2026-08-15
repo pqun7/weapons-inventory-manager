@@ -690,6 +690,7 @@ export interface SystemSettings {
   targetWholesaleMarginPercent: number
   maximumMarkupPercent: number
   psychologicalPricing: boolean
+  showDemoData?: boolean
   theme?: "dark" | "light" | "system"
   // Multi-currency display preferences
   preferredDisplayCurrency?: string

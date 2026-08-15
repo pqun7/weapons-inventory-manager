@@ -12,6 +12,7 @@ import { ammoTotalRounds } from "./types.js"
 import * as db from "./db/index.js"
 import { optimisticShipment } from "./shipment-workflow.js"
 import { permissionsForRole } from "./rbac.js"
+import { invalidateDashboardAnalyticsCache } from "./dashboard/cache.js"
 
 // ============ Input Types ============
 
@@ -23,7 +24,7 @@ export interface BulkIntakeInput {
   caliberId: string
   brandId: string
   modelId: string
-  storageLocationId: string
+  storageLocationId?: string | null
   // Labels (optional, for display in audit logs, etc.)
   weaponTypeLabel?: string
   subTypeLabel?: string
@@ -45,10 +46,19 @@ export interface BulkIntakeInput {
 }
 
 export interface SaleInput {
+  operationId: string
   weaponIds: string[]
   lineItems: SaleLineItem[]
-  customerId: string
-  customerName: string
+  customerId?: string
+  customerName?: string
+  newCustomer?: {
+    name: string
+    phone: string
+    email: string
+    address: string
+    isWholesaleBuyer: boolean
+    wholesaleDiscountPercent: number
+  }
   mode: SaleMode
   invoiceNumber: string
   totalNegotiated: number
@@ -67,6 +77,7 @@ export interface SaleInput {
 export interface ShipmentInput {
   shipmentNumber: string
   supplierId: string
+  newSupplier?: { name: string; contactPerson: string; phone: string; email: string; address: string }
   shipmentDate: string
   expectedArrivalDate: string
   totalExpectedItems: number
@@ -93,7 +104,7 @@ export interface ShipmentLineItemInput {
   caliberId: string
   brandId: string
   modelId: string
-  storageLocationId: string
+  storageLocationId?: string | null
   quantity: number
   purchasePrice: number
   retailPrice: number
@@ -142,23 +153,21 @@ export interface DueDateExtensionInput {
 }
 
 export interface AddStockInput {
+  operationId: string;
   itemType: "accessory" | "ammunition";
   itemId: string;
   // حقول خاصة بالقطع (Accessories)
-  quantity?: number;
+  quantityDelta: number;
   // حقول خاصة بالذخائر (Ammunition)
-  packages?: number;
-  looseRounds?: number;
   // تحديث السعر (اختياري)
-  price?: number;
-  currency?: string;
+  costUpdate?: { amount: number; currency: string };
   // حقول قديمة محفوظة للتوافق مع الإصدارات السابقة (غير مستخدمة في الـ handler الحالي)
-  purchasePrice?: number;
   shipmentId?: string | null;
   notes?: string;
   location?: StorageLocation;
 }
 export interface ReceiveAmmoByPackagesInput {
+  operationId: string
   itemId: string
   numberOfPackages: number
   unitsPerPackage: number
@@ -170,6 +179,7 @@ export interface ReceiveAmmoByPackagesInput {
 }
 
 export interface ReceiveAmmoByRoundsInput {
+  operationId: string
   itemId: string
   totalRounds: number
   purchasePrice: number
@@ -227,8 +237,9 @@ export interface StoreState {
   // CRUD operations (async — go through IPC in Electron, fall back to db layer in browser)
   addBulkWeapons: (input: BulkIntakeInput) => Promise<{ success: boolean; added: number; duplicates: string[]; error?: string }>
   updateWeaponStatus: (weaponId: string, status: WeaponStatus, reason?: string) => Promise<{ success: boolean; error?: string }>
+  updateWeaponDetails: (weaponId: string, updates: Partial<Weapon>) => Promise<{ success: boolean; error?: string }>
   updateWeaponNotes: (weaponId: string, notes: string) => Promise<{ success: boolean; error?: string }>
-  updateWeaponLocation: (weaponId: string, storageLocationId: string) => Promise<{ success: boolean; error?: string }>
+  updateWeaponLocation: (weaponId: string, storageLocationId: string | null) => Promise<{ success: boolean; error?: string }>
   addWeaponImage: (weaponId: string, imageBase64: string) => Promise<{ success: boolean; error?: string }>
   completeSale: (input: SaleInput) => Promise<{ success: boolean; invoiceId?: string; invoiceNumber?: string; error?: string }>
   returnWeapon: (weaponId: string) => Promise<{ success: boolean; error?: string }>
@@ -335,6 +346,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
   targetWholesaleMarginPercent: 20,
   maximumMarkupPercent: 200,
   psychologicalPricing: false,
+  showDemoData: true,
   theme: "system",
 }
 
@@ -464,6 +476,7 @@ export const useStore = create<StoreState>()(
     refreshFromDb: async () => {
       try {
         const data = await db.dbGetAll()
+        invalidateDashboardAnalyticsCache()
         set((state) => ({
           weapons: data.weapons,
           accessories: data.accessories,
@@ -534,6 +547,28 @@ export const useStore = create<StoreState>()(
       }
     },
 
+    updateWeaponDetails: async (weaponId, updates) => {
+      const current = get().weapons.find((weapon) => weapon.id === weaponId)
+      if (!current) return { success: false, error: "Weapon not found" }
+      const actor = get().getCurrentUser()
+      if (actor.role !== "Admin" && actor.permissions?.["inventory.edit"] !== true) {
+        return { success: false, error: "Inventory edit permission is required" }
+      }
+      const protectedKeys = new Set(["id", "status", "movementHistory", "actualFinalPrice", "actualFinalPriceValuation", "salePriceValuation"])
+      const safeUpdates = Object.fromEntries(Object.entries(updates).filter(([key]) => !protectedKeys.has(key))) as Partial<Weapon>
+      const updated = { ...current, ...safeUpdates }
+      try {
+        await db.dbUpdateWeapon(updated)
+        await db.dbWriteAuditEvent("Update", `Weapon ${current.serialNumber} details updated`, JSON.stringify({
+          entityType: "weapon", entityId: weaponId, previousValues: current, newValues: updated,
+        }))
+        await get().refreshFromDb()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    },
+
     updateWeaponNotes: async (weaponId, notes) => {
       try {
         await db.dbUpdateWeaponNotes(weaponId, notes)
@@ -544,7 +579,7 @@ export const useStore = create<StoreState>()(
       }
     },
 
-    updateWeaponLocation: async (weaponId: string, storageLocationId: string) => {
+    updateWeaponLocation: async (weaponId: string, storageLocationId: string | null) => {
       const state = get()
       const weapon = state.weapons.find(w => w.id === weaponId)
       if (!weapon) return { success: false, error: "Weapon not found" }

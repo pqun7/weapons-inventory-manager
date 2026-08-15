@@ -53,6 +53,18 @@ export function isCurrencyActive(value: number | boolean): boolean {
   return value === true || value === 1
 }
 
+export function normalizeExchangeRate(value: unknown, currencyCode: string): number
+export function normalizeExchangeRate(value: unknown, currencyCode: string, optional: true): number | null
+export function normalizeExchangeRate(value: unknown, currencyCode: string, optional = false): number | null {
+  if (value == null || (typeof value === "string" && value.trim() === "")) {
+    if (optional) return null
+    throw new Error(`Exchange rate is missing for ${currencyCode}`)
+  }
+  const normalized = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN
+  if (!Number.isFinite(normalized) || normalized <= 0) throw new Error(`Exchange rate is invalid for ${currencyCode}`)
+  return normalized
+}
+
 type ExchangeRateApiPayload = {
   result: "success"
   baseCode: string
@@ -159,16 +171,14 @@ class CurrencyServiceClass {
     const rows = await dbGetCurrencies()
     this.currencies.clear()
     for (const row of rows) {
-      const rateStr = typeof row.last_known_rate === "string"
-        ? Number(row.last_known_rate)
-        : row.last_known_rate
+      const rate = normalizeExchangeRate(row.last_known_rate, row.iso_code)
       this.currencies.set(row.iso_code, {
         isoCode: row.iso_code,
         name: row.name,
         symbol: row.symbol,
         decimalPrecision: row.decimal_precision,
         isActive: isCurrencyActive(row.is_active),
-        lastKnownRate: rateStr,
+        lastKnownRate: rate,
         lastRateUpdatedAt: row.last_rate_updated_at,
       })
     }
@@ -181,7 +191,7 @@ class CurrencyServiceClass {
       this.overrides.set(row.currency_code, {
         currencyCode: row.currency_code,
         mode: row.mode as "automatic" | "manual",
-        manualRate: row.manual_rate,
+        manualRate: normalizeExchangeRate(row.manual_rate, row.currency_code, true),
         updatedBy: row.updated_by,
         updatedAt: row.updated_at,
         reason: row.reason,
@@ -358,7 +368,12 @@ class CurrencyServiceClass {
   }
 
   async getAuditLog(limit: number = 50): Promise<AuditLogEntry[]> {
-    return dbGetRateAuditLog(limit)
+    const rows = await dbGetRateAuditLog(limit)
+    return rows.map((row) => ({
+      ...row,
+      oldRate: normalizeExchangeRate(row.oldRate, row.currencyCode, true),
+      newRate: normalizeExchangeRate(row.newRate, row.currencyCode, true),
+    }))
   }
 
   async addCurrency(

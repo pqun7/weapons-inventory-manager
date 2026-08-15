@@ -25,7 +25,7 @@ const electronApp = electron.app
 const electronSafeStorage = electron.safeStorage
 const MIGRATION_LOCK_ID = "armory-store-schema-migrations"
 const SETUP_LOCK_ID = "armory-store-initial-setup"
-const REAPPLY_SAFE_MIGRATION_VERSIONS = new Set(["20260813000700"])
+const REAPPLY_SAFE_MIGRATION_VERSIONS = new Set(["20260813000700", "20260815000200"])
 const DATABASE_CONNECTION_TIMEOUT_MS = 90_000
 const DATABASE_QUERY_TIMEOUT_MS = 300_000
 const STORE_VERIFICATION_TIMEOUT_MS = 45_000
@@ -131,6 +131,7 @@ function normalizeSetupInput(input: InitializeStoreInput): InitializeStoreInput 
     ownerName,
     ownerEmail,
     ownerPassword: input.ownerPassword,
+    replaceExistingAccounts: input.replaceExistingAccounts === true,
     supabaseUrl,
     publishableKey: validatePublishableKey(input.publishableKey),
     serverKey: validateServerKey(input.serverKey),
@@ -145,6 +146,28 @@ function sanitizedError(error: unknown): Error {
     .replace(/sb_(?:secret|publishable)_[A-Za-z0-9_-]+/g, "[Supabase key hidden]")
     .replace(/eyJ[A-Za-z0-9._-]{40,}/g, "[JWT hidden]")
   return new Error(message.slice(0, 500))
+}
+
+async function verifyProjectApiCredentials(input: InitializeStoreInput): Promise<void> {
+  let publicResponse: Response
+  try {
+    publicResponse = await fetch(`${input.supabaseUrl}/auth/v1/settings`, {
+      headers: { apikey: input.publishableKey },
+      signal: AbortSignal.timeout(STORE_VERIFICATION_TIMEOUT_MS),
+    })
+  } catch {
+    throw new Error("Could not reach the Supabase project. Check the URL and internet connection")
+  }
+  if (!publicResponse.ok) {
+    throw new Error("The publishable key does not belong to the selected Supabase project")
+  }
+
+  const adminClient = createClient(input.supabaseUrl, input.serverKey, {
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+    global: { headers: { "x-application-name": "armory-store-credential-check" } },
+  })
+  const { error } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1 })
+  if (error) throw new Error("The administrative key was rejected by the selected Supabase project")
 }
 
 function migrationBody(sql: string): string {
@@ -264,15 +287,152 @@ async function existingStoreOwner(input: InitializeStoreInput): Promise<Existing
   }
 }
 
+async function storeHasApplicationUsers(input: InitializeStoreInput): Promise<boolean> {
+  const client = await connectDatabase(input.databaseUrl)
+  try {
+    const result = await client.query<{ exists: boolean }>("select exists(select 1 from public.users) as exists")
+    return result.rows[0]?.exists === true
+  } finally {
+    await client.end().catch(() => undefined)
+  }
+}
+
 async function verifyExistingOwnerPassword(input: InitializeStoreInput, owner: ExistingStoreOwner): Promise<void> {
   const publicClient = createClient(input.supabaseUrl, input.publishableKey, {
     auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
   })
   const { data, error } = await publicClient.auth.signInWithPassword({ email: owner.loginEmail, password: input.ownerPassword })
   if (error || !data.user || data.user.id !== owner.authUserId) {
-    throw new Error("The existing primary administrator email or password is incorrect")
+    throw new Error("The existing primary administrator email or password is incorrect. To create a new owner, confirm replacement of the existing accounts")
   }
   await publicClient.auth.signOut().catch(() => undefined)
+}
+
+interface ExistingApplicationUser {
+  id: string
+  is_primary_admin: boolean
+}
+
+async function deleteEveryAuthUser(input: InitializeStoreInput): Promise<void> {
+  const adminClient = createClient(input.supabaseUrl, input.serverKey, {
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+    global: { headers: { "x-application-name": "armory-store-account-replacement" } },
+  })
+  // Collect every page before deleting so pagination cannot skip records as the
+  // collection shrinks.
+  const authUserIds: string[] = []
+  let page = 1
+  while (true) {
+    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage: 1000 })
+    if (error) throw new Error(`Supabase could not list existing Auth accounts: ${error.message}`)
+    authUserIds.push(...data.users.map((user) => user.id))
+    if (data.users.length < 1000) break
+    page += 1
+  }
+  for (const authUserId of authUserIds) {
+    const { error: deleteError } = await adminClient.auth.admin.deleteUser(authUserId)
+    if (deleteError) throw new Error(`Supabase could not remove an existing Auth account: ${deleteError.message}`)
+  }
+}
+
+/**
+ * Replaces login accounts without deleting business records. Historical user
+ * rows may be referenced by immutable sales/audit records, so they are revoked,
+ * anonymized and retained as inactive history while their Auth identities are
+ * hard-deleted from this one Supabase project.
+ */
+async function replaceExistingApplicationAccounts(input: InitializeStoreInput): Promise<void> {
+  const adminClient = createClient(input.supabaseUrl, input.serverKey, {
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+    global: { headers: { "x-application-name": "armory-store-account-replacement" } },
+  })
+  const client = await connectDatabase(input.databaseUrl)
+  let createdAuthUserId: string | null = null
+  try {
+    await client.query("select pg_advisory_lock(hashtext($1))", [SETUP_LOCK_ID])
+    const existingUsers = await client.query<ExistingApplicationUser>(
+      "select id, is_primary_admin from public.users order by is_primary_admin desc, created_at, id",
+    )
+    if (!existingUsers.rowCount) {
+      throw new Error("No existing Armory Store account was found to replace")
+    }
+
+    // The checkbox authorizes deletion of Auth identities in this exact project.
+    // It never touches the Supabase organization, account, or another project.
+    await deleteEveryAuthUser(input)
+
+    const primaryProfile = existingUsers.rows.find((user) => user.is_primary_admin) ?? existingUsers.rows[0]
+    const { data, error } = await adminClient.auth.admin.createUser({
+      email: input.ownerEmail,
+      password: input.ownerPassword,
+      email_confirm: true,
+      user_metadata: {
+        app_user_id: primaryProfile.id,
+        display_name: input.ownerName,
+        requires_password_setup: false,
+      },
+    })
+    if (error || !data.user) throw new Error(error?.message ?? "Supabase could not create the replacement owner account")
+    createdAuthUserId = data.user.id
+
+    await client.query("begin")
+    try {
+      // Identity/primary-admin changes are normally immutable from the app. The
+      // direct setup connection may change them only inside this locked setup
+      // transaction, then the protection trigger is immediately restored.
+      await client.query("alter table public.users disable trigger users_prevent_identity_changes")
+      await client.query(
+        `update public.users
+         set auth_user_id = null,
+             username = null,
+             email = null,
+             login_email = 'disabled.' || md5(id) || '@local.weapon-store.invalid',
+             name = 'Disabled account ' || substr(md5(id), 1, 12),
+             role = 'Employee'::public.app_role,
+             permissions = '{}'::jsonb,
+             password_set = false,
+             activation_token_hash = null,
+             activation_expires_at = null,
+             is_active = false,
+             is_primary_admin = false
+         where id <> $1`,
+        [primaryProfile.id],
+      )
+      await client.query(
+        `update public.users
+         set auth_user_id = $2,
+             username = $3,
+             email = $3,
+             login_email = $3,
+             name = $4,
+             role = 'Admin'::public.app_role,
+             permissions = '{}'::jsonb,
+             password_set = true,
+             activation_token_hash = null,
+             activation_expires_at = null,
+             is_active = true,
+             is_primary_admin = true
+         where id = $1`,
+        [primaryProfile.id, createdAuthUserId, input.ownerEmail, input.ownerName],
+      )
+      await client.query("alter table public.users enable trigger users_prevent_identity_changes")
+      await client.query(
+        "update public.app_installation set store_name = $1, schema_version = $2, setup_completed_at = now() where singleton",
+        [input.storeName, REQUIRED_SCHEMA_VERSION],
+      )
+      await client.query("update public.system_settings set company_name = $1 where id = 1", [input.storeName])
+      await client.query("commit")
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined)
+      throw error
+    }
+  } catch (error) {
+    if (createdAuthUserId) await adminClient.auth.admin.deleteUser(createdAuthUserId).catch(() => undefined)
+    throw error
+  } finally {
+    await client.query("select pg_advisory_unlock(hashtext($1))", [SETUP_LOCK_ID]).catch(() => undefined)
+    await client.end().catch(() => undefined)
+  }
 }
 
 async function configureServerCredentials(input: InitializeStoreInput): Promise<void> {
@@ -423,15 +583,34 @@ export async function initializeStore(
   try {
     reportProgress("validating")
     const input = normalizeSetupInput(rawInput)
+    await verifyProjectApiCredentials(input)
     reportProgress("migrating")
     await applyMigrations(input.databaseUrl)
-    const existingOwner = await existingStoreOwner(input)
-    if (existingOwner) await verifyExistingOwnerPassword(input, existingOwner)
+    const hasExistingUsers = input.replaceExistingAccounts
+      ? await storeHasApplicationUsers(input)
+      : false
+    const existingOwner = input.replaceExistingAccounts
+      ? null
+      : await existingStoreOwner(input)
+    if (existingOwner && !input.replaceExistingAccounts) await verifyExistingOwnerPassword(input, existingOwner)
     reportProgress("configuring")
     await configureServerCredentials(input)
-    reportProgress("creating-owner")
-    if (existingOwner) await completeExistingStoreInstallation(input)
-    else await createPrimaryOwner(input)
+    if (input.replaceExistingAccounts) {
+      reportProgress("replacing-accounts")
+      if (hasExistingUsers) {
+        await replaceExistingApplicationAccounts(input)
+      } else {
+        // A failed older setup can leave orphaned Auth identities without an
+        // application profile. Explicit replacement removes those too.
+        await deleteEveryAuthUser(input)
+        reportProgress("creating-owner")
+        await createPrimaryOwner(input)
+      }
+    } else {
+      reportProgress("creating-owner")
+      if (existingOwner) await completeExistingStoreInstallation(input)
+      else await createPrimaryOwner(input)
+    }
     reportProgress("verifying")
     const connection = await verifyStoreConnection(input.supabaseUrl, input.publishableKey)
     reportProgress("saving")
@@ -578,7 +757,9 @@ export function saveStoredConnection(connection: StoreConnectionConfiguration): 
 
 export function clearStoredConnection(): void {
   const filename = configurationPath()
-  if (fs.existsSync(filename)) fs.unlinkSync(filename)
+  for (const candidate of [filename, `${filename}.bak`]) {
+    if (fs.existsSync(candidate)) fs.unlinkSync(candidate)
+  }
 }
 
 export function connectionCodeFor(connection: StoreConnectionConfiguration): string {

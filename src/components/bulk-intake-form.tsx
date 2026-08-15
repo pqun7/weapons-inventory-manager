@@ -250,11 +250,10 @@ export function BulkIntakeForm({ onComplete }: { onComplete: () => void }) {
       const caliberId = md.getCaliberIdByLabel(caliber) ?? await md.createCaliber(caliber)
       const brandId = md.getBrandIdByLabel(brand.trim()) ?? await md.createBrand(brand.trim())
       const modelId = md.getModelIdByLabel(model.trim(), brandId) ?? await md.createModel(model.trim(), brand.trim())
-      const storageLocationId = md.getStorageLocationId("Main", "", "") || ""
       await md.linkSubtypeCaliber(weaponSubtypeId, caliberId)
 
       const result = await InventoryService.executeBulkIntake({
-        weaponTypeId, weaponSubtypeId, caliberId, brandId, modelId, storageLocationId,
+        weaponTypeId, weaponSubtypeId, caliberId, brandId, modelId, storageLocationId: null,
         weaponTypeLabel: weaponType, subTypeLabel: subType, caliberLabel: caliber,
         brandLabel: brand.trim(), modelLabel: model.trim(), condition,
         purchasePrice: Number(purchasePrice), retailPrice: Number(retailPrice),

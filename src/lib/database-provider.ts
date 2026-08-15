@@ -147,6 +147,7 @@ export const DATABASE_OPERATION_NAMES = [
   "dbReceiveScheduledShipment", "dbRescheduleShipment", "dbUpdateScheduledShipment", "dbAdjustInventoryStock",
   "dbReceiveAmmoByPackages", "dbReceiveAmmoByRounds", "dbUpdateAmmoPackage", "dbExtendInvoiceDueDate", "dbVoidInvoice",
   "dbCreateAccessory", "dbCreateAmmunition", "dbCreateInventoryProductType", "dbUpdateProductPricing", "dbReplaceProductCosts",
+  "dbResetDemoData", "dbDeleteDemoData",
 ] as const
 
 export type DatabaseOperationName = typeof DATABASE_OPERATION_NAMES[number]

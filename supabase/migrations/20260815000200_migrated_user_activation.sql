@@ -229,19 +229,25 @@ $$;
 do $$
 declare
   function_definition text;
-  old_delete text := $replace$    perform public.auth_admin_request('PUT', '/' || target.auth_user_id::text, jsonb_build_object('ban_duration', '876000h'));
+  old_delete text := $replace$    perform public.auth_admin_request('PATCH', '/' || target.auth_user_id::text, jsonb_build_object('ban_duration', '876000h'));
     update public.users set is_active = false where id = target.id;$replace$;
   safe_delete text := $replace$    if target.auth_user_id is not null then
-      perform public.auth_admin_request('PUT', '/' || target.auth_user_id::text, jsonb_build_object('ban_duration', '876000h'));
+      perform public.auth_admin_request('PATCH', '/' || target.auth_user_id::text, jsonb_build_object('ban_duration', '876000h'));
     end if;
     update public.users set is_active = false where id = target.id;$replace$;
+  released_delete text := '    perform public.release_user_identity(target.id);';
 begin
   select pg_get_functiondef('public.admin_users_action(jsonb)'::regprocedure)
   into function_definition;
-  if position(old_delete in function_definition) = 0 then
+  if position(released_delete in function_definition) > 0 then
+    null;
+  elsif position(safe_delete in function_definition) > 0 then
+    null;
+  elsif position(old_delete in function_definition) > 0 then
+    execute replace(function_definition, old_delete, safe_delete);
+  else
     raise exception 'Expected migrated-user delete block was not found';
   end if;
-  execute replace(function_definition, old_delete, safe_delete);
 end
 $$;
 

@@ -3,6 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { getDb } from "../database.js"
 import type { ExportLoginGuideInput, ExportLoginGuideResult } from "../../src/lib/database-provider.js"
+import { isSupportedActivationCode, normalizeActivationCode } from "../../src/lib/activation-code.js"
 import { readStorageConfig } from "./storage-config-service.js"
 import { connectionCodeFor, readStoredConnection } from "./store-installation-service.js"
 import { requireLocalSession } from "./local-auth-service.js"
@@ -16,13 +17,13 @@ function validateInput(input: ExportLoginGuideInput): ExportLoginGuideInput {
     userId: input.userId?.trim(),
     accountName: input.accountName?.trim(),
     loginIdentifier: input.loginIdentifier?.trim().toLowerCase(),
-    activationCode: input.activationCode?.trim().toUpperCase(),
+    activationCode: normalizeActivationCode(input.activationCode ?? ""),
     language: input.language,
   }
   if (!values.userId || values.userId.length > 160) throw new Error("User identifier is invalid")
   if (!values.accountName || values.accountName.length > 120) throw new Error("Account name is invalid")
   if (!values.loginIdentifier || values.loginIdentifier.length > 160) throw new Error("Login identifier is invalid")
-  if (!/^[A-Z2-9-]{8,64}$/.test(values.activationCode)) throw new Error("Activation code is invalid")
+  if (!isSupportedActivationCode(values.activationCode)) throw new Error("Activation code is invalid")
   if (values.language !== "ar" && values.language !== "en") throw new Error("Guide language is invalid")
   return values
 }

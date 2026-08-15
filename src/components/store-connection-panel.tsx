@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react"
-import { ArrowRightLeft, Cloud, Copy, Database, HardDrive, LogOut, ShieldCheck } from "lucide-react"
+import { ArrowRightLeft, Cloud, Copy, Database, HardDrive, LogOut, ShieldCheck, Unplug } from "lucide-react"
 import { toast } from "sonner"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -48,6 +48,7 @@ export function StoreConnectionPanel() {
   const [view, setView] = useState<ConnectionView | null>(null)
   const [working, setWorking] = useState(false)
   const [migrationOpen, setMigrationOpen] = useState(false)
+  const [disconnectOpen, setDisconnectOpen] = useState(false)
   const [progress, setProgress] = useState<ProviderMigrationProgressStage | null>(null)
 
   useEffect(() => {
@@ -60,7 +61,7 @@ export function StoreConnectionPanel() {
     return () => removeProgress?.()
   }, [provider])
 
-  const signOut = async () => {
+  const signOutAccount = async () => {
     setWorking(true)
     try {
       await signOutActiveDatabase()
@@ -71,11 +72,33 @@ export function StoreConnectionPanel() {
     }
   }
 
+  const disconnectStore = async () => {
+    if (!view) return
+    setWorking(true)
+    try {
+      // The local scope clears only this device's Supabase session. It does not
+      // revoke the account's sessions on the user's other store devices.
+      await signOutActiveDatabase({ localOnly: true })
+      const response = await window.electronAPI?.storeConnection.clear()
+      if (!response?.success) throw new Error(response?.error ?? "Could not disconnect this device from the store")
+      sessionStorage.setItem("armory-store:disconnect-notice", JSON.stringify({
+        storeName: view.connection.storeName,
+        language: rtl ? "ar" : "en",
+      }))
+      window.location.reload()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : (rtl ? "تعذر فصل المتجر" : "Store disconnection failed"))
+      setWorking(false)
+    }
+  }
+
   return <>
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base"><Database className="size-4" />{rtl ? "مزود قاعدة البيانات" : "Database provider"}</CardTitle>
-        <CardDescription>{rtl ? "تسجيل الخروج لا يغيّر المزود ولا يحذف إعداداته أو بياناته." : "Signing out does not change the provider or delete its settings or data."}</CardDescription>
+        <CardDescription>{provider === "supabase"
+          ? (rtl ? "يمكن فصل هذا الجهاز عن المتجر مع إبقاء المتجر وبياناته محفوظة في Supabase." : "You can disconnect this device while keeping the store and all of its data in Supabase.")
+          : (rtl ? "تسجيل الخروج ينهي جلسة الحساب فقط ولا يحذف قاعدة SQLite المحلية." : "Signing out ends only the account session and does not delete the local SQLite database.")}</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
         <Alert className="border-primary/20 bg-primary/5">
@@ -102,10 +125,39 @@ export function StoreConnectionPanel() {
 
         <div className="flex flex-wrap gap-2">
           <Button variant="default" disabled={working} onClick={() => setMigrationOpen(true)}><ArrowRightLeft className="size-4" />{provider === "sqlite" ? (rtl ? "ترحيل SQLite إلى Supabase" : "Migrate SQLite to Supabase") : (rtl ? "ترحيل Supabase إلى SQLite" : "Migrate Supabase to SQLite")}</Button>
-          <Button variant="outline" disabled={working} onClick={signOut}><LogOut className="size-4" />{rtl ? "تسجيل الخروج" : "Sign out"}</Button>
+          {provider === "supabase"
+            ? <Button variant="outline" disabled={working || !view} onClick={() => setDisconnectOpen(true)}><Unplug className="size-4" />{rtl ? "تسجيل الخروج من المتجر" : "Disconnect from store"}</Button>
+            : <Button variant="outline" disabled={working} onClick={signOutAccount}><LogOut className="size-4" />{rtl ? "تسجيل الخروج من الحساب" : "Sign out of account"}</Button>}
         </div>
       </CardContent>
     </Card>
+
+    <Dialog open={disconnectOpen} onOpenChange={(next) => { if (!working) setDisconnectOpen(next) }}>
+      <DialogContent dir={rtl ? "rtl" : "ltr"}>
+        <DialogHeader>
+          <DialogTitle>{rtl ? "تسجيل الخروج من المتجر على هذا الجهاز؟" : "Disconnect this device from the store?"}</DialogTitle>
+          <DialogDescription>{rtl
+            ? "سيتم إنهاء الجلسة وإزالة اتصال Supabase من هذا الجهاز فقط. لن يُحذف المتجر أو أي حساب أو بيانات من Supabase."
+            : "The session and Supabase connection will be removed from this device only. No store, account, or Supabase data will be deleted."}</DialogDescription>
+        </DialogHeader>
+        <Alert className="border-amber-500/30 bg-amber-500/5">
+          <ShieldCheck className="text-amber-600" />
+          <AlertTitle>{rtl ? "احتفظ بكود المتجر قبل المتابعة" : "Keep the store code before continuing"}</AlertTitle>
+          <AlertDescription>{rtl
+            ? "للعودة إلى هذا المتجر، ستحتاج إلى كود اتصال المتجر أدناه ثم تسجّل الدخول بحسابك المعتاد."
+            : "To return to this store, you will need the connection code below and then sign in with your usual account."}</AlertDescription>
+        </Alert>
+        {view && <div className="grid gap-2">
+          <Label>{rtl ? "كود اتصال المتجر" : "Store connection code"}</Label>
+          <Textarea readOnly dir="ltr" value={view.connectionCode} className="min-h-28 break-all bg-muted font-mono text-xs" />
+          <Button type="button" variant="outline" className="w-fit" disabled={working} onClick={() => { void navigator.clipboard.writeText(view.connectionCode).then(() => toast.success(rtl ? "تم نسخ الكود" : "Code copied")) }}><Copy className="size-4" />{rtl ? "نسخ الكود" : "Copy code"}</Button>
+        </div>}
+        <DialogFooter>
+          <Button type="button" variant="outline" disabled={working} onClick={() => setDisconnectOpen(false)}>{rtl ? "إلغاء" : "Cancel"}</Button>
+          <Button type="button" variant="destructive" disabled={working || !view} onClick={() => { void disconnectStore() }}><Unplug className="size-4" />{working ? (rtl ? "جارٍ فصل المتجر…" : "Disconnecting…") : (rtl ? "فصل هذا الجهاز" : "Disconnect this device")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
     <ProviderMigrationDialog
       open={migrationOpen}

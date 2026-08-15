@@ -6,6 +6,7 @@ import {
   initDatabase,
 } from "../database.js"
 import {
+  clearStorageConfig,
   createStorageConfig,
   readStorageConfig,
   writeStorageConfig,
@@ -15,7 +16,9 @@ import {
   configureLocalAdministrator,
 } from "./local-auth-service.js"
 import {
+  clearStoredConnection,
   readStoredConnection,
+  saveStoredConnection,
   verifyStoreConnection,
 } from "./store-installation-service.js"
 import type {
@@ -128,4 +131,35 @@ export function activateSupabaseProvider(): Promise<ActivateSupabaseResult> {
 export function closeSelectedProvider(): void {
   closeLocalAuth()
   closeDatabase()
+}
+
+/**
+ * Detaches this device from its selected Supabase store without making any
+ * remote mutation. The user can reconnect later with the store connection
+ * code; the Supabase project, application users, and business data remain.
+ */
+export function disconnectSupabaseProvider(): void {
+  const stored = readStorageConfig()
+  if (stored.config?.databaseProvider !== "supabase") {
+    throw new Error("Supabase is not the selected database provider")
+  }
+  const connection = readStoredConnection()
+  if (!connection) throw new Error("The selected Supabase connection is missing or damaged")
+
+  closeSelectedProvider()
+  try {
+    clearStoredConnection()
+    clearStorageConfig()
+  } catch (error) {
+    // Keep the provider selection and connection as one logical unit. If the
+    // operating system prevents either deletion, restore both so the next boot
+    // cannot be stranded with a half-disconnected configuration.
+    try {
+      saveStoredConnection(connection)
+      writeStorageConfig(stored.config)
+    } catch {
+      throw new Error("Store disconnection failed and the local connection settings could not be restored")
+    }
+    throw error
+  }
 }

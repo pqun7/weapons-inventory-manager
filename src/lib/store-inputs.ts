@@ -18,7 +18,7 @@ export interface BulkIntakeInput {
   caliberId: string
   brandId: string
   modelId: string
-  storageLocationId: string
+  storageLocationId?: string | null
   weaponTypeLabel?: string
   subTypeLabel?: string
   caliberLabel?: string
@@ -38,10 +38,20 @@ export interface BulkIntakeInput {
 }
 
 export interface SaleInput {
+  /** Stable for the lifetime of one user submission and reused for safe retries. */
+  operationId: string
   weaponIds: string[]
   lineItems: SaleLineItem[]
-  customerId: string
-  customerName: string
+  customerId?: string
+  customerName?: string
+  newCustomer?: {
+    name: string
+    phone: string
+    email: string
+    address: string
+    isWholesaleBuyer: boolean
+    wholesaleDiscountPercent: number
+  }
   mode: SaleMode
   invoiceNumber: string
   totalNegotiated: number
@@ -60,6 +70,7 @@ export interface SaleInput {
 export interface ShipmentInput {
   shipmentNumber: string
   supplierId: string
+  newSupplier?: { name: string; contactPerson: string; phone: string; email: string; address: string }
   shipmentDate: string
   expectedArrivalDate: string
   totalExpectedItems: number
@@ -85,7 +96,7 @@ export interface ShipmentLineItemInput {
   caliberId: string
   brandId: string
   modelId: string
-  storageLocationId: string
+  storageLocationId?: string | null
   quantity: number
   purchasePrice: number
   retailPrice: number
@@ -124,20 +135,18 @@ export interface DueDateExtensionInput {
 }
 
 export interface AddStockInput {
+  operationId: string
   itemType: "accessory" | "ammunition"
   itemId: string
-  quantity?: number
-  packages?: number
-  looseRounds?: number
-  price?: number
-  currency?: string
-  purchasePrice?: number
+  quantityDelta: number
+  costUpdate?: { amount: number; currency: string }
   shipmentId?: string | null
   notes?: string
   location?: StorageLocation
 }
 
 export interface ReceiveAmmoByPackagesInput {
+  operationId: string
   itemId: string
   numberOfPackages: number
   unitsPerPackage: number
@@ -149,6 +158,7 @@ export interface ReceiveAmmoByPackagesInput {
 }
 
 export interface ReceiveAmmoByRoundsInput {
+  operationId: string
   itemId: string
   totalRounds: number
   purchasePrice: number

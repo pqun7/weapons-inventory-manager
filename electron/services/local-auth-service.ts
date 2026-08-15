@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto"
 import { getDb } from "../database.js"
+import { ensureDemoData } from "./demo-data-service.js"
 import type {
   InitializeSqliteInput,
   LocalAccountResolution,
@@ -112,7 +113,9 @@ function account(identifier: string): LocalUserRow | undefined {
     SELECT id, username, name, role, password_set, password_hash, activation_token_hash,
            activation_expires_at, is_active, failed_login_attempts, locked_until
     FROM users
-    WHERE username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE OR login_email = ? COLLATE NOCASE
+    WHERE is_active = 1 AND (
+      username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE OR login_email = ? COLLATE NOCASE
+    )
     LIMIT 1
   `).get(identifier, identifier, identifier) as unknown as LocalUserRow | undefined
 }
@@ -136,7 +139,7 @@ export function configureLocalAdministrator(input: InitializeSqliteInput): { use
   const passwordHash = hashPassword(input.adminPassword)
   const database = getDb()
 
-  return database.transaction(() => {
+  const configured = database.transaction(() => {
     const conflicting = database.prepare("SELECT id FROM users WHERE username = ? COLLATE NOCASE LIMIT 1").get(adminUsername) as { id: string } | undefined
     const primary = database.prepare("SELECT id FROM users WHERE is_primary_admin = 1 ORDER BY id LIMIT 1").get() as { id: string } | undefined
       ?? database.prepare("SELECT id FROM users WHERE role = 'Admin' ORDER BY id LIMIT 1").get() as { id: string } | undefined
@@ -162,6 +165,8 @@ export function configureLocalAdministrator(input: InitializeSqliteInput): { use
     database.prepare("UPDATE system_settings SET company_name = ? WHERE id = 1").run(storeName)
     return { userId, identifier: adminUsername }
   })()
+  ensureDemoData(configured.userId)
+  return configured
 }
 
 export function resolveLocalAccount(rawIdentifier: string): LocalAccountResolution {
@@ -217,6 +222,9 @@ export function claimLocalAccount(rawIdentifier: string, activationCode: string,
 }
 
 export function createLocalActivationCode(userId: string): string {
+  const target = getDb().prepare("SELECT password_set, is_active FROM users WHERE id = ?").get(userId) as { password_set: number; is_active: number } | undefined
+  if (!target || target.is_active !== 1) throw new Error("User not found or inactive")
+  if (target.password_set === 1) throw new Error("This account already completed password setup")
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
   const bytes = randomBytes(12)
   const characters = Array.from(bytes, (byte) => alphabet[byte % alphabet.length])

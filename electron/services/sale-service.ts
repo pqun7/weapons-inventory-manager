@@ -1,4 +1,5 @@
 import { getDb } from "../database.js"
+import { createHash } from "node:crypto"
 import { repo } from "../repositories/index.js"
 import { backendCurrencyService } from "./currency-service.js"
 import { authoritativeListPrice, decimalToNumber, moneyEquals, nonNegativeMoney, positiveMoney, sumMoney } from "./money.js"
@@ -13,6 +14,7 @@ import type {
   InvoiceStatus,
   AppNotification,
   AuditLog,
+  Customer,
 } from "../../src/lib/types.js"
 
 export interface SaleResult {
@@ -103,6 +105,33 @@ function isPastDue(date: string): boolean {
   return !Number.isNaN(due.getTime()) && due.getTime() < Date.now()
 }
 
+function normalizedEmail(value: string): string {
+  return value.trim().toLocaleLowerCase("en")
+}
+
+function normalizedPhone(value: string): string {
+  return value.replace(/[^0-9]/g, "")
+}
+
+function normalizedName(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("en")
+}
+
+function saleRequestHash(input: SaleInput): string {
+  return createHash("sha256").update(JSON.stringify(input)).digest("hex")
+}
+
+function findDuplicateCustomer(customers: Customer[], draft: NonNullable<SaleInput["newCustomer"]>): Customer | undefined {
+  const email = normalizedEmail(draft.email)
+  const phone = normalizedPhone(draft.phone)
+  const name = normalizedName(draft.name)
+  return customers.find((customer) => {
+    if (email && normalizedEmail(customer.email) === email) return true
+    if (phone && normalizedPhone(customer.phone) === phone) return true
+    return !email && !phone && normalizedName(customer.name) === name
+  })
+}
+
 /**
  * Single authoritative sale transaction.
  *
@@ -120,6 +149,17 @@ export function completeSale(
       const all = repo.getAll()
       const today = new Date().toISOString().slice(0, 10)
       const invoiceNumber = input.invoiceNumber?.trim()
+      const operationId = input.operationId?.trim()
+      if (!operationId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(operationId)) {
+        return { success: false, error: "A valid sale operation ID is required" }
+      }
+      const requestHash = saleRequestHash(input)
+      const completed = db.prepare("SELECT request_hash, invoice_id, invoice_number FROM sale_operations WHERE operation_id = ?")
+        .get(operationId) as { request_hash: string; invoice_id: string; invoice_number: string } | undefined
+      if (completed) {
+        if (completed.request_hash !== requestHash) return { success: false, error: "This sale operation ID was already used for a different request" }
+        return { success: true, invoiceId: completed.invoice_id, invoiceNumber: completed.invoice_number }
+      }
 
       if (!currentUser?.id || !currentUser.name?.trim()) {
         return { success: false, error: "A valid current user is required" }
@@ -127,12 +167,8 @@ export function completeSale(
       if (!invoiceNumber) {
         return { success: false, error: "Invoice number is required" }
       }
-      if (!input.customerId) {
-        return { success: false, error: "Customer is required" }
-      }
-      if (!input.customerName?.trim()) {
-        return { success: false, error: "Customer name is required" }
-      }
+      if (!input.customerId && !input.newCustomer) return { success: false, error: "Customer is required" }
+      if (input.newCustomer && !input.newCustomer.name.trim()) return { success: false, error: "Customer name is required" }
       if (input.weaponIds.length === 0 && input.lineItems.length === 0) {
         return { success: false, error: "Select at least one weapon or item" }
       }
@@ -283,11 +319,9 @@ export function completeSale(
           : item.itemType === "ammunition"
             ? ammoById.get(item.itemId)
             : accessoryById.get(item.itemId)
-        const valuation = item.itemType === "weapon"
-          ? (input.mode === "Wholesale"
-            ? (entity as Weapon | undefined)?.wholesalePriceValuation
-            : (entity as Weapon | undefined)?.retailPriceValuation)
-          : (entity as Ammunition | Accessory | undefined)?.priceValuation
+        const valuation = input.mode === "Wholesale"
+          ? (entity as Weapon | Ammunition | Accessory | undefined)?.wholesalePriceValuation
+          : (entity as Weapon | Ammunition | Accessory | undefined)?.retailPriceValuation
         if (!entity) throw new Error(`${item.itemType} ${item.itemId} not found`)
         if (valuation) {
           if (valuation.accountingCurrency !== rateSnapshot.accountingCurrency) {
@@ -305,11 +339,9 @@ export function completeSale(
         // Their raw prices were stored in the system accounting currency. Read
         // that value from the database entity; never accept the renderer's unit
         // price as the authoritative list price.
-        const legacyAccountingPrice = item.itemType === "weapon"
-          ? (input.mode === "Wholesale"
-            ? (entity as Weapon).wholesalePrice
-            : (entity as Weapon).retailPrice)
-          : (entity as Ammunition | Accessory).price
+        const legacyAccountingPrice = input.mode === "Wholesale"
+          ? (entity as Weapon | Ammunition | Accessory).wholesalePrice
+          : (entity as Weapon | Ammunition | Accessory).retailPrice
         return authoritativeListPrice(
           undefined,
           legacyAccountingPrice,
@@ -320,6 +352,14 @@ export function completeSale(
 
       const authoritativeOriginal = sumMoney(canonicalLineItems.map(listPriceInSaleCurrency))
         .toDecimalPlaces(rateSnapshot.transactionPrecision)
+      for (const item of canonicalLineItems) {
+        const authoritativeLineTotal = listPriceInSaleCurrency(item)
+          .toDecimalPlaces(rateSnapshot.transactionPrecision)
+        const requestedLineTotal = nonNegativeMoney(item.total, `Line total for ${item.name}`)
+        if (requestedLineTotal.greaterThan(authoritativeLineTotal)) {
+          return { success: false, error: `Unit price for ${item.name} exceeds the authoritative list price` }
+        }
+      }
       if (!moneyEquals(input.totalOriginal, authoritativeOriginal, "0.01")) {
         return { success: false, error: "Original total does not match authoritative inventory prices" }
       }
@@ -344,6 +384,35 @@ export function completeSale(
       const actualBalance = decimalToNumber(balanceDecimal)
       if (actualBalance > 0 && !input.dueDate) {
         return { success: false, error: "Due date is required for unpaid balance" }
+      }
+
+      let resolvedCustomer: Customer
+      if (input.customerId) {
+        const existingCustomer = all.customers.find((customer) => customer.id === input.customerId)
+        if (!existingCustomer) return { success: false, error: "Customer not found" }
+        resolvedCustomer = existingCustomer
+      } else {
+        const draft = input.newCustomer!
+        const duplicate = findDuplicateCustomer(all.customers, draft)
+        if (duplicate) {
+          resolvedCustomer = duplicate
+        } else {
+          const discount = Number(draft.wholesaleDiscountPercent ?? 0)
+          if (!Number.isFinite(discount) || discount < 0 || discount > 100) {
+            return { success: false, error: "Wholesale discount must be between 0 and 100" }
+          }
+          resolvedCustomer = {
+            id: generateId("CUST", "customers"),
+            name: draft.name.trim().replace(/\s+/g, " "),
+            phone: draft.phone.trim(),
+            email: normalizedEmail(draft.email),
+            address: draft.address.trim(),
+            isWholesaleBuyer: Boolean(draft.isWholesaleBuyer),
+            wholesaleDiscountPercent: discount,
+            dateAdded: today,
+          }
+          repo.insertCustomer(resolvedCustomer)
+        }
       }
 
       const invoiceId = generateId("INV", "invoices")
@@ -419,9 +488,9 @@ export function completeSale(
         id: invoiceId,
         invoiceNumber,
         type: "Sale",
-        customerId: input.customerId,
+        customerId: resolvedCustomer.id,
         supplierId: null,
-        customerName: input.customerName.trim(),
+        customerName: resolvedCustomer.name,
         date: input.date || today,
         dueDate: input.dueDate,
         totalOriginal: decimalToNumber(authoritativeOriginal),
@@ -481,7 +550,7 @@ export function completeSale(
         date: today,
         userId: currentUser.id,
         actionType: "Sale",
-        description: `Sale completed — Invoice ${invoiceNumber} — ${input.customerName.trim()} — ${totalItems} item(s) — Total: ${grandTotal} — Paid: ${paid} — Balance: ${actualBalance}`,
+        description: `Sale completed — Invoice ${invoiceNumber} — ${resolvedCustomer.name} — ${totalItems} item(s) — Total: ${grandTotal} — Paid: ${paid} — Balance: ${actualBalance}`,
         metadata: JSON.stringify({
           schemaVersion: 2,
           actorName: currentUser.name,
@@ -489,8 +558,8 @@ export function completeSale(
           entityId: invoiceId,
           invoiceId,
           invoiceNumber,
-          customerId: input.customerId,
-          customerName: input.customerName.trim(),
+          customerId: resolvedCustomer.id,
+          customerName: resolvedCustomer.name,
           totalItems,
           weaponIds: uniqueWeaponIds,
           lineItems: canonicalLineItems,
@@ -512,12 +581,17 @@ export function completeSale(
         id: generateId("NTF", "app_notifications"),
         type: "System",
         title: "New Sale Recorded",
-        message: `Invoice ${invoiceNumber} created for ${input.customerName.trim()}`,
+        message: `Invoice ${invoiceNumber} created for ${resolvedCustomer.name}`,
         date: today,
         read: false,
         entityId: invoiceId,
       }
       repo.insertNotification(notification)
+
+      db.prepare(`
+        INSERT INTO sale_operations (operation_id, request_hash, invoice_id, invoice_number)
+        VALUES (?, ?, ?, ?)
+      `).run(operationId, requestHash, invoiceId, invoiceNumber)
 
       return { success: true, invoiceId, invoiceNumber }
     })()

@@ -139,3 +139,5 @@ export const dbCreateAmmunition: SupabaseDatabaseModule["dbCreateAmmunition"] = 
 export const dbCreateInventoryProductType: SupabaseDatabaseModule["dbCreateInventoryProductType"] = (...args) => routeOperation("dbCreateInventoryProductType", args) as ReturnType<SupabaseDatabaseModule["dbCreateInventoryProductType"]>
 export const dbUpdateProductPricing: SupabaseDatabaseModule["dbUpdateProductPricing"] = (...args) => routeOperation("dbUpdateProductPricing", args) as ReturnType<SupabaseDatabaseModule["dbUpdateProductPricing"]>
 export const dbReplaceProductCosts: SupabaseDatabaseModule["dbReplaceProductCosts"] = (...args) => routeOperation("dbReplaceProductCosts", args) as ReturnType<SupabaseDatabaseModule["dbReplaceProductCosts"]>
+export const dbResetDemoData: SupabaseDatabaseModule["dbResetDemoData"] = (...args) => routeOperation("dbResetDemoData", args) as ReturnType<SupabaseDatabaseModule["dbResetDemoData"]>
+export const dbDeleteDemoData: SupabaseDatabaseModule["dbDeleteDemoData"] = (...args) => routeOperation("dbDeleteDemoData", args) as ReturnType<SupabaseDatabaseModule["dbDeleteDemoData"]>

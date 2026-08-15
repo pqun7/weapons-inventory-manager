@@ -1317,11 +1317,11 @@ function AddStockDialog({ target, shipments, onClose, onConfirm }: {
   shipments: { id: string; shipmentNumber: string; status: string }[]
   onClose: () => void
   onConfirm: (payload: {
+    operationId: string
     itemType: "accessory"
     itemId: string
-    quantity: number
-    purchasePrice: number
-    currency: string
+    quantityDelta: number
+    costUpdate?: { amount: number; currency: string }
     shipmentId: string | null
     notes: string
     location?: StorageLocation
@@ -1338,6 +1338,7 @@ function AddStockDialog({ target, shipments, onClose, onConfirm }: {
   const [shelf, setShelf] = useState("")
   const [bin, setBin] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [operationId, setOperationId] = useState(() => crypto.randomUUID())
 
   // const lastTargetId = target?.itemId ?? null
   const [resetKey, setResetKey] = useState<string | null>(null)
@@ -1346,6 +1347,7 @@ function AddStockDialog({ target, shipments, onClose, onConfirm }: {
     if (!target || target.itemId === resetKey) return
     setResetKey(target.itemId)
     setQuantity("0")
+    setOperationId(crypto.randomUUID())
     setPurchasePrice(String(target.currentCost))
     setCurrency(target.currency)
     setShipmentId(null)
@@ -1359,16 +1361,18 @@ function AddStockDialog({ target, shipments, onClose, onConfirm }: {
     if (!target || isSubmitting) return
     const qty = Number(quantity)
     const price = Number(purchasePrice)
-    if (!Number.isFinite(qty) || qty <= 0) { toast.error(t("inv.quantityMustBePositive")); return }
+    const costChanged = price !== target.currentCost || currency !== target.currency
+    if (!Number.isInteger(qty) || qty < 0) { toast.error(t("inv.quantityMustBePositive")); return }
     if (!Number.isFinite(price) || price < 0) { toast.error(t("inv.priceMustBePositive")); return }
+    if (qty === 0 && !costChanged) { toast.error(t("inv.stockOrCostRequired")); return }
     setIsSubmitting(true)
     try {
       await onConfirm({
+        operationId,
         itemType: target.itemType,
         itemId: target.itemId,
-        quantity: qty,
-        purchasePrice: price,
-        currency,
+        quantityDelta: qty,
+        costUpdate: costChanged ? { amount: price, currency } : undefined,
         shipmentId,
         notes,
         location: { warehouse, shelf, bin },
@@ -1477,6 +1481,7 @@ function AmmoReceiveDialog({ ammo, shipments, onClose }: {
     setSubmitting("packages")
     try {
       const res = await receiveAmmoByPackages({
+        operationId: crypto.randomUUID(),
         itemId: ammo.id, numberOfPackages: pkgs, unitsPerPackage: units,
         purchasePrice: price, currency, shipmentId, notes, location: { warehouse, shelf, bin },
       })
@@ -1496,6 +1501,7 @@ function AmmoReceiveDialog({ ammo, shipments, onClose }: {
     setSubmitting("rounds")
     try {
       const res = await receiveAmmoByRounds({
+        operationId: crypto.randomUUID(),
         itemId: ammo.id, totalRounds: rounds, purchasePrice: price, currency,
         shipmentId, notes, location: { warehouse, shelf, bin },
       })

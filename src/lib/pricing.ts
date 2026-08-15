@@ -27,12 +27,14 @@ export interface PricingFieldState {
 }
 
 function finiteNonNegative(value: number, field: string): Decimal {
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${field} must be a finite non-negative amount`)
   const amount = new Decimal(value)
   if (!amount.isFinite() || amount.isNegative()) throw new Error(`${field} must be a finite non-negative amount`)
   return amount
 }
 
 function validPercent(value: number, field: string, upperExclusive = 100): Decimal {
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${field} must be between 0 and ${upperExclusive}`)
   const percent = new Decimal(value)
   if (!percent.isFinite() || percent.isNegative() || percent.greaterThanOrEqualTo(upperExclusive)) {
     throw new Error(`${field} must be between 0 and ${upperExclusive}`)

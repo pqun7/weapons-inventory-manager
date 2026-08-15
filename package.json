@@ -89,6 +89,8 @@
     "supabase:verify-owner-adoption": "python scripts/verify-supabase-owner-adoption.py",
     "supabase:test-provider-migration": "python scripts/test-supabase-provider-migration.py",
     "supabase:test-migrated-user-activation": "python scripts/test-supabase-migrated-user-activation.py",
+    "supabase:test-deleted-user-reuse": "python scripts/test-supabase-deleted-user-reuse.py",
+    "supabase:test-created-user-activation": "python scripts/test-supabase-created-user-activation.py",
     "electron:pack": "cross-env ARMORY_GENERIC_BUILD=true npm run build:electron && electron-builder --dir",
     "electron:build": "cross-env ARMORY_GENERIC_BUILD=true npm run build:electron && electron-builder --publish never",
     "electron:build:win": "cross-env ARMORY_GENERIC_BUILD=true npm run build:electron && electron-builder --win nsis --publish never",

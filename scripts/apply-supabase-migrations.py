@@ -17,7 +17,7 @@ except ImportError as error:
     raise SystemExit("Install migration requirements: python -m pip install -r scripts/requirements-migration.txt") from error
 
 
-REAPPLY_SAFE_MIGRATION_VERSIONS = {"20260813000700"}
+REAPPLY_SAFE_MIGRATION_VERSIONS = {"20260813000700", "20260815000200"}
 
 
 def load_dotenv(path: Path) -> None:

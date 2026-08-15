@@ -5,7 +5,7 @@ import type {
   SqliteManifestOperation,
 } from "../lib/shipment-manifest"
 import type {
-  InitializeStoreFromEnvironmentInput,
+  InitializeStoreInput,
   StoreConnectionConfiguration,
   StoreSetupProgressStage,
   StoreSetupResult,
@@ -40,7 +40,7 @@ export interface ElectronAPI {
   storeConnection: {
     get: () => Promise<IpcResult<{ connection: StoreConnectionConfiguration; connectionCode: string } | null>>
     join: (input: { connectionCode: string }) => Promise<IpcResult<{ connection: StoreConnectionConfiguration; connectionCode: string }>>
-    initialize: (input: InitializeStoreFromEnvironmentInput) => Promise<IpcResult<StoreSetupResult>>
+    initialize: (input: InitializeStoreInput) => Promise<IpcResult<StoreSetupResult>>
     clear: () => Promise<IpcResult<void>>
     environmentStatus: () => Promise<IpcResult<SupabaseEnvironmentStatus>>
     onSetupProgress: (callback: (stage: StoreSetupProgressStage) => void) => () => void

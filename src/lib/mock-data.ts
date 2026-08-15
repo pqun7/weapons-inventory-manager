@@ -499,6 +499,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
   targetWholesaleMarginPercent: 20,
   maximumMarkupPercent: 200,
   psychologicalPricing: false,
+  showDemoData: true,
 }
 
 export function generateMockData() {

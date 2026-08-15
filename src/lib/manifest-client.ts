@@ -130,7 +130,6 @@ function enrichItem(item: ManifestExtractedItem, master: MasterDataAll): Manifes
   enriched.modelId = findId(master.models.filter((model) => !enriched.brandId || model.brand_id === enriched.brandId), item.model ?? item.productName)
   enriched.caliberId = findId(master.calibers, enriched.caliber ?? productText)
   enriched.weaponSubtypeId = findId(master.weaponSubtypes.filter((subtype) => !enriched.weaponTypeId || subtype.weapon_type_id === enriched.weaponTypeId), productText)
-  enriched.storageLocationId = master.storageLocations[0]?.id ?? null
   if (!enriched.manufacturer && enriched.brandId) enriched.manufacturer = master.brands.find((brand) => brand.id === enriched.brandId)?.label ?? null
   if (!enriched.model && enriched.modelId) enriched.model = master.models.find((model) => model.id === enriched.modelId)?.label ?? null
   return enriched

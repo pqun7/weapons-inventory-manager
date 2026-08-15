@@ -20,6 +20,7 @@ import {
   Check,
   FileText,
   ReceiptText,
+  Plus,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -67,6 +68,7 @@ import {
   summarizeItemStatuses,
 } from "@/lib/shipment-manifest"
 import { useStore } from "@/lib/store"
+import { canonicalSupplierName, extractSupplierLegalName } from "@/lib/supplier-identity"
 import { useCurrency } from "@/lib/currency-context"
 import { useI18n } from "@/lib/i18n"
 import { generateShipmentNumber } from "@/lib/format"
@@ -126,6 +128,7 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
   const shipments = useStore((s) => s.shipments)
   const refreshFromDb = useStore((s) => s.refreshFromDb)
   const updateScheduledShipment = useStore((s) => s.updateScheduledShipment)
+  const addSupplier = useStore((s) => s.addSupplier)
   const md = useDynamicMasterData()
   const { currencies, transactionCurrency, currencyPresentation } = useCurrency()
   const activeCurrencies = useMemo(() => currencies.filter((c) => c.isActive), [currencies])
@@ -170,6 +173,7 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
   const [shipmentCostsValid, setShipmentCostsValid] = useState(true)
   const [aiEnabled, setAiEnabled] = useState(true)
   const [shipmentNumberSource, setShipmentNumberSource] = useState<"file" | "auto" | "manual" | "existing">("auto")
+  const [creatingSupplier, setCreatingSupplier] = useState(false)
 
   useEffect(() => {
     if (review?.processingWarning && showWarning) {
@@ -210,10 +214,10 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
   const loadReview = (next: ShipmentManifestReview, source: "upload" | "saved" = "saved") => {
     detailsLoaded.current = false
     setReview(next)
-    const extractedSupplierName = next.supplierName?.trim().toLocaleLowerCase()
+    const extractedSupplierName = canonicalSupplierName(next.supplierName)
     const supplier = availableSuppliers.find(candidate => (
       candidate.id === next.supplierId
-      || candidate.name.trim().toLocaleLowerCase() === extractedSupplierName
+      || canonicalSupplierName(candidate.name) === extractedSupplierName
     ))
     const extractedShipmentNumber = next.shipmentNumber?.trim()
     setShipmentNumber(extractedShipmentNumber || generateNextShipmentNumber(next.id))
@@ -251,6 +255,24 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
   }
 
   const selectSupplier = (value: string) => setSupplierId(value === "__none" ? "" : value)
+
+  const createDetectedSupplier = async () => {
+    const name = extractSupplierLegalName(review?.supplierName)
+    if (!name || creatingSupplier) return
+    const existing = suppliers.find((supplier) => canonicalSupplierName(supplier.name) === canonicalSupplierName(name))
+    if (existing) { setSupplierId(existing.id); return }
+    setCreatingSupplier(true)
+    try {
+      const result = await addSupplier({ name, contactPerson: "", phone: "", email: "", address: "" })
+      if (!result.success || !result.supplier) throw new Error(result.error ?? "Unable to create supplier")
+      setSupplierId(result.supplier.id)
+      toast.success(`Supplier ${result.supplier.name} created`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to create supplier")
+    } finally {
+      setCreatingSupplier(false)
+    }
+  }
 
   useEffect(() => {
     if (!open || editShipment || !review || review.status !== "pending_review" || !detailsLoaded.current) return
@@ -403,9 +425,23 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
 
   const resolvePatchForItem = async (item: ManifestReviewItem, patch: ManifestItemPatch) => {
     const effective = { ...item, ...patch }
-    return effective.productType
-      ? { ...patch, ...await resolveManifestClassification(effective, md) }
-      : patch
+    if (!effective.productType) return patch
+    if (effective.productType !== "weapon") {
+      return { ...patch, ...await resolveManifestClassification(effective, md) }
+    }
+    const completeClassification = Boolean(
+      effective.weaponType?.trim() && effective.category?.trim() && effective.manufacturer?.trim()
+      && effective.model?.trim() && effective.caliber?.trim(),
+    )
+    if (completeClassification) return { ...patch, ...await resolveManifestClassification(effective, md) }
+    return {
+      ...patch,
+      ...(!effective.weaponType?.trim() ? { weaponTypeId: null } : {}),
+      ...(!effective.category?.trim() ? { weaponSubtypeId: null } : {}),
+      ...(!effective.manufacturer?.trim() ? { brandId: null } : {}),
+      ...(!effective.model?.trim() ? { modelId: null } : {}),
+      ...(!effective.caliber?.trim() ? { caliberId: null } : {}),
+    }
   }
 
   const patchItem = async (item: ManifestReviewItem, patch: ManifestItemPatch) => {
@@ -460,6 +496,7 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
     ? Array.from(missingFieldsById.values()).filter(fields => fields.length > 0).length
     : 0
   const confirmationBlocking = structuralBlocking + (!editShipment && arrival === "arrived_now" ? receiptRequirements : 0)
+  const saveBlocking = editShipment ? 0 : confirmationBlocking
   const confirmationFieldIssues = [
     !shipmentNumber && t("ship.manifestIssueShipmentNumber"), !supplierId && t("ship.manifestIssueSupplier"),
     !shipmentDate && t("ship.manifestIssueShipmentDate"), !currency && t("ship.manifestIssueCurrency"),
@@ -841,8 +878,8 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
 
                     <div className="flex shrink-0 items-center justify-between gap-3 border-t bg-muted/10 px-3 py-2.5 sm:px-4">
                       <Button variant="outline" className="h-9" disabled={isProcessing} onClick={() => setStep("shipment")}><ChevronLeft className="size-4 rtl:rotate-180" /> {t("ship.manifestBackShipment")}</Button>
-                      {confirmationBlocking > 0 && (
-                        <span className="me-auto text-[11px] font-medium text-amber-700">{t("ship.manifestItemsNeedAttention", { count: confirmationBlocking })}</span>
+                      {saveBlocking > 0 && (
+                        <span className="me-auto text-[11px] font-medium text-amber-700">{t("ship.manifestItemsNeedAttention", { count: saveBlocking })}</span>
                       )}
                       <Button className="h-9" disabled={isProcessing} onClick={() => setStep("costs")}>{t("ship.manifestContinueCosts")} <ChevronRight className="size-4 rtl:rotate-180" /></Button>
                     </div>
@@ -872,8 +909,8 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
                     <div className="flex shrink-0 items-center justify-between gap-3 border-t bg-background px-4 py-3 sm:px-6">
                       <Button variant="outline" className="h-9" disabled={isProcessing} onClick={() => setStep("items")}><ChevronLeft className="size-4 rtl:rotate-180" /> {t("ship.manifestBackItems")}</Button>
                       <div className="flex min-w-0 flex-1 justify-end gap-3">
-                        {(confirmationBlocking > 0 || confirmationFieldIssues.length > 0) && <span className="hidden self-center text-end text-[11px] text-amber-700 md:block">{t("ship.manifestResolveIssues")}</span>}
-                        <Button className="h-9" disabled={isProcessing || !shipmentCostsValid || confirmationBlocking > 0 || !shipmentNumber || !supplierId || !shipmentDate || !currency || (arrival === "future" && !expectedArrivalDate)} onClick={() => setConfirmOpen(true)}>
+                        {(saveBlocking > 0 || confirmationFieldIssues.length > 0) && <span className="hidden self-center text-end text-[11px] text-amber-700 md:block">{t("ship.manifestResolveIssues")}</span>}
+                        <Button className="h-9" disabled={isProcessing || !shipmentCostsValid || saveBlocking > 0 || !shipmentNumber || !supplierId || !shipmentDate || !currency || (arrival === "future" && !expectedArrivalDate)} onClick={() => setConfirmOpen(true)}>
                           {editShipment ? t("ship.manifestSaveShipmentChanges") : arrival === "future" ? t("ship.manifestScheduleReviewed") : t("ship.manifestConfirmReceive")}
                         </Button>
                       </div>
@@ -935,6 +972,19 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
                                 ? ` · ${t("ship.manifestDetectedSupplier", { name: review.supplierName })}`
                                 : ""}
                             </p>
+                            {!supplierId && extractSupplierLegalName(review.supplierName) && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="mt-2 h-8 text-xs"
+                                disabled={creatingSupplier}
+                                onClick={() => void createDetectedSupplier()}
+                              >
+                                {creatingSupplier ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                                {t("ship.manifestCreateSupplier", { name: extractSupplierLegalName(review.supplierName) ?? "" })}
+                              </Button>
+                            )}
                           </div>
                           <div><Label className="text-xs">{t("ship.invoiceNumber")}</Label><Input className="mt-1 h-9 text-xs" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} /></div>
                           <div><Label className="text-xs">{t("ship.manifestNumber")}</Label><Input className="mt-1 h-9 text-xs" value={manifestNumber} onChange={e => setManifestNumber(e.target.value)} /></div>
@@ -961,12 +1011,12 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
                         <div className="rounded-xl border bg-background p-4">
                           <div className="mb-3 flex items-center justify-between gap-3">
                             <div><h3 className="text-sm font-semibold">{t("ship.manifestValidationConfirmation")}</h3><p className="text-[10px] text-muted-foreground">{t("ship.manifestValidationUnchanged")}</p></div>
-                            <Badge variant={confirmationBlocking || confirmationFieldIssues.length ? "destructive" : "outline"}>{confirmationBlocking || confirmationFieldIssues.length ? t("ship.manifestActionRequired") : t("ship.manifestReadyStatus")}</Badge>
+                            <Badge variant={saveBlocking || confirmationFieldIssues.length ? "destructive" : "outline"}>{saveBlocking || confirmationFieldIssues.length ? t("ship.manifestActionRequired") : t("ship.manifestReadyStatus")}</Badge>
                           </div>
-                          {confirmationBlocking > 0 || confirmationFieldIssues.length > 0 ? (
+                          {saveBlocking > 0 || confirmationFieldIssues.length > 0 ? (
                             <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
                               {confirmationFieldIssues.map(issue => <div key={issue} className="flex items-start gap-2 text-amber-800"><XCircle className="mt-0.5 size-3.5 shrink-0" /><span>{issue}</span></div>)}
-                              {structuralBlocking > 0 && <div className="flex items-start gap-2 text-red-700"><XCircle className="mt-0.5 size-3.5 shrink-0" /><span>{t("ship.manifestResolveStructural", { count: structuralBlocking })}</span></div>}
+                              {!editShipment && structuralBlocking > 0 && <div className="flex items-start gap-2 text-red-700"><XCircle className="mt-0.5 size-3.5 shrink-0" /><span>{t("ship.manifestResolveStructural", { count: structuralBlocking })}</span></div>}
                               {structuralBlocking === 0 && receiptRequirements > 0 && !editShipment && arrival === "arrived_now" && <div className="flex items-start gap-2 text-red-700"><XCircle className="mt-0.5 size-3.5 shrink-0" /><span>{t("ship.manifestCompleteRequirements", { count: receiptRequirements })}</span></div>}
                             </div>
                           ) : (

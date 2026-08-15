@@ -95,6 +95,83 @@ function InlineManifestCell({
   )
 }
 
+interface WeaponSerialNumbersCardProps {
+  serialNumbers?: string[];
+  updateDraft: (data: { serialNumbers: string[] }) => void;
+  missing: Set<string>; // أو النوع الذي تستخدمه
+  missingClass: (field: string) => string;
+  t: (key: string) => string;
+}
+
+export function WeaponSerialNumbersCard({
+  serialNumbers = [],
+  updateDraft,
+  missing,
+  missingClass,
+  t,
+}: WeaponSerialNumbersCardProps) {
+  // استخدام حالة محلية للسماح للمستخدم بضغط Enter وكتابة مسافات دون أن تُحذف فوراً
+  const [textValue, setTextValue] = useState(() => serialNumbers.join("\n"));
+
+  // تحديث الحالة المحلية إذا تغيرت السيريالات من خارج المكون (مثلاً عند تحميل بيانات جديدة)
+  useEffect(() => {
+    const currentArray = textValue.split(/[\n,;]+/).map(v => v.trim()).filter(Boolean);
+    // نحدث النص فقط إذا كانت البيانات القادمة مختلفة فعلياً لتجنب إزعاج المستخدم أثناء الكتابة
+    if (JSON.stringify(currentArray) !== JSON.stringify(serialNumbers)) {
+      setTextValue(serialNumbers.join("\n"));
+    }
+  }, [serialNumbers]);
+
+  const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const rawValue = event.target.value;
+    setTextValue(rawValue); // تحديث مربع النص ليظهر الـ Enter والمسافات
+
+    // تنظيف البيانات وإرسالها للمكون الأب (بدون أسطر فارغة أو مسافات زائدة)
+    const cleanedArray = rawValue
+      .split(/[\n,;]+/)
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    updateDraft({ serialNumbers: cleanedArray });
+  };
+
+  const handleBlur = () => {
+    // ترتيب وتنظيف مربع النص بصرياً عندما يخرج المستخدم منه
+    const cleanedArray = textValue
+      .split(/[\n,;]+/)
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    setTextValue(cleanedArray.join("\n"));
+  };
+
+  const hasError = missing?.has?.("serialNumbers");
+
+  return (
+    <Card
+      className={cn(
+        "sm:col-span-2",
+        hasError && "border-amber-500 bg-amber-500/[0.03] ring-1 ring-amber-500/20"
+      )}
+    >
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-xs font-medium">
+          <Hash className="size-3.5 text-primary" />
+          {t("ship.manifestSerialsOnePerLine")}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Textarea
+          className={cn("min-h-40 font-mono text-xs", missingClass?.("serialNumbers"))}
+          value={textValue}
+          onChange={handleChange}
+          onBlur={handleBlur} // تنظيف العرض عند فقدان التركيز
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
 interface ManifestItemsTableProps {
   mode: ShipmentItemsMode
   items: ManifestReviewItem[]
@@ -491,27 +568,22 @@ export function ManifestItemsTable({
                 </Card>
 
                 {draft.productType === "weapon" && editingIds.length === 1 && (
-                  <Card className={cn("sm:col-span-2", missing.has("serialNumbers") && "border-amber-500 bg-amber-500/[0.03] ring-1 ring-amber-500/20")}>
-                    <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-xs font-medium"><Hash className="size-3.5 text-primary" />{t("ship.manifestSerialsOnePerLine")}</CardTitle></CardHeader>
-                    <CardContent>
-                      <Textarea
-                        className={cn("min-h-40 font-mono text-xs", missingClass("serialNumbers"))}
-                        value={(draft.serialNumbers ?? []).join("\n")}
-                        onChange={(event) => updateDraft({
-                          serialNumbers: event.target.value.split(/[\n,;]+/).map((value) => value.trim()).filter(Boolean),
-                        })}
-                      />
-                    </CardContent>
-                  </Card>
+                  <WeaponSerialNumbersCard
+                    serialNumbers={draft.serialNumbers}
+                    updateDraft={updateDraft}
+                    missing={missing}
+                    missingClass={missingClass}
+                    t={t}
+                  />
                 )}
 
                 <Card className="sm:col-span-2">
-                  <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-xs font-medium"><MapPin className="size-3.5 text-primary" />{t("ship.manifestStorageLocation")}</CardTitle></CardHeader>
+                  <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-xs font-medium"><MapPin className="size-3.5 text-primary" />{t("ship.manifestStorageLocation")} ({t("common.optional")})</CardTitle></CardHeader>
                   <CardContent>
                     <Select value={draft.storageLocationId ?? "__none"} onValueChange={(value) => updateDraft({ storageLocationId: value === "__none" ? null : value })}>
-                      <SelectTrigger className={cn("h-9 text-xs", missingClass("storageLocationId"))}><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="__none">{t("common.select")}</SelectItem>
+                        <SelectItem value="__none">—</SelectItem>
                         {masterData.storageLocations.map((row) => {
                           const warehouse = masterData.warehouses.find((candidate) => candidate.id === row.warehouse_id)
                           return <SelectItem key={row.id} value={row.id}>{warehouse?.label ?? row.warehouse_id} · {row.shelf}/{row.bin}</SelectItem>

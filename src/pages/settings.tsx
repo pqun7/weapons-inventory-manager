@@ -180,6 +180,8 @@ function GeneralSettings({ user }: { user: User }) {
   const [confirmation, setConfirmation] = useState("")
   const [currentPassword, setCurrentPassword] = useState("")
   const [saving, setSaving] = useState(false)
+  const [demoWorking, setDemoWorking] = useState(false)
+  const showDemoData = useStore((state) => state.settings.showDemoData ?? false)
 
   useEffect(() => setEmail(user.email ?? ""), [user.email])
 
@@ -221,6 +223,19 @@ function GeneralSettings({ user }: { user: User }) {
     }
   }
 
+  const changeDemoData = async (reset: boolean) => {
+    setDemoWorking(true)
+    try {
+      if (reset) await db.dbResetDemoData(); else await db.dbDeleteDemoData()
+      await refreshFromDb()
+      toast.success(t(reset ? "settings.demoResetSuccess" : "settings.demoDeleteSuccess"))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("toast.error"))
+    } finally {
+      setDemoWorking(false)
+    }
+  }
+
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <Card>
@@ -235,6 +250,16 @@ function GeneralSettings({ user }: { user: User }) {
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><KeyRound className="size-4" />{t("settings.changePassword")}</CardTitle><CardDescription>{t("settings.changePasswordHelp")}</CardDescription></CardHeader>
         <CardContent><form className="grid gap-3" onSubmit={changePassword}>{getDatabaseProvider() === "sqlite" && <div className="grid gap-1.5"><Label>{t("settings.password")}</Label><PasswordInput autoComplete="current-password" required value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} /></div>}<div className="grid gap-1.5"><Label>{t("auth.newPassword")}</Label><PasswordInput autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} /></div><div className="grid gap-1.5"><Label>{t("auth.confirmPassword")}</Label><PasswordInput autoComplete="new-password" required value={confirmation} onChange={(e) => setConfirmation(e.target.value)} /></div><Button disabled={saving}>{saving ? t("ship.manifestSaving") : t("settings.changePassword")}</Button></form></CardContent>
       </Card>
+      {user.role === "Admin" && getDatabaseProvider() === "sqlite" && (
+        <Card className="lg:col-span-2">
+          <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Database className="size-4" />{t("settings.demoData")}</CardTitle><CardDescription>{t("settings.demoDataHelp")}</CardDescription></CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-2">
+            <Badge variant={showDemoData ? "secondary" : "outline"}>{t(showDemoData ? "settings.demoEnabled" : "settings.demoDisabled")}</Badge>
+            <Button variant="outline" disabled={demoWorking} onClick={() => void changeDemoData(true)}><RotateCcw className="size-4" />{t("settings.resetDemoData")}</Button>
+            <Button variant="destructive" disabled={demoWorking || !showDemoData} onClick={() => void changeDemoData(false)}><Trash2 className="size-4" />{t("settings.deleteDemoData")}</Button>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

@@ -27,6 +27,8 @@ type GenericTable = {
 
 type RpcName =
   | "complete_sale"
+  | "complete_sale_v2"
+  | "adjust_inventory_stock_v2"
   | "register_payment"
   | "update_weapon_status"
   | "currency_snapshot"

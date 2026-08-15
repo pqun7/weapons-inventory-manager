@@ -98,7 +98,7 @@ export class AppRepository {
       .map((r) => mappers.rowToAuditLog(r as never))
     const notifications = (db.prepare("SELECT * FROM app_notifications ORDER BY date DESC").all() as Record<string, unknown>[])
       .map((r) => mappers.rowToNotification(r as never))
-    const users = (db.prepare("SELECT * FROM users ORDER BY id").all() as Record<string, unknown>[])
+    const users = (db.prepare("SELECT * FROM users WHERE is_active = 1 ORDER BY id").all() as Record<string, unknown>[])
       .map((r) => mappers.rowToUser(r as never))
     const savedFilters = (db.prepare("SELECT * FROM saved_filters ORDER BY created_at DESC").all() as Record<string, unknown>[])
       .map((r) => mappers.rowToSavedFilter(r as never))
@@ -136,6 +136,11 @@ export class AppRepository {
       daily_closing_prompt = @daily_closing_prompt,
       weekly_verification = @weekly_verification,
       min_profit_margin_percent = @min_profit_margin_percent,
+      target_retail_margin_percent = @target_retail_margin_percent,
+      target_wholesale_margin_percent = @target_wholesale_margin_percent,
+      maximum_markup_percent = @maximum_markup_percent,
+      psychological_pricing = @psychological_pricing,
+      show_demo_data = @show_demo_data,
       theme = @theme,
       preferred_display_currency = @preferred_display_currency,
       app_language = @app_language,
@@ -259,11 +264,13 @@ export class AppRepository {
     db.prepare(`INSERT INTO shipments (id, shipment_number, supplier_id, shipment_date, expected_arrival_date,
       total_expected_items, attachments, notes, status, timeline, purchase_order_number, invoice_number,
       shipping_carrier, container_number, currency, purchase_date, actual_arrival_date,
-      line_items, documents, total_cost_valuation)
+      line_items, documents, total_cost_valuation, workflow_status, import_id, arrival_note,
+      delay_reason, last_arrival_prompt_at, planned_costs, created_at)
       VALUES (@id, @shipment_number, @supplier_id, @shipment_date, @expected_arrival_date,
       @total_expected_items, @attachments, @notes, @status, @timeline, @purchase_order_number, @invoice_number,
       @shipping_carrier, @container_number, @currency, @purchase_date, @actual_arrival_date,
-      @line_items, @documents, @total_cost_valuation)`).run(row)
+      @line_items, @documents, @total_cost_valuation, @workflow_status, @import_id, @arrival_note,
+      @delay_reason, @last_arrival_prompt_at, @planned_costs, @created_at)`).run(row)
   }
 
   updateShipment(s: Shipment): void {
@@ -276,7 +283,10 @@ export class AppRepository {
       purchase_order_number = @purchase_order_number, invoice_number = @invoice_number,
       shipping_carrier = @shipping_carrier, container_number = @container_number, currency = @currency,
       purchase_date = @purchase_date, actual_arrival_date = @actual_arrival_date,
-      line_items = @line_items, documents = @documents, total_cost_valuation = @total_cost_valuation
+      line_items = @line_items, documents = @documents, total_cost_valuation = @total_cost_valuation,
+      workflow_status = @workflow_status, import_id = @import_id, arrival_note = @arrival_note,
+      delay_reason = @delay_reason, last_arrival_prompt_at = @last_arrival_prompt_at,
+      planned_costs = @planned_costs, created_at = @created_at
       WHERE id = @id`).run(row)
   }
 
@@ -464,7 +474,21 @@ export class AppRepository {
   }
 
   deleteUser(id: string): void {
-    getDb().prepare("DELETE FROM users WHERE id = ?").run(id)
+    // Keep the durable row for invoices/audit foreign keys while releasing the
+    // unique login identifier so a newly created account may reuse it.
+    getDb().prepare(`UPDATE users SET
+      username = 'deleted.' || lower(hex(randomblob(16))) || '@local.weapon-store.invalid',
+      email = NULL,
+      login_email = NULL,
+      password_set = 0,
+      password_hash = '',
+      activation_token_hash = NULL,
+      activation_expires_at = NULL,
+      is_active = 0,
+      failed_login_attempts = 0,
+      locked_until = NULL,
+      updated_at = datetime('now')
+      WHERE id = ?`).run(id)
   }
 
   insertSavedFilter(f: SavedFilter): void {

@@ -787,6 +787,22 @@ function addColumnsIfMissing(
       "rate_base_currency_code",
       "TEXT NOT NULL DEFAULT 'USD'"
     ],
+    [
+      "target_retail_margin_percent",
+      "REAL NOT NULL DEFAULT 30"
+    ],
+    [
+      "target_wholesale_margin_percent",
+      "REAL NOT NULL DEFAULT 20"
+    ],
+    [
+      "maximum_markup_percent",
+      "REAL NOT NULL DEFAULT 200"
+    ],
+    [
+      "psychological_pricing",
+      "INTEGER NOT NULL DEFAULT 0"
+    ],
   ];
 
   const additions: Record<string, Array<[string, string]>> = {
@@ -976,7 +992,25 @@ function ensureProviderSchema(database: Database.Database): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     ) STRICT;
 
+    CREATE TABLE IF NOT EXISTS sale_operations (
+      operation_id TEXT PRIMARY KEY,
+      request_hash TEXT NOT NULL,
+      invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE RESTRICT,
+      invoice_number TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS stock_operations (
+      operation_id TEXT PRIMARY KEY,
+      request_hash TEXT NOT NULL,
+      item_type TEXT NOT NULL CHECK (item_type IN ('accessory','ammunition')),
+      item_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    ) STRICT;
+
     CREATE INDEX IF NOT EXISTS idx_users_username_nocase ON users(username COLLATE NOCASE);
+    CREATE INDEX IF NOT EXISTS idx_customers_email_identity ON customers(lower(trim(email))) WHERE trim(email) <> '';
+    CREATE INDEX IF NOT EXISTS idx_customers_phone_identity ON customers(replace(replace(replace(replace(replace(phone, ' ', ''), '-', ''), '(', ''), ')', ''), '+', '')) WHERE trim(phone) <> '';
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_login_email_unique ON users(login_email COLLATE NOCASE) WHERE login_email IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_weapons_serial_search ON weapons(serial_number COLLATE NOCASE) WHERE deleted_at IS NULL;
     CREATE INDEX IF NOT EXISTS idx_shipments_workflow_date ON shipments(workflow_status, expected_arrival_date);
@@ -1799,6 +1833,8 @@ function validateFinalSchema(
     "account_auth_attempts",
     "business_id_counters",
     "database_health_probes",
+    "sale_operations",
+    "stock_operations",
   ];
 
   const tables = getExistingTables(database);

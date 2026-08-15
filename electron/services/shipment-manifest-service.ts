@@ -15,6 +15,7 @@ import {
   type ManifestUploadInput, type ManifestValidationIssue, type ManifestWorkflowStatus, type ShipmentManifestReview,
 } from "../../src/lib/shipment-manifest.js"
 import type { Accessory, Ammunition, Shipment, ShipmentLineItem, StorageLocation, Weapon } from "../../src/lib/types.js"
+import { extractSupplierLegalName } from "../../src/lib/supplier-identity.js"
 import {
   finalizeInventoryCosts,
   insertShipmentCosts,
@@ -202,7 +203,7 @@ function nativeMetadata(extraction: NativeExtraction | undefined): AiManifestMet
   }
   return {
     shipmentNumber: structuredValue([/^commercial\s*#?$/i, /^manifest\s*(?:number|no)?:?$/i, /^shipment\s*(?:number|no)?:?$/i]) ?? pick([/(?:commercial\s*#|manifest\s*(?:number|no)|shipment\s*(?:number|no))\s*[:#]?\s*([^\n]+)/i]),
-    supplier: structuredValue([/^shipper\s*:/i, /^exporter\s*:?$/i, /^supplier\s*:/i]) ?? pick([/(?:shipper|exporter|supplier)\s*[:#]?\s*([^\n]+)/i]),
+    supplier: extractSupplierLegalName(structuredValue([/^shipper\s*:/i, /^exporter\s*:?$/i, /^supplier\s*:/i]) ?? pick([/(?:shipper|exporter|supplier)\s*[:#]?\s*([^\n]+)/i])),
     supplierReference: null,
     invoiceNumber: structuredValue([/^invoice\s*(?:number|no)?\s*:?$/i]) ?? pick([/invoice\s*(?:number|no)?\s*[:#]?\s*([^\n]+)/i]),
     manifestNumber: structuredValue([/^manifest\s*(?:number|no)\s*:?$/i]) ?? pick([/manifest\s*(?:number|no)\s*[:#]?\s*([^\n]+)/i]),
@@ -352,7 +353,6 @@ function validateImport(importId: string): void {
       if (!cleanNullable(row.caliber)) receiptRequirement("caliber", "CALIBER_REQUIRED_FOR_RECEIPT", "Enter the caliber before inventory receipt")
     }
     if (row.product_type === "ammunition" && !cleanNullable(row.caliber)) warning("caliber", "CALIBER_REVIEW_REQUIRED", "Review the ammunition caliber before receipt")
-    if (!row.storage_location_id) receiptRequirement("storageLocationId", "LOCATION_REQUIRED", "Select a storage location before inventory receipt")
     if (row.unit_price == null || Number(row.unit_price) <= 0) receiptRequirement("unitPrice", "PURCHASE_PRICE_REQUIRED_FOR_RECEIPT", "A positive purchase price is required before inventory receipt")
     for (const serial of serials) {
       if ((counts.get(serial) ?? 0) > 1) conflict("serialNumbers", "DUPLICATE_IN_MANIFEST", `Serial ${serial} appears more than once in this manifest`, true)
@@ -703,8 +703,9 @@ export function deleteManifestReview(importId: string, user: CurrentUser): void 
 }
 
 function storageLocation(id: string | null): StorageLocation {
+  if (!id) return { warehouse: "", shelf: "", bin: "" }
   const row = getDb().prepare(`SELECT w.label AS warehouse, sl.shelf, sl.bin FROM storage_locations sl JOIN warehouses w ON w.id = sl.warehouse_id WHERE sl.id = ?`).get(id) as StorageLocation | undefined
-  if (!row) throw new Error("A valid storage location is required")
+  if (!row) throw new Error("Storage location not found")
   return row
 }
 
@@ -723,7 +724,6 @@ function ensureReceivable(review: ShipmentManifestReview, currency: string): voi
     if (item.unitPrice == null || item.unitPrice <= 0) throw new Error(`A positive purchase price is required for item ${item.rowIndex}`)
     const itemCurrency = (item.currency ?? currency).trim().toUpperCase()
     backendCurrencyService.requireCurrency(itemCurrency, true)
-    if (!item.storageLocationId) throw new Error(`A storage location is required for item ${item.rowIndex}`)
     if (item.productType === "weapon" && (!item.weaponTypeId || !item.weaponSubtypeId || !item.brandId || !item.modelId || !item.caliberId)) {
       throw new Error(`Complete all master-data mappings for weapon item ${item.rowIndex}`)
     }
@@ -816,7 +816,7 @@ function insertInventory(review: ShipmentManifestReview, shipment: Shipment, use
       for (const serial of item.serialNumbers) {
         const weaponId = `W${String(weaponCounter++).padStart(5, "0")}`
         weapons.push({
-          id: weaponId, serialNumber: normalizeSerial(serial), weaponTypeId: item.weaponTypeId!, weaponSubtypeId: item.weaponSubtypeId!, caliberId: item.caliberId!, brandId: item.brandId!, modelId: item.modelId!, storageLocationId: item.storageLocationId!,
+          id: weaponId, serialNumber: normalizeSerial(serial), weaponTypeId: item.weaponTypeId!, weaponSubtypeId: item.weaponSubtypeId!, caliberId: item.caliberId!, brandId: item.brandId!, modelId: item.modelId!, storageLocationId: item.storageLocationId ?? null,
           weaponType: item.weaponType ?? "", subType: "", caliber: item.caliber ?? "", brand: item.manufacturer ?? "", model: item.model ?? item.productName ?? "", location: storageLocation(item.storageLocationId),
           condition: "Excellent", status: "Available", purchasePrice: purchaseValuation.originalAmount, retailPrice: item.retailPrice ?? 0, wholesalePrice: item.wholesalePrice ?? 0,
           retailPriceMode: item.retailPriceMode ?? "manual", wholesalePriceMode: item.wholesalePriceMode ?? "manual", actualFinalPrice: null,

@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 export const CONFIGURE_INITIAL_CURRENCIES_V5_SQL = `
 UPDATE currencies
@@ -424,6 +424,10 @@ CREATE TABLE IF NOT EXISTS system_settings (
   daily_closing_prompt    INTEGER NOT NULL DEFAULT 1,
   weekly_verification     INTEGER NOT NULL DEFAULT 0,
   min_profit_margin_percent REAL NOT NULL DEFAULT 5,
+  target_retail_margin_percent REAL NOT NULL DEFAULT 30,
+  target_wholesale_margin_percent REAL NOT NULL DEFAULT 20,
+  maximum_markup_percent REAL NOT NULL DEFAULT 200,
+  psychological_pricing INTEGER NOT NULL DEFAULT 0,
   preferred_display_currency TEXT,
   show_demo_data          INTEGER NOT NULL DEFAULT 1,
   app_language            TEXT NOT NULL DEFAULT 'en',

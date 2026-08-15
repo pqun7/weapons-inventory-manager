@@ -39,6 +39,7 @@
     "electron/preload.cts",
     "src/env.d.ts",
     "src/lib/database-provider.ts",
+    "src/lib/activation-code.ts",
     "src/lib/manifest-file-types.ts",
     "src/lib/shipment-manifest.ts",
     "src/lib/store-connection.ts"

@@ -25,6 +25,12 @@ export interface InitializeStoreInput {
   ownerName: string
   ownerEmail: string
   ownerPassword: string
+  /**
+   * Explicit authorization to revoke every Supabase Auth identity in the
+   * selected project and replace the Armory Store profiles with one owner.
+   * This is intentionally opt-in because it is destructive.
+   */
+  replaceExistingAccounts?: boolean
 }
 
 export interface InitializeStoreFromEnvironmentInput {
@@ -62,6 +68,7 @@ export type StoreSetupProgressStage =
   | "validating"
   | "migrating"
   | "configuring"
+  | "replacing-accounts"
   | "creating-owner"
   | "verifying"
   | "saving"

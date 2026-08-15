@@ -67,16 +67,18 @@ def auth_admin_request(method: str, path: str, body: dict[str, object] | None = 
     """Call the documented Supabase Auth administrator endpoint."""
     key = service_role_key()
     encoded = None if body is None else json.dumps(body).encode("utf-8")
+    headers = {
+        "apikey": key,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    if not key.startswith("sb_secret_"):
+        headers["Authorization"] = f"Bearer {key}"
     request = urllib.request.Request(
         f"{supabase_url()}/auth/v1/admin/{path.lstrip('/')}",
         data=encoded,
         method=method,
-        headers={
-            "apikey": key,
-            "Authorization": f"Bearer {key}",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        },
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:

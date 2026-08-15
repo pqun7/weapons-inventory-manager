@@ -57,7 +57,6 @@ export function shipmentItemMissingFields(item: ManifestReviewItem): string[] {
   if (!item.productName?.trim()) missing.push("productName")
   if (!item.quantity || item.quantity <= 0) missing.push("quantity")
   if (!item.unitPrice || item.unitPrice <= 0) missing.push("unitPrice")
-  if (!item.storageLocationId) missing.push("storageLocationId")
   if (item.productType === "weapon") {
     if (!item.weaponType?.trim()) missing.push("weaponType")
     if (!item.category?.trim()) missing.push("weaponSubtype")
@@ -182,7 +181,7 @@ export function shipmentLineInputToManifestItem(item: ShipmentLineItemInput, ind
     caliberId: item.caliberId,
     brandId: item.brandId,
     modelId: item.modelId,
-    storageLocationId: item.storageLocationId,
+    storageLocationId: item.storageLocationId ?? undefined,
     serialNumbers: item.serialNumbers,
     received: 0,
     additionalCosts: item.additionalCosts,
@@ -266,7 +265,7 @@ export function manifestItemToLineInput(item: ManifestReviewItem, fallbackCurren
     caliberId: item.caliberId ?? "",
     brandId: item.brandId ?? "",
     modelId: item.modelId ?? "",
-    storageLocationId: item.storageLocationId ?? "",
+    storageLocationId: item.storageLocationId ?? null,
     quantity: item.quantity ?? 0,
     purchasePrice: item.unitPrice ?? 0,
     retailPrice: item.retailPrice ?? 0,

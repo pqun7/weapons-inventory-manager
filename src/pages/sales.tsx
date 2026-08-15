@@ -66,7 +66,6 @@ export function SalesPage() {
   const invoices = useStore((s) => s.invoices)
   const settings = useStore((s) => s.settings)
   const getWeaponBySerial = useStore((s) => s.getWeaponBySerial)
-  const addCustomer = useStore((s) => s.addCustomer)
   const completeSale = useStore((s) => s.completeSale)
   const { currencies, transactionCurrency, formatOriginal, formatInvoice, formatValuation } = useCurrency()
 
@@ -119,6 +118,8 @@ export function SalesPage() {
   // Approval + confirm
   const [approved, setApproved] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const operationIdRef = useRef(crypto.randomUUID())
 
   // الخصم الإضافي (المكاسرة)
   const [bargainDiscount, setBargainDiscount] = useState("")
@@ -265,7 +266,15 @@ export function SalesPage() {
     [accessoryLines]
   )
 
-  const totalOriginal = sumMoney([weaponsOriginal, ammoSubtotal, accessorySubtotal])
+  const ammoOriginal = useMemo(
+    () => sumMoney(ammoLines.map((line) => multiplyMoney(inventoryModePrice(line.ammo), Number(line.quantity)))),
+    [ammoLines, inventoryModePrice],
+  )
+  const accessoryOriginal = useMemo(
+    () => sumMoney(accessoryLines.map((line) => multiplyMoney(inventoryModePrice(line.accessory), Number(line.quantity)))),
+    [accessoryLines, inventoryModePrice],
+  )
+  const totalOriginal = sumMoney([weaponsOriginal, ammoOriginal, accessoryOriginal])
   const totalNegotiated = sumMoney([weaponsSubtotal, ammoSubtotal, accessorySubtotal])
   const discountAmount = sumMoney([totalOriginal, -totalNegotiated])
 
@@ -409,6 +418,8 @@ export function SalesPage() {
     setExpandedIds(new Set());
     setExpandedAmmoIds(new Set());
     setExpandedAccessoryIds(new Set());
+    setIsSubmitting(false)
+    operationIdRef.current = crypto.randomUUID()
   }, [transactionCurrency])
 
   const openWizard = () => { resetForm(); setOpen(true) }
@@ -424,23 +435,18 @@ export function SalesPage() {
   }
 
   const handleConfirmSale = async () => {
-    setConfirmOpen(false)
+    if (isSubmitting) return
     if (!invoiceNumber.trim()) { setInvoiceNumberError(true); toast.error(t('sales.invoiceNum')); return }
     if (hasStockIssues) { toast.error(t('sales.stockExceedsAvailable')); return }
     if (hasPricingIssues) { toast.error(t("sales.itemsMissingCurrencyValuation")); return }
     if (marginViolation && !approved) { toast.error(t('sales.managerApprovalReq')); return }
 
-    let customerId = selectedCustomerId
+    let customerId: string | undefined = selectedCustomerId || undefined
     let customerName = ""
     if (buyerType === "new") {
       if (!newName.trim()) { toast.error(t('sales.customerNameRequired')); return }
-      const custResult = await addCustomer({
-        name: newName.trim(), phone: newPhone.trim(), email: newEmail.trim(),
-        address: "", isWholesaleBuyer: mode === "Wholesale", wholesaleDiscountPercent: 0,
-      })
-      if (!custResult.success || !custResult.customer) { toast.error(custResult.error ?? 'Failed'); return }
-      customerId = custResult.customer.id
-      customerName = custResult.customer.name
+      customerId = undefined
+      customerName = newName.trim()
     } else {
       const buyer = buyerOptions.find((b) => b.id === selectedCustomerId)
       if (!buyer) { toast.error(t('sales.selectBuyerError')); return }
@@ -468,11 +474,17 @@ export function SalesPage() {
     const attachments = documents.map(d => JSON.stringify(d))
     const dueDate = isDebt && balanceDue > 0 ? debtDueDate : invoiceDate
 
+    setIsSubmitting(true)
     const result = await completeSale({
+      operationId: operationIdRef.current,
       weaponIds: selectedWeapons.map((w) => w.id),
       lineItems,
       customerId,
       customerName,
+      newCustomer: buyerType === "new" ? {
+        name: newName.trim(), phone: newPhone.trim(), email: newEmail.trim(), address: "",
+        isWholesaleBuyer: mode === "Wholesale", wholesaleDiscountPercent: 0,
+      } : undefined,
       mode,
       invoiceNumber: invoiceNumber.trim(),
       totalNegotiated: finalSubtotal,
@@ -489,6 +501,7 @@ export function SalesPage() {
     })
 
     if (result.success) {
+      setConfirmOpen(false)
       toast.success(t('sales.saleCompletedInvoice', { invoice: result.invoiceNumber ?? "" }), {
         description: t('sales.saleCompletedDesc', { count: lineItems.length, buyer: customerName, amount: formatTransaction(grandTotal) }),
       })
@@ -497,6 +510,7 @@ export function SalesPage() {
     } else {
       toast.error(result.error || t('sales.saleFailedMsg'))
     }
+    setIsSubmitting(false)
   }
 
   const goNext = () => {
@@ -2018,7 +2032,7 @@ export function SalesPage() {
                 </Button>
               )}
               {step === 5 && (
-                <Button onClick={requestSaleConfirmation} disabled={!canComplete}>
+                <Button onClick={requestSaleConfirmation} disabled={!canComplete || isSubmitting}>
                   <Check className="size-3.5" /> {t('sales.completeSaleAmount', { amount: formatTransactionMoney(grandTotal) })}
                 </Button>
               )}
@@ -2035,6 +2049,7 @@ export function SalesPage() {
         variant={marginViolation ? "warning" : "default"}
         confirmLabel={t('sales.completeSale')}
         onConfirm={handleConfirmSale}
+        pending={isSubmitting}
         impactSummary={[
           t('sales.weaponsWillBeSold', { count: selectedWeapons.length }),
           ...ammoLines.map((l) => {

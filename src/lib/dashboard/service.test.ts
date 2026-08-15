@@ -58,4 +58,22 @@ describe("local dashboard provider parity", () => {
     expect(analytics.current).toMatchObject({ revenue: 75, cost: 0, profit: null, marginPct: null, costCoveragePct: 0 })
     expect(analytics.categories[0]).toMatchObject({ profit: null, costCoveragePct: 0 })
   })
+
+  it("does not merge different products that share the same display name", () => {
+    const data = {
+      weapons: [], accessories: [], ammunition: [], shipments: [], payments: [], customers: [], suppliers: [], auditLogs: [], notifications: [], users: [], savedFilters: [],
+      settings: { accountingCurrencyCode: "USD" },
+      invoices: [{
+        id: "I3", type: "Sale", voided: false, date: "2026-08-10", dueDate: "2026-08-10",
+        totalNegotiated: 20, balance: 0,
+        lineItems: [
+          { itemType: "accessory", itemId: "A1", name: "Case", quantity: 1, unitPrice: 10, total: 10, unitLandedCostAccounting: 2 },
+          { itemType: "accessory", itemId: "A2", name: "Case", quantity: 1, unitPrice: 10, total: 10, unitLandedCostAccounting: 3 },
+        ],
+      }],
+    } as unknown as AllData
+    const analytics = buildLocalDashboardAnalytics(data, { start: "2026-08-01", end: "2026-08-31" })
+    expect(analytics.products).toHaveLength(2)
+    expect(analytics.products.map((product) => product.key).sort()).toEqual(["accessory:A1", "accessory:A2"])
+  })
 })

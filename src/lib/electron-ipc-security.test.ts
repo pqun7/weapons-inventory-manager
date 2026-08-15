@@ -37,4 +37,23 @@ describe("Electron storage IPC boundary", () => {
     expect(storage).toContain("fs.fsyncSync(descriptor)")
     expect(storage).toContain("fs.renameSync(temporary, filename)")
   })
+
+  it("disconnects only the local Supabase store selection and removes recoverable config backups", () => {
+    const handler = source("electron/ipc/store-installation-handler.ts")
+    const manager = source("electron/services/database-provider-manager.ts")
+    const storage = source("electron/services/storage-config-service.ts")
+    const store = source("electron/services/store-installation-service.ts")
+    const panel = source("src/components/store-connection-panel.tsx")
+
+    expect(handler).toContain("disconnectSupabaseProvider()")
+    expect(manager).toContain('stored.config?.databaseProvider !== "supabase"')
+    expect(manager).toContain("clearStoredConnection()")
+    expect(manager).toContain("clearStorageConfig()")
+    expect(manager).toContain("saveStoredConnection(connection)")
+    expect(manager).toContain("writeStorageConfig(stored.config)")
+    expect(storage).toContain('`${filename}${BACKUP_SUFFIX}`')
+    expect(store).toContain('`${filename}.bak`')
+    expect(panel).toContain('signOutActiveDatabase({ localOnly: true })')
+    expect(panel).toContain('sessionStorage.setItem("armory-store:disconnect-notice"')
+  })
 })

@@ -38,6 +38,10 @@ describe("shipment item classification", () => {
     expect(shipmentItemMissingFields(item({ category: null, weaponSubtypeId: null }))).toContain("weaponSubtype")
   })
 
+  it("keeps storage location optional", () => {
+    expect(shipmentItemMissingFields(item({ storageLocationId: null }))).not.toContain("storageLocationId")
+  })
+
   it("resolves a subtype within the selected weapon type and persists the complete FK tuple", async () => {
     const master = {
       getWeaponTypeIdByLabel: vi.fn(() => "wt-pistol"),

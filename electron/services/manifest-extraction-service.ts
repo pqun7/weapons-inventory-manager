@@ -13,6 +13,7 @@ import {
 import { analyzeManifestWithAi, userFacingAiError, type AiManifestMetadata } from "./openai-manifest-service.js"
 import { reconcileExtractedItems } from "./manifest-reconciliation.js"
 import { verifyManifestExtraction } from "./manifest-verification.js"
+import { extractSupplierLegalName } from "../../src/lib/supplier-identity.js"
 import {
   MANIFEST_PROMPT_VERSION,
   MANIFEST_SCHEMA_VERSION,
@@ -175,7 +176,9 @@ function nativeMetadata(extraction: NativeExtraction | undefined, fileName: stri
   const shipmentDate = namedDate
     ?? (parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString().slice(0, 10) : null)
     ?? fileMetadata.shipmentDate
-  const supplier = pick([/(?:shipper|exporter|supplier|المورد|الشاحن|المصدر)\s*[:#]?\s*([^\n]+)/i]) ?? fileMetadata.supplier
+  const supplier = extractSupplierLegalName(
+    pick([/(?:shipper|exporter|supplier|المورد|الشاحن|المصدر)\s*[:#]?\s*([^\n]+)/i]) ?? fileMetadata.supplier,
+  )
   return {
     shipmentNumber: pick([/(?:commercial\s*#|manifest\s*(?:number|no)|shipment\s*(?:number|no))\s*[:#]?\s*([^\n]+)/i]),
     supplier,

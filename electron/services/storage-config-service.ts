@@ -92,3 +92,14 @@ export function writeStorageConfig(config: AppStorageConfig): void {
     if (temporaryExists && fs.existsSync(temporary)) fs.unlinkSync(temporary)
   }
 }
+
+/**
+ * Removes only the provider selection from this device. Database files and
+ * remote provider data are deliberately left untouched.
+ */
+export function clearStorageConfig(): void {
+  const filename = storageConfigPath()
+  for (const candidate of [filename, `${filename}${BACKUP_SUFFIX}`]) {
+    if (fs.existsSync(candidate)) fs.unlinkSync(candidate)
+  }
+}
