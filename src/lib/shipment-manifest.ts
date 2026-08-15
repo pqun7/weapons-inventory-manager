@@ -1,6 +1,13 @@
 export const MANIFEST_SCHEMA_VERSION = "1.4"
 export const MANIFEST_PROMPT_VERSION = "shipment-manifest-v7"
 
+export const SQLITE_MANIFEST_OPERATIONS = [
+  "upload", "get", "list", "updateItem", "updateItems", "bulkUpdateItems", "updateDetails",
+  "deleteItems", "deleteReview", "confirm", "confirmArrival", "reschedule", "cancel",
+] as const
+
+export type SqliteManifestOperation = typeof SQLITE_MANIFEST_OPERATIONS[number]
+
 export type ManifestWorkflowStatus =
   | "draft"
   | "processing"

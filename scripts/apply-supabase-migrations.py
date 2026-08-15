@@ -17,6 +17,9 @@ except ImportError as error:
     raise SystemExit("Install migration requirements: python -m pip install -r scripts/requirements-migration.txt") from error
 
 
+REAPPLY_SAFE_MIGRATION_VERSIONS = {"20260813000700"}
+
+
 def load_dotenv(path: Path) -> None:
     if not path.exists():
         return
@@ -104,7 +107,17 @@ def main() -> int:
                 if existing:
                     expected_name = f"{path.name}:{digest}"
                     if existing[0] != expected_name:
-                        raise RuntimeError(f"Applied migration checksum changed: {path.name}")
+                        if version not in REAPPLY_SAFE_MIGRATION_VERSIONS:
+                            raise RuntimeError(f"Applied migration checksum changed: {path.name}")
+                        cursor.execute(migration_body(sql))
+                        cursor.execute(
+                            "update supabase_migrations.schema_migrations set name = %s where version = %s",
+                            (expected_name, version),
+                        )
+                        if not args.dry_run:
+                            connection.commit()
+                        print(f"{'validated repair for' if args.dry_run else 'repaired'} {path.name}")
+                        continue
                     print(f"skip {path.name}")
                     continue
                 try:

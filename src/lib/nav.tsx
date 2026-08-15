@@ -1,16 +1,8 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
 import type { DialogEntityTarget } from "@/lib/audit-entity"
+import type { PageKey } from "./nav-types.js"
 
-export type PageKey =
-  | "dashboard"
-  | "inventory"
-  | "sales"
-  | "shipments"
-  | "financials"
-  | "customers"
-  | "suppliers"
-  | "audit"
-  | "settings"
+export type { PageKey } from "./nav-types.js"
 
 interface NavContextValue {
   currentPage: PageKey

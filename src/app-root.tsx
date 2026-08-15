@@ -2,13 +2,14 @@ import { useEffect, useState } from "react"
 import { useStore } from "@/lib/store"
 import { useAppBootstrap } from "@/hooks/use-app-bootstrap"
 import type { AppProps } from "./App.tsx"
-import { useSupabaseAuth } from "@/hooks/use-supabase-auth"
+import { useDatabaseAuth } from "@/hooks/use-database-auth"
 import { AuthScreen } from "@/components/auth-screen"
 import { useSupabaseSync } from "@/hooks/use-supabase-sync"
 import { translations } from "@/lib/i18n/translations"
-import { StoreConnectionScreen } from "@/components/store-connection-screen"
-import { bundledSupabaseConfiguration, configureSupabaseClient } from "@/lib/supabase/client"
-import type { StoreConnectionConfiguration } from "@/lib/store-connection"
+import { FirstRunSetupScreen } from "@/components/first-run-setup-screen"
+import { configureSupabaseClient } from "@/lib/supabase/client"
+import { configureDatabaseProvider } from "@/lib/database-runtime"
+import type { DatabaseProvider, StorageBootstrapState } from "@/lib/database-provider"
 
 type Language = "en" | "ar"
 
@@ -41,37 +42,48 @@ async function loadAppModules(): Promise<LoadedModules> {
 }
 
 export function AppRoot() {
-    const [connectionLoading, setConnectionLoading] = useState(true)
-    const [connection, setConnection] = useState<StoreConnectionConfiguration | null>(null)
-    const [connectionError, setConnectionError] = useState<string | null>(null)
+    const [storageLoading, setStorageLoading] = useState(true)
+    const [storage, setStorage] = useState<StorageBootstrapState | null>(null)
+    const [storageError, setStorageError] = useState<string | null>(null)
 
     useEffect(() => {
         let active = true
         const load = async () => {
             try {
-                const stored = window.electronAPI?.storeConnection
-                    ? await window.electronAPI.storeConnection.get()
-                    : { success: true, data: null }
-                if (!stored.success) throw new Error(stored.error ?? "Could not read the store connection")
-                const selected = stored.data?.connection ?? bundledSupabaseConfiguration()
-                if (selected) configureSupabaseClient(selected)
-                if (active) setConnection(selected)
+                const bootstrap = window.electronAPI?.storage
+                    ? await window.electronAPI.storage.getBootstrap()
+                    : { success: true, data: { config: null, configError: null, legacySqliteDatabaseFound: false, supabaseConnectionFound: false } satisfies StorageBootstrapState }
+                if (!bootstrap.success || !bootstrap.data) throw new Error(bootstrap.error ?? "Could not read the storage configuration")
+                if (active) setStorage(bootstrap.data)
+                if (!bootstrap.data.config) return
+
+                const provider = bootstrap.data.config.databaseProvider
+                configureDatabaseProvider(provider)
+                if (provider === "supabase") {
+                    const storedConnection = await window.electronAPI!.storeConnection.get()
+                    if (!storedConnection.success || !storedConnection.data?.connection) {
+                        throw new Error(storedConnection.error ?? "The selected Supabase connection is missing or damaged")
+                    }
+                    configureSupabaseClient(storedConnection.data.connection)
+                }
+                const initialized = await window.electronAPI!.storage.initializeSelected()
+                if (!initialized.success) throw new Error(initialized.error ?? "Could not initialize the selected database provider")
             } catch (error) {
-                if (active) setConnectionError(error instanceof Error ? error.message : "Could not read the store connection")
+                if (active) setStorageError(error instanceof Error ? error.message : "Could not initialize storage")
             } finally {
-                if (active) setConnectionLoading(false)
+                if (active) setStorageLoading(false)
             }
         }
         void load()
         return () => { active = false }
     }, [])
 
-    if (connectionLoading) return <BootLoading />
-    if (connectionError) {
-        return <div className="flex h-screen items-center justify-center p-6"><p className="max-w-lg text-center text-sm text-destructive">{connectionError}</p></div>
+    if (storageLoading) return <BootLoading />
+    if (storageError) {
+        return <div className="flex h-screen items-center justify-center p-6"><p className="max-w-lg text-center text-sm text-destructive">{storageError}</p></div>
     }
-    if (!connection) return <StoreConnectionScreen />
-    return <ConnectedAppRoot />
+    if (!storage?.config) return <FirstRunSetupScreen state={storage ?? { config: null, configError: null, legacySqliteDatabaseFound: false, supabaseConnectionFound: false }} />
+    return <ConnectedAppRoot provider={storage.config.databaseProvider} />
 }
 
 function BootLoading() {
@@ -85,11 +97,11 @@ function BootLoading() {
     )
 }
 
-function ConnectedAppRoot() {
+function ConnectedAppRoot({ provider }: { provider: DatabaseProvider }) {
     const [modules, setModules] = useState<LoadedModules | null>(null)
-    const auth = useSupabaseAuth()
+    const auth = useDatabaseAuth()
     const { ready, error } = useAppBootstrap(!auth.loading && auth.session !== null)
-    useSupabaseSync(ready && auth.session !== null)
+    useSupabaseSync(provider === "supabase" && ready && auth.session !== null)
     const settings = useStore((state) => state.settings)
     const userPreferences = useStore((state) => state.userPreferences)
     const updateSettings = useStore((state) => state.updateSettings)

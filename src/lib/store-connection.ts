@@ -1,5 +1,5 @@
 export const STORE_CONNECTION_CODE_PREFIX = "ARMORY1."
-export const REQUIRED_SCHEMA_VERSION = "20260814000100"
+export const REQUIRED_SCHEMA_VERSION = "20260815000200"
 
 export interface StoreConnectionConfiguration {
   supabaseUrl: string
@@ -25,6 +25,18 @@ export interface InitializeStoreInput {
   ownerName: string
   ownerEmail: string
   ownerPassword: string
+}
+
+export interface InitializeStoreFromEnvironmentInput {
+  storeName: string
+  ownerName: string
+  ownerEmail: string
+  ownerPassword: string
+}
+
+export interface SupabaseEnvironmentStatus {
+  available: boolean
+  missing: string[]
 }
 
 const POSTGRES_SSL_QUERY_PARAMETERS = ["sslmode", "sslcert", "sslkey", "sslrootcert"] as const

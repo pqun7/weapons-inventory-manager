@@ -1,6 +1,7 @@
 import { dbGetMasterData } from "./db/index.js"
 import type { MasterDataAll } from "./db/types.js"
 import { getSupabaseClient } from "./supabase/client.js"
+import { getDatabaseProvider } from "./database-runtime.js"
 import type { Json } from "./supabase/database.types.js"
 import {
   normalizeCaliber,
@@ -17,6 +18,7 @@ import {
   type ManifestValidationIssue,
   type ManifestWorkflowStatus,
   type ShipmentManifestReview,
+  type SqliteManifestOperation,
 } from "./shipment-manifest.js"
 
 type CurrentUser = { id: string; name: string }
@@ -152,6 +154,14 @@ async function createReview(extraction: ManifestExtractionResult): Promise<Shipm
 function success<T>(data: T): ManifestResult<T> { return { success: true, data } }
 function failure<T>(error: unknown): ManifestResult<T> { return { success: false, error: error instanceof Error ? error.message : String(error) } }
 
+async function localManifest<T>(operation: SqliteManifestOperation, args: unknown[]): Promise<T> {
+  const bridge = window.electronAPI?.sqliteManifest
+  if (!bridge) throw new Error("Local manifest operations are available in the desktop application only")
+  const response = await bridge.invoke({ operation, args })
+  if (!response.success) throw new Error(response.error ?? "The local manifest operation failed")
+  return response.data as T
+}
+
 type VoidRpc = "update_manifest_items" | "bulk_update_manifest_items" | "update_manifest_details" | "delete_manifest_items" | "delete_manifest_review" | "confirm_manifest_arrival" | "reschedule_manifest" | "cancel_manifest"
 async function rpcVoid(name: VoidRpc, args: Record<string, Json>): Promise<void> {
   const { error } = await getSupabaseClient().rpc(name, args)
@@ -161,6 +171,7 @@ async function rpcVoid(name: VoidRpc, args: Record<string, Json>): Promise<void>
 export const manifestClient = {
   async upload(input: ManifestUploadInput, _user: CurrentUser): Promise<ManifestResult<ShipmentManifestReview>> {
     try {
+      if (getDatabaseProvider() === "sqlite") return success(await localManifest<ShipmentManifestReview>("upload", [input]))
       const parser = window.electronAPI?.manifest
       if (!parser) throw new Error("Manifest extraction is available in the desktop application only")
       const parsed = await parser.parse(input)
@@ -169,10 +180,14 @@ export const manifestClient = {
     } catch (error) { return failure(error) }
   },
   async get(importId: string, _user: CurrentUser): Promise<ManifestResult<ShipmentManifestReview>> {
-    try { return success(await getReview(importId)) } catch (error) { return failure(error) }
+    try {
+      if (getDatabaseProvider() === "sqlite") return success(await localManifest<ShipmentManifestReview>("get", [importId]))
+      return success(await getReview(importId))
+    } catch (error) { return failure(error) }
   },
   async list(limit: number, _user: CurrentUser): Promise<ManifestResult<ManifestReviewSummary[]>> {
     try {
+      if (getDatabaseProvider() === "sqlite") return success(await localManifest<ManifestReviewSummary[]>("list", [limit]))
       const client = getSupabaseClient()
       const { data, error } = await client.from("shipment_imports").select("id,shipment_id,status,file_name,shipment_number,supplier_name,validation_summary,ai_provider,created_at,updated_at").in("status", ["processing", "pending_review", "failed"]).order("updated_at", { ascending: false }).limit(Math.max(1, Math.min(100, Math.trunc(limit))))
       if (error) throw new Error(error.message)
@@ -190,34 +205,64 @@ export const manifestClient = {
     } catch (error) { return failure(error) }
   },
   async updateItem(importId: string, itemId: string, patch: ManifestItemPatch, _user: CurrentUser): Promise<ManifestResult<ShipmentManifestReview>> {
-    try { await rpcVoid("update_manifest_items", { p_import_id: importId, p_item_ids: [itemId], p_patch: patch as unknown as Json }); return success(await getReview(importId)) } catch (error) { return failure(error) }
+    try {
+      if (getDatabaseProvider() === "sqlite") return success(await localManifest<ShipmentManifestReview>("updateItem", [importId, itemId, patch]))
+      await rpcVoid("update_manifest_items", { p_import_id: importId, p_item_ids: [itemId], p_patch: patch as unknown as Json }); return success(await getReview(importId))
+    } catch (error) { return failure(error) }
   },
   async updateItems(importId: string, itemIds: string[], patch: ManifestItemPatch, _user: CurrentUser): Promise<ManifestResult<ShipmentManifestReview>> {
-    try { await rpcVoid("update_manifest_items", { p_import_id: importId, p_item_ids: itemIds, p_patch: patch as unknown as Json }); return success(await getReview(importId)) } catch (error) { return failure(error) }
+    try {
+      if (getDatabaseProvider() === "sqlite") return success(await localManifest<ShipmentManifestReview>("updateItems", [importId, itemIds, patch]))
+      await rpcVoid("update_manifest_items", { p_import_id: importId, p_item_ids: itemIds, p_patch: patch as unknown as Json }); return success(await getReview(importId))
+    } catch (error) { return failure(error) }
   },
   async bulkUpdateItems(importId: string, updates: Array<{ itemId: string; patch: ManifestItemPatch }>, _user: CurrentUser): Promise<ManifestResult<ShipmentManifestReview>> {
-    try { await rpcVoid("bulk_update_manifest_items", { p_import_id: importId, p_updates: updates as unknown as Json }); return success(await getReview(importId)) } catch (error) { return failure(error) }
+    try {
+      if (getDatabaseProvider() === "sqlite") return success(await localManifest<ShipmentManifestReview>("bulkUpdateItems", [importId, updates]))
+      await rpcVoid("bulk_update_manifest_items", { p_import_id: importId, p_updates: updates as unknown as Json }); return success(await getReview(importId))
+    } catch (error) { return failure(error) }
   },
   async updateDetails(importId: string, patch: ManifestDetailsPatch, _user: CurrentUser): Promise<ManifestResult<ShipmentManifestReview>> {
-    try { await rpcVoid("update_manifest_details", { p_import_id: importId, p_patch: patch as unknown as Json }); return success(await getReview(importId)) } catch (error) { return failure(error) }
+    try {
+      if (getDatabaseProvider() === "sqlite") return success(await localManifest<ShipmentManifestReview>("updateDetails", [importId, patch]))
+      await rpcVoid("update_manifest_details", { p_import_id: importId, p_patch: patch as unknown as Json }); return success(await getReview(importId))
+    } catch (error) { return failure(error) }
   },
   async deleteItems(importId: string, itemIds: string[], _user: CurrentUser): Promise<ManifestResult<ShipmentManifestReview>> {
-    try { await rpcVoid("delete_manifest_items", { p_import_id: importId, p_item_ids: itemIds }); return success(await getReview(importId)) } catch (error) { return failure(error) }
+    try {
+      if (getDatabaseProvider() === "sqlite") return success(await localManifest<ShipmentManifestReview>("deleteItems", [importId, itemIds]))
+      await rpcVoid("delete_manifest_items", { p_import_id: importId, p_item_ids: itemIds }); return success(await getReview(importId))
+    } catch (error) { return failure(error) }
   },
   async deleteReview(importId: string, _user: CurrentUser): Promise<ManifestResult<void>> {
-    try { await rpcVoid("delete_manifest_review", { p_import_id: importId }); return success(undefined) } catch (error) { return failure(error) }
+    try {
+      if (getDatabaseProvider() === "sqlite") { await localManifest<void>("deleteReview", [importId]); return success(undefined) }
+      await rpcVoid("delete_manifest_review", { p_import_id: importId }); return success(undefined)
+    } catch (error) { return failure(error) }
   },
   async confirm(input: ManifestConfirmInput, _user: CurrentUser): Promise<ManifestResult<ShipmentManifestReview>> {
-    try { const { error } = await getSupabaseClient().rpc("confirm_manifest_review", { p_confirmation: input as unknown as Json }); if (error) throw new Error(error.message); return success(await getReview(input.importId)) } catch (error) { return failure(error) }
+    try {
+      if (getDatabaseProvider() === "sqlite") return success(await localManifest<ShipmentManifestReview>("confirm", [input]))
+      const { error } = await getSupabaseClient().rpc("confirm_manifest_review", { p_confirmation: input as unknown as Json }); if (error) throw new Error(error.message); return success(await getReview(input.importId))
+    } catch (error) { return failure(error) }
   },
   async confirmArrival(importId: string, _user: CurrentUser): Promise<ManifestResult<ShipmentManifestReview>> {
-    try { await rpcVoid("confirm_manifest_arrival", { p_import_id: importId }); return success(await getReview(importId)) } catch (error) { return failure(error) }
+    try {
+      if (getDatabaseProvider() === "sqlite") return success(await localManifest<ShipmentManifestReview>("confirmArrival", [importId]))
+      await rpcVoid("confirm_manifest_arrival", { p_import_id: importId }); return success(await getReview(importId))
+    } catch (error) { return failure(error) }
   },
   async reschedule(importId: string, expectedArrivalDate: string, reason: string, _user: CurrentUser): Promise<ManifestResult<ShipmentManifestReview>> {
-    try { await rpcVoid("reschedule_manifest", { p_import_id: importId, p_expected_arrival_date: expectedArrivalDate, p_reason: reason }); return success(await getReview(importId)) } catch (error) { return failure(error) }
+    try {
+      if (getDatabaseProvider() === "sqlite") return success(await localManifest<ShipmentManifestReview>("reschedule", [importId, expectedArrivalDate, reason]))
+      await rpcVoid("reschedule_manifest", { p_import_id: importId, p_expected_arrival_date: expectedArrivalDate, p_reason: reason }); return success(await getReview(importId))
+    } catch (error) { return failure(error) }
   },
   async cancel(importId: string, reason: string, _user: CurrentUser): Promise<ManifestResult<ShipmentManifestReview>> {
-    try { await rpcVoid("cancel_manifest", { p_import_id: importId, p_reason: reason }); return success(await getReview(importId)) } catch (error) { return failure(error) }
+    try {
+      if (getDatabaseProvider() === "sqlite") return success(await localManifest<ShipmentManifestReview>("cancel", [importId, reason]))
+      await rpcVoid("cancel_manifest", { p_import_id: importId, p_reason: reason }); return success(await getReview(importId))
+    } catch (error) { return failure(error) }
   },
   onProgress(callback: (progress: ManifestProgress) => void): () => void {
     return window.electronAPI?.manifest.onProgress(callback) ?? (() => undefined)

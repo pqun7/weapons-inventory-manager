@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url"
 import fs from "node:fs";
 import { registerManifestParserHandler } from "./ipc/manifest-parser-handler.js"
 import { registerStoreInstallationHandlers } from "./ipc/store-installation-handler.js"
+import { registerStorageHandlers } from "./ipc/storage-handler.js"
+import { registerSqliteManifestHandler } from "./ipc/sqlite-manifest-handler.js"
+import { closeSelectedProvider } from "./services/database-provider-manager.js"
 import { initializeAutoUpdater } from "./updater.js"
 import { isAllowedExternalUrl } from "../src/lib/external-url.js"
 
@@ -24,6 +27,16 @@ function logBoot(stage: string): void {
 
 let mainWindow: BrowserWindow | null = null
 
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) app.quit()
+
+app.on("second-instance", () => {
+  if (!mainWindow) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+})
+
 const runtimeEnvironmentKeys = new Set([
   "CHATGPT_API_KEY",
   "CHATGPT_MODEL",
@@ -32,6 +45,15 @@ const runtimeEnvironmentKeys = new Set([
   "DEEPSEEK_FALLBACK_ENABLED",
   "DEEPSEEK_MAX_RETRIES",
   "DEEPSEEK_FALLBACK_ON",
+  "SUPABASE_URL",
+  "SUPABASE_PUBLISHABLE_KEY",
+  "SUPABASE_ANON_KEY",
+  "SUPABASE_DB_URL",
+  "SUPABASE_SECRET_KEY",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "VITE_SUPABASE_URL",
+  "VITE_SUPABASE_PUBLISHABLE_KEY",
+  "VITE_SUPABASE_ANON_KEY",
 ])
 
 function loadRuntimeEnvironment(): void {
@@ -150,14 +172,18 @@ function createWindow(): BrowserWindow {
 }
 
 // App lifecycle
-app.whenReady().then(async () => {
+if (hasSingleInstanceLock) app.whenReady().then(async () => {
   logBoot("app.whenReady")
   try {
     loadRuntimeEnvironment()
+    registerStorageHandlers()
+    logBoot("storage:registered")
     registerStoreInstallationHandlers()
     logBoot("store-installation:registered")
     registerManifestParserHandler()
     logBoot("manifest-parser:registered")
+    registerSqliteManifestHandler()
+    logBoot("sqlite-manifest:registered")
 
     createWindow()
     logBoot("window:created")
@@ -176,4 +202,12 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit()
+})
+
+app.on("before-quit", () => {
+  closeSelectedProvider()
+})
+
+app.on("will-quit", () => {
+  closeSelectedProvider()
 })

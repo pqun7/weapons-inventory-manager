@@ -1,8 +1,21 @@
-import type { DynamicMasterData } from "@/hooks/use-dynamic-master-data"
-import type { ManifestItemPatch, ManifestReviewItem, ShipmentManifestReview } from "@/lib/shipment-manifest"
-import { summarizeItemStatuses } from "@/lib/shipment-manifest"
-import type { Shipment, ShipmentLineItem, User } from "@/lib/types"
-import type { ShipmentInput, ShipmentLineItemInput } from "@/lib/store"
+import type { ManifestItemPatch, ManifestReviewItem, ShipmentManifestReview } from "./shipment-manifest.js"
+import { summarizeItemStatuses } from "./shipment-manifest.js"
+import type { Shipment, ShipmentLineItem, User } from "./types.js"
+import type { ShipmentInput, ShipmentLineItemInput } from "./store-inputs.js"
+
+interface DynamicMasterData {
+  getWeaponTypeIdByLabel: (label: string) => string | undefined
+  getWeaponSubtypeIdByLabel: (label: string, typeId?: string) => string | undefined
+  getCaliberIdByLabel: (label: string) => string | undefined
+  getBrandIdByLabel: (label: string) => string | undefined
+  getModelIdByLabel: (label: string, brandId?: string) => string | undefined
+  createWeaponType: (label: string) => Promise<string>
+  createWeaponSubtype: (weaponTypeLabel: string, label: string) => Promise<string>
+  createCaliber: (label: string) => Promise<string>
+  linkSubtypeCaliber: (subtypeId: string, caliberId: string) => Promise<void>
+  createBrand: (label: string) => Promise<string>
+  createModel: (label: string, brandLabel?: string) => Promise<string>
+}
 
 const COMMON_FIELDS = [
   "productType", "productName", "category", "weaponType", "manufacturer", "model", "caliber",

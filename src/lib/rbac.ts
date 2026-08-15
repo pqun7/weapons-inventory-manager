@@ -1,5 +1,5 @@
-import type { User, UserPermissions, UserRole } from "@/lib/types"
-import type { PageKey } from "@/lib/nav"
+import type { User, UserPermissions, UserRole } from "./types.js"
+import type { PageKey } from "./nav-types.js"
 
 export type PermissionKey = keyof UserPermissions
 

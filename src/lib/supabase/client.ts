@@ -7,7 +7,7 @@ let runtimeConfiguration: StoreConnectionConfiguration | null = null
 
 export function bundledSupabaseConfiguration(): StoreConnectionConfiguration | null {
   const url = import.meta.env.VITE_SUPABASE_URL?.trim()
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim()
+  const key = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY)?.trim()
   if (!url || !key) return null
   const normalizedUrl = normalizeSupabaseUrl(url)
   return {

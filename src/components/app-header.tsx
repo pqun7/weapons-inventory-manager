@@ -11,7 +11,7 @@ import { useStore } from "@/lib/store"
 import { useI18n } from "@/lib/i18n"
 import { useCurrency } from "@/lib/currency-context"
 import type { PageKey } from "@/lib/nav"
-import { getSupabaseClient } from "@/lib/supabase/client"
+import { signOutActiveDatabase } from "@/hooks/use-database-auth"
 import { toast } from "sonner"
 
 export function AppHeader() {
@@ -83,13 +83,9 @@ export function AppHeader() {
           title={t("auth.signOut")}
           aria-label={t("auth.signOut")}
           onClick={() => {
-            void getSupabaseClient().auth.signOut().then(({ error }) => {
-              if (error) {
-                toast.error(error.message)
-                return
-              }
+            void signOutActiveDatabase().then(() => {
               window.location.reload()
-            })
+            }).catch((error: unknown) => toast.error(error instanceof Error ? error.message : t("auth.signOut")))
           }}
         >
           <LogOut className="size-3.5" />

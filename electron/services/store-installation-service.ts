@@ -1,4 +1,4 @@
-import { app, safeStorage } from "electron"
+import electron from "electron"
 import { createHash, randomUUID } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
@@ -12,6 +12,8 @@ import {
   stripPostgresSslQueryOptions,
   validatePublishableKey,
   type InitializeStoreInput,
+  type InitializeStoreFromEnvironmentInput,
+  type SupabaseEnvironmentStatus,
   type StoreConnectionConfiguration,
   type StoreInstallationInfo,
   type StoreSetupProgressStage,
@@ -19,8 +21,11 @@ import {
 } from "../../src/lib/store-connection.js"
 
 const CONFIG_FILENAME = "store-connection.json"
+const electronApp = electron.app
+const electronSafeStorage = electron.safeStorage
 const MIGRATION_LOCK_ID = "armory-store-schema-migrations"
 const SETUP_LOCK_ID = "armory-store-initial-setup"
+const REAPPLY_SAFE_MIGRATION_VERSIONS = new Set(["20260813000700"])
 const DATABASE_CONNECTION_TIMEOUT_MS = 90_000
 const DATABASE_QUERY_TIMEOUT_MS = 300_000
 const STORE_VERIFICATION_TIMEOUT_MS = 45_000
@@ -150,7 +155,7 @@ function migrationBody(sql: string): string {
 
 function resolveMigrationsDirectory(): string {
   const candidates = [
-    path.join(app.getAppPath(), "supabase", "migrations"),
+    path.join(electronApp.getAppPath(), "supabase", "migrations"),
     path.resolve(process.cwd(), "supabase", "migrations"),
   ]
   const match = candidates.find((candidate) => fs.existsSync(candidate))
@@ -200,7 +205,18 @@ async function applyMigrations(databaseUrl: string): Promise<void> {
         [version],
       )
       if (existing.rowCount) {
-        if (existing.rows[0].name !== expectedName) throw new Error(`Applied migration checksum changed: ${filename}`)
+        if (existing.rows[0].name !== expectedName) {
+          if (!REAPPLY_SAFE_MIGRATION_VERSIONS.has(version)) throw new Error(`Applied migration checksum changed: ${filename}`)
+          await client.query("begin")
+          try {
+            await client.query(migrationBody(sql))
+            await client.query("update supabase_migrations.schema_migrations set name = $2 where version = $1", [version, expectedName])
+            await client.query("commit")
+          } catch (error) {
+            await client.query("rollback")
+            throw error
+          }
+        }
         continue
       }
       await client.query("begin")
@@ -222,13 +238,48 @@ async function applyMigrations(databaseUrl: string): Promise<void> {
   }
 }
 
+interface ExistingStoreOwner {
+  authUserId: string
+  loginEmail: string
+}
+
+async function existingStoreOwner(input: InitializeStoreInput): Promise<ExistingStoreOwner | null> {
+  const client = await connectDatabase(input.databaseUrl)
+  try {
+    const count = await client.query<{ count: string }>("select count(*)::text as count from public.users")
+    if (Number(count.rows[0].count) === 0) return null
+    const owners = await client.query<{ auth_user_id: string | null; login_email: string | null; email: string | null }>(
+      "select auth_user_id::text, login_email, email from public.users where is_primary_admin and is_active",
+    )
+    if (owners.rowCount !== 1 || !owners.rows[0].auth_user_id) {
+      throw new Error("The existing Supabase store must have exactly one active primary administrator before it can be adopted")
+    }
+    const loginEmail = (owners.rows[0].login_email || owners.rows[0].email || "").trim().toLowerCase()
+    if (!loginEmail || loginEmail !== input.ownerEmail) {
+      throw new Error("Use the existing primary administrator email to adopt this Supabase store")
+    }
+    return { authUserId: owners.rows[0].auth_user_id, loginEmail }
+  } finally {
+    await client.end().catch(() => undefined)
+  }
+}
+
+async function verifyExistingOwnerPassword(input: InitializeStoreInput, owner: ExistingStoreOwner): Promise<void> {
+  const publicClient = createClient(input.supabaseUrl, input.publishableKey, {
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+  })
+  const { data, error } = await publicClient.auth.signInWithPassword({ email: owner.loginEmail, password: input.ownerPassword })
+  if (error || !data.user || data.user.id !== owner.authUserId) {
+    throw new Error("The existing primary administrator email or password is incorrect")
+  }
+  await publicClient.auth.signOut().catch(() => undefined)
+}
+
 async function configureServerCredentials(input: InitializeStoreInput): Promise<void> {
   const client = await connectDatabase(input.databaseUrl)
   try {
     await client.query("begin")
     await client.query("select pg_advisory_xact_lock(hashtext($1))", [SETUP_LOCK_ID])
-    const users = await client.query<{ count: string }>("select count(*)::text as count from public.users")
-    if (Number(users.rows[0].count) > 0) throw new Error("This Supabase project already contains an initialized Armory Store")
     for (const [name, secret, description] of [
       ["weapon_store_project_url", input.supabaseUrl, "Armory Store project URL"],
       ["weapon_store_service_role", input.serverKey, "Armory Store Auth administration key"],
@@ -241,6 +292,24 @@ async function configureServerCredentials(input: InitializeStoreInput): Promise<
       [input.storeName, REQUIRED_SCHEMA_VERSION],
     )
     await client.query("update public.system_settings set company_name = $1 where id = 1", [input.storeName])
+    await client.query("commit")
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined)
+    throw error
+  } finally {
+    await client.end().catch(() => undefined)
+  }
+}
+
+async function completeExistingStoreInstallation(input: InitializeStoreInput): Promise<void> {
+  const client = await connectDatabase(input.databaseUrl)
+  try {
+    await client.query("begin")
+    await client.query("select pg_advisory_xact_lock(hashtext($1))", [SETUP_LOCK_ID])
+    await client.query(
+      "update public.app_installation set store_name = $1, schema_version = $2, setup_completed_at = now() where singleton",
+      [input.storeName, REQUIRED_SCHEMA_VERSION],
+    )
     await client.query("commit")
   } catch (error) {
     await client.query("rollback").catch(() => undefined)
@@ -356,10 +425,13 @@ export async function initializeStore(
     const input = normalizeSetupInput(rawInput)
     reportProgress("migrating")
     await applyMigrations(input.databaseUrl)
+    const existingOwner = await existingStoreOwner(input)
+    if (existingOwner) await verifyExistingOwnerPassword(input, existingOwner)
     reportProgress("configuring")
     await configureServerCredentials(input)
     reportProgress("creating-owner")
-    await createPrimaryOwner(input)
+    if (existingOwner) await completeExistingStoreInstallation(input)
+    else await createPrimaryOwner(input)
     reportProgress("verifying")
     const connection = await verifyStoreConnection(input.supabaseUrl, input.publishableKey)
     reportProgress("saving")
@@ -378,6 +450,39 @@ export async function initializeStore(
   }
 }
 
+function environmentValue(...names: string[]): string {
+  for (const name of names) {
+    const candidate = process.env[name]?.trim()
+    if (candidate) return candidate
+  }
+  return ""
+}
+
+export function supabaseEnvironmentStatus(): SupabaseEnvironmentStatus {
+  const values = {
+    supabaseUrl: environmentValue("SUPABASE_URL", "VITE_SUPABASE_URL"),
+    publishableKey: environmentValue("SUPABASE_PUBLISHABLE_KEY", "SUPABASE_ANON_KEY", "VITE_SUPABASE_PUBLISHABLE_KEY", "VITE_SUPABASE_ANON_KEY"),
+    serverKey: environmentValue("SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"),
+    databaseUrl: environmentValue("SUPABASE_DB_URL"),
+  }
+  return { available: Object.values(values).every(Boolean), missing: Object.entries(values).filter(([, item]) => !item).map(([name]) => name) }
+}
+
+export function initializeStoreFromEnvironment(
+  input: InitializeStoreFromEnvironmentInput,
+  onProgress: (stage: StoreSetupProgressStage) => void,
+): Promise<StoreSetupResult> {
+  const status = supabaseEnvironmentStatus()
+  if (!status.available) throw new Error(`Supabase provisioning environment is incomplete: ${status.missing.join(", ")}`)
+  return initializeStore({
+    ...input,
+    supabaseUrl: environmentValue("SUPABASE_URL", "VITE_SUPABASE_URL"),
+    publishableKey: environmentValue("SUPABASE_PUBLISHABLE_KEY", "SUPABASE_ANON_KEY", "VITE_SUPABASE_PUBLISHABLE_KEY", "VITE_SUPABASE_ANON_KEY"),
+    serverKey: environmentValue("SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"),
+    databaseUrl: environmentValue("SUPABASE_DB_URL"),
+  }, onProgress)
+}
+
 export async function joinStore(connectionCode: string): Promise<StoreConnectionConfiguration> {
   try {
     const decoded = parseStoreConnectionCode(connectionCode)
@@ -390,7 +495,7 @@ export async function joinStore(connectionCode: string): Promise<StoreConnection
 }
 
 function configurationPath(): string {
-  return path.join(app.getPath("userData"), CONFIG_FILENAME)
+  return path.join(electronApp.getPath("userData"), CONFIG_FILENAME)
 }
 
 function validatedStoredConnection(value: unknown): StoreConnectionConfiguration {
@@ -413,13 +518,17 @@ function validatedStoredConnection(value: unknown): StoreConnectionConfiguration
 
 export function readStoredConnection(): StoreConnectionConfiguration | null {
   const filename = configurationPath()
+  const backup = `${filename}.bak`
+  if (!fs.existsSync(filename) && fs.existsSync(backup)) {
+    try { fs.renameSync(backup, filename) } catch { return null }
+  }
   if (!fs.existsSync(filename)) return null
   try {
     const envelope = JSON.parse(fs.readFileSync(filename, "utf8")) as StoredConfigurationEnvelope
     let serialized: string
     if (envelope.format === "encrypted-v1") {
-      if (!safeStorage.isEncryptionAvailable()) throw new Error("OS encryption is unavailable")
-      serialized = safeStorage.decryptString(Buffer.from(envelope.data, "base64"))
+      if (!electronSafeStorage.isEncryptionAvailable()) throw new Error("OS encryption is unavailable")
+      serialized = electronSafeStorage.decryptString(Buffer.from(envelope.data, "base64"))
     } else if (envelope.format === "plain-v1") {
       serialized = Buffer.from(envelope.data, "base64").toString("utf8")
     } else {
@@ -434,11 +543,37 @@ export function readStoredConnection(): StoreConnectionConfiguration | null {
 export function saveStoredConnection(connection: StoreConnectionConfiguration): void {
   const validated = validatedStoredConnection(connection)
   const serialized = JSON.stringify(validated)
-  const envelope: StoredConfigurationEnvelope = safeStorage.isEncryptionAvailable()
-    ? { format: "encrypted-v1", data: safeStorage.encryptString(serialized).toString("base64") }
+  const envelope: StoredConfigurationEnvelope = electronSafeStorage.isEncryptionAvailable()
+    ? { format: "encrypted-v1", data: electronSafeStorage.encryptString(serialized).toString("base64") }
     : { format: "plain-v1", data: Buffer.from(serialized).toString("base64") }
-  fs.mkdirSync(path.dirname(configurationPath()), { recursive: true })
-  fs.writeFileSync(configurationPath(), JSON.stringify(envelope), { encoding: "utf8", mode: 0o600 })
+  const filename = configurationPath()
+  const directory = path.dirname(filename)
+  const temporary = path.join(directory, `${CONFIG_FILENAME}.${process.pid}.${Date.now()}.tmp`)
+  const backup = `${filename}.bak`
+  fs.mkdirSync(directory, { recursive: true })
+  let temporaryExists = false
+  try {
+    const descriptor = fs.openSync(temporary, "wx", 0o600)
+    temporaryExists = true
+    try {
+      fs.writeFileSync(descriptor, JSON.stringify(envelope), "utf8")
+      fs.fsyncSync(descriptor)
+    } finally {
+      fs.closeSync(descriptor)
+    }
+    if (fs.existsSync(backup)) fs.unlinkSync(backup)
+    if (fs.existsSync(filename)) fs.renameSync(filename, backup)
+    try {
+      fs.renameSync(temporary, filename)
+      temporaryExists = false
+      if (fs.existsSync(backup)) fs.unlinkSync(backup)
+    } catch (error) {
+      if (!fs.existsSync(filename) && fs.existsSync(backup)) fs.renameSync(backup, filename)
+      throw error
+    }
+  } finally {
+    if (temporaryExists && fs.existsSync(temporary)) fs.unlinkSync(temporary)
+  }
 }
 
 export function clearStoredConnection(): void {

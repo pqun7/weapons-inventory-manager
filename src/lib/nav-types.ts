@@ -1,0 +1,10 @@
+export type PageKey =
+  | "dashboard"
+  | "inventory"
+  | "sales"
+  | "shipments"
+  | "financials"
+  | "customers"
+  | "suppliers"
+  | "audit"
+  | "settings"

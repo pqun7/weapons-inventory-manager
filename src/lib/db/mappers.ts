@@ -784,8 +784,11 @@ function ammoToRow(a: Ammunition): Record<string, unknown> {
 }
 
 function rowToCustomer(r: CustomerRow): Customer {
+  const rawCustomFields = typeof r.custom_fields === "string"
+    ? parseJSON<Record<string, unknown>>(r.custom_fields, {})
+    : (r.custom_fields ?? {})
   const customFields = Object.fromEntries(
-    Object.entries(r.custom_fields ?? {})
+    Object.entries(rawCustomFields)
       .filter((entry): entry is [string, string] => typeof entry[1] === "string"),
   )
   return {

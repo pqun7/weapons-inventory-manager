@@ -114,6 +114,26 @@ describe("Supabase security boundary", () => {
     expect(sql).toContain("security definer")
   })
 
+  it("stages provider migrations behind administrator RPCs and a destination safety backup", () => {
+    const providerMigration = migration("20260815000100_provider_migration_workflow.sql")
+    const migratedActivation = migration("20260815000200_migrated_user_activation.sql")
+    expect(providerMigration).toContain("alter table public.provider_migration_sessions enable row level security")
+    expect(providerMigration).toContain("alter table public.provider_migration_chunks enable row level security")
+    expect(providerMigration).toContain("revoke all on public.provider_migration_sessions from public, anon, authenticated")
+    expect(providerMigration).toContain("revoke all on public.provider_migration_chunks from public, anon, authenticated")
+    expect(providerMigration).toContain("actor.role <> 'Admin'::public.app_role")
+    expect(providerMigration).toContain("public.create_system_backup(")
+    expect(providerMigration).toContain("pg_advisory_xact_lock(hashtext('armory-provider-migration'))")
+    expect(providerMigration).toContain("jsonb_array_length(p_rows) > 500")
+    expect(providerMigration).toContain("pg_column_size(p_rows) > 4194304")
+    expect(providerMigration).toContain("grant execute on function public.apply_provider_migration(uuid) to authenticated")
+    expect(providerMigration).toContain("revoke all on function public.insert_provider_migration_rows(text, jsonb) from public, anon, authenticated")
+    expect(migratedActivation).toContain("@local.weapon-store.invalid")
+    expect(migratedActivation).toContain("if account.auth_user_id is null then")
+    expect(migratedActivation).toContain("created_auth_user_id := (auth_response ->> 'id')::uuid")
+    expect(migratedActivation).toContain("if created_auth_user_id is not null then")
+  })
+
   it("keeps the production runtime independent from a local database", () => {
     const packageJson = read("package.json")
     const main = read("electron/main.ts")

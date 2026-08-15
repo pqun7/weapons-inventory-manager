@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react"
-import { AlertTriangle, Coins, Database, KeyRound, Layers, Lock, Plus, RotateCcw, Shield, Trash2, UserRound, Users } from "lucide-react"
+import { AlertTriangle, Coins, Database, FileDown, KeyRound, Layers, Lock, Plus, RotateCcw, Shield, Trash2, UserRound, Users } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -16,6 +16,7 @@ import { CurrencyManagementPanel } from "@/components/currency-management-panel"
 import { MasterDataPanel } from "@/components/master-data-panel"
 import { StoreConnectionPanel } from "@/components/store-connection-panel"
 import { getSupabaseClient } from "@/lib/supabase/client"
+import { getDatabaseProvider } from "@/lib/database-runtime"
 import * as db from "@/lib/db"
 import { useStore } from "@/lib/store"
 import type { User, UserPermissions, UserRole } from "@/lib/types"
@@ -23,9 +24,10 @@ import { EDITABLE_EMPLOYEE_PERMISSIONS, EMPLOYEE_DEFAULT_PERMISSIONS, hasPermiss
 import { useI18n } from "@/lib/i18n"
 
 const EMPTY_NEW_USER = { name: "", email: "", role: "Employee" as UserRole }
+type ActivationExport = { code: string; userId: string; accountName: string; loginIdentifier: string }
 
 export function SettingsPage() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const store = useStore()
   const currentUser = store.getCurrentUser()
   const admin = isAdmin(currentUser)
@@ -33,7 +35,7 @@ export function SettingsPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [newUser, setNewUser] = useState(EMPTY_NEW_USER)
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
-  const [createdActivationCode, setCreatedActivationCode] = useState("")
+  const [createdActivation, setCreatedActivation] = useState<ActivationExport | null>(null)
 
   const tabs = useMemo(() => [
     { value: "general", label: t("settings.general"), icon: UserRound, visible: true },
@@ -58,7 +60,9 @@ export function SettingsPage() {
       permissions: permissionsForRole(newUser.role),
     })
     if (!result.success) return toast.error(result.error ?? t("settings.userCreateFailed"))
-    setCreatedActivationCode(result.activationCode ?? "")
+    if (result.activationCode && result.userId) {
+      setCreatedActivation({ code: result.activationCode, userId: result.userId, accountName: name, loginIdentifier: email || name })
+    }
     setNewUser(EMPTY_NEW_USER)
     setAddOpen(false)
     toast.success(t("settings.accountCreatedFirstLogin"))
@@ -140,12 +144,27 @@ export function SettingsPage() {
         </DialogContent>
       </Dialog>
 
-      <UserPermissionsDialog user={selectedUser} actor={currentUser} onActivationCode={setCreatedActivationCode} onClose={() => setSelectedUser(null)} />
-      <Dialog open={Boolean(createdActivationCode)} onOpenChange={(open) => { if (!open) setCreatedActivationCode("") }}>
+      <UserPermissionsDialog user={selectedUser} actor={currentUser} onActivationCode={(code, user) => setCreatedActivation({ code, userId: user.id, accountName: user.name, loginIdentifier: user.email ?? user.username })} onClose={() => setSelectedUser(null)} />
+      <Dialog open={Boolean(createdActivation)} onOpenChange={(open) => { if (!open) setCreatedActivation(null) }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>{t("settings.oneTimeActivationCode")}</DialogTitle><DialogDescription>{t("settings.activationCodeShareHelp")}</DialogDescription></DialogHeader>
-          <div className="select-all rounded-md border bg-muted p-4 text-center font-mono text-2xl font-bold tracking-widest">{createdActivationCode}</div>
-          <DialogFooter><Button onClick={() => setCreatedActivationCode("")}>{t("settings.savedActivationCode")}</Button></DialogFooter>
+          <div className="select-all rounded-md border bg-muted p-4 text-center font-mono text-2xl font-bold tracking-widest">{createdActivation?.code}</div>
+          <p className="text-sm text-muted-foreground">{lang === "ar" ? "احفظ ملف الدخول النصي وأرسله للمستخدم عبر قناة موثوقة؛ يحتوي اسم الحساب وكود المتجر وخطوات الاستخدام الأول." : "Save the text login guide and send it through a trusted channel. It includes the account, store code, and first-use steps."}</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={async () => {
+              if (!createdActivation) return
+              const response = await window.electronAPI?.accounts.exportLoginGuide({
+                userId: createdActivation.userId,
+                accountName: createdActivation.accountName,
+                loginIdentifier: createdActivation.loginIdentifier,
+                activationCode: createdActivation.code,
+                language: lang,
+              })
+              if (!response?.success) return toast.error(response?.error ?? (lang === "ar" ? "تعذر تصدير دليل الدخول" : "Unable to export the login guide"))
+              if (!response.data?.canceled) toast.success(lang === "ar" ? "تم حفظ دليل الدخول النصي" : "Login guide saved")
+            }}><FileDown className="size-4" />{lang === "ar" ? "تصدير ملف الدخول TXT" : "Export login TXT"}</Button>
+            <Button onClick={() => setCreatedActivation(null)}>{t("settings.savedActivationCode")}</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -159,6 +178,7 @@ function GeneralSettings({ user }: { user: User }) {
   const [emailSaving, setEmailSaving] = useState(false)
   const [password, setPassword] = useState("")
   const [confirmation, setConfirmation] = useState("")
+  const [currentPassword, setCurrentPassword] = useState("")
   const [saving, setSaving] = useState(false)
 
   useEffect(() => setEmail(user.email ?? ""), [user.email])
@@ -168,11 +188,21 @@ function GeneralSettings({ user }: { user: User }) {
     if (password !== confirmation) return toast.error(t("auth.passwordsDoNotMatch"))
     if (password.length < 8 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password)) return toast.error(t("auth.passwordRequirements"))
     setSaving(true)
-    const { error } = await getSupabaseClient().auth.updateUser({ password })
-    setSaving(false)
-    if (error) return toast.error(error.message)
-    setPassword(""); setConfirmation("")
-    toast.success(t("settings.passwordChanged"))
+    try {
+      if (getDatabaseProvider() === "sqlite") {
+        const response = await window.electronAPI?.localAuth.updatePassword({ currentPassword, newPassword: password })
+        if (!response?.success) throw new Error(response?.error ?? "Unable to change password")
+      } else {
+        const { error } = await getSupabaseClient().auth.updateUser({ password })
+        if (error) throw new Error(error.message)
+      }
+      setCurrentPassword(""); setPassword(""); setConfirmation("")
+      toast.success(t("settings.passwordChanged"))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to change password")
+    } finally {
+      setSaving(false)
+    }
   }
 
   const saveEmail = async (event: FormEvent) => {
@@ -203,13 +233,13 @@ function GeneralSettings({ user }: { user: User }) {
       </Card>
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><KeyRound className="size-4" />{t("settings.changePassword")}</CardTitle><CardDescription>{t("settings.changePasswordHelp")}</CardDescription></CardHeader>
-        <CardContent><form className="grid gap-3" onSubmit={changePassword}><div className="grid gap-1.5"><Label>{t("auth.newPassword")}</Label><PasswordInput autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} /></div><div className="grid gap-1.5"><Label>{t("auth.confirmPassword")}</Label><PasswordInput autoComplete="new-password" required value={confirmation} onChange={(e) => setConfirmation(e.target.value)} /></div><Button disabled={saving}>{saving ? t("ship.manifestSaving") : t("settings.changePassword")}</Button></form></CardContent>
+        <CardContent><form className="grid gap-3" onSubmit={changePassword}>{getDatabaseProvider() === "sqlite" && <div className="grid gap-1.5"><Label>{t("settings.password")}</Label><PasswordInput autoComplete="current-password" required value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} /></div>}<div className="grid gap-1.5"><Label>{t("auth.newPassword")}</Label><PasswordInput autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} /></div><div className="grid gap-1.5"><Label>{t("auth.confirmPassword")}</Label><PasswordInput autoComplete="new-password" required value={confirmation} onChange={(e) => setConfirmation(e.target.value)} /></div><Button disabled={saving}>{saving ? t("ship.manifestSaving") : t("settings.changePassword")}</Button></form></CardContent>
       </Card>
     </div>
   )
 }
 
-function UserPermissionsDialog({ user, actor, onActivationCode, onClose }: { user: User | null; actor: User; onActivationCode: (code: string) => void; onClose: () => void }) {
+function UserPermissionsDialog({ user, actor, onActivationCode, onClose }: { user: User | null; actor: User; onActivationCode: (code: string, user: User) => void; onClose: () => void }) {
   const { t } = useI18n()
   const updateUser = useStore((state) => state.updateUser)
   const deleteUser = useStore((state) => state.deleteUser)
@@ -251,7 +281,7 @@ function UserPermissionsDialog({ user, actor, onActivationCode, onClose }: { use
     const result = await resetUserActivation(user.id)
     if (!result.success || !result.activationCode) return toast.error(result.error ?? t("settings.activationCodeCreateFailed"))
     onClose()
-    onActivationCode(result.activationCode)
+    onActivationCode(result.activationCode, user)
   }
 
   return (

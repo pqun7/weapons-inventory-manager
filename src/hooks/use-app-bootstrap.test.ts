@@ -25,7 +25,11 @@ vi.mock("@/lib/db", () => ({
   }),
 }))
 
-const signOut = vi.fn().mockResolvedValue({ error: null })
+const { signOut } = vi.hoisted(() => ({ signOut: vi.fn().mockResolvedValue(undefined) }))
+
+vi.mock("@/hooks/use-database-auth", () => ({
+  signOutActiveDatabase: signOut,
+}))
 
 vi.mock("@/lib/supabase/client", () => ({
   getSupabaseClient: () => ({ auth: { signOut } }),
@@ -59,7 +63,7 @@ describe("useAppBootstrap", () => {
     const { result } = renderHook(() => useAppBootstrap())
 
     await waitFor(() => {
-      expect(signOut).toHaveBeenCalledWith({ scope: "local" })
+      expect(signOut).toHaveBeenCalledOnce()
     })
     expect(result.current.error).toBeNull()
   })

@@ -274,7 +274,7 @@ export interface StoreState {
   updateSettings: (updates: Partial<SystemSettings>) => Promise<{ success: boolean; error?: string }>
   updateUserPreferences: (updates: Partial<UserPreferences>) => Promise<{ success: boolean; error?: string }>
   trackCurrencyUsage: (code: string) => void
-  addUser: (user: Omit<User, "id" | "passwordSet" | "passwordHash">) => Promise<{ success: boolean; activationCode?: string; error?: string }>
+  addUser: (user: Omit<User, "id" | "passwordSet" | "passwordHash">) => Promise<{ success: boolean; activationCode?: string; userId?: string; error?: string }>
   updateUser: (id: string, updates: Partial<User>) => Promise<{ success: boolean; error?: string }>
   deleteUser: (id: string) => Promise<{ success: boolean; error?: string }>
   resetUserActivation: (id: string) => Promise<{ success: boolean; activationCode?: string; error?: string }>
@@ -997,7 +997,7 @@ export const useStore = create<StoreState>()(
         set((state) => ({
           users: state.users.map((item) => item.id === newUser.id ? { ...item, id: created.userId } : item),
         }))
-        return { success: true, activationCode: created.activationCode }
+        return { success: true, activationCode: created.activationCode, userId: created.userId }
       } catch (e) {
         set((state) => ({ users: state.users.filter((item) => item.id !== newUser.id) }))
         return { success: false, error: String(e) }

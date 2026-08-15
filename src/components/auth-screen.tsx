@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { PasswordInput } from "@/components/ui/password-input"
-import type { AccountResolution } from "@/hooks/use-supabase-auth"
+import type { AccountResolution } from "@/hooks/use-database-auth"
 import { translations, type Language } from "@/lib/i18n/translations"
 
 type AuthScreenProps = {

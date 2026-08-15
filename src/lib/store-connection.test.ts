@@ -38,7 +38,7 @@ describe("store connection codes", () => {
   })
 
   it("keeps the runtime compatibility version aligned with the latest migration", () => {
-    expect(REQUIRED_SCHEMA_VERSION).toBe("20260814000100")
+    expect(REQUIRED_SCHEMA_VERSION).toBe("20260815000200")
   })
 
   it("prevents PostgreSQL URL options from replacing the pinned TLS configuration", () => {
