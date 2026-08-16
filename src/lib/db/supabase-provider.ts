@@ -327,6 +327,13 @@ export async function dbBulkInsertWeapons(weapons: Weapon[]): Promise<void> {
   if (error) throw new Error(`Insert weapons: ${error.message}`)
 }
 export async function dbUpdateWeapon(weapon: Weapon): Promise<void> { await updateRow("weapons", weapon.id, mappers.weaponToRow(weapon), "Update weapon") }
+export async function dbUpdateWeaponDetails(weaponId: string, input: import("@/lib/store-inputs").WeaponDetailsInput): Promise<void> {
+  const { error } = await getSupabaseClient().rpc("update_weapon_details", {
+    p_weapon_id: weaponId,
+    p_patch: input as unknown as Json,
+  })
+  if (error) throw new Error(error.message)
+}
 export async function dbInsertShipment(shipment: Shipment): Promise<void> { await insertRow("shipments", mappers.shipmentToRow(shipment), "Insert shipment") }
 export async function dbUpdateShipment(shipment: Shipment): Promise<void> { await updateRow("shipments", shipment.id, mappers.shipmentToRow(shipment), "Update shipment") }
 export async function dbInsertInvoice(invoice: Invoice): Promise<void> { await insertRow("invoices", mappers.invoiceToRow(invoice), "Insert invoice") }

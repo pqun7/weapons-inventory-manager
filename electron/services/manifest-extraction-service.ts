@@ -1,8 +1,6 @@
 import { createHash } from "node:crypto"
 import path from "node:path"
 import {
-  ALLOWED_MANIFEST_EXTENSIONS,
-  MAX_MANIFEST_FILE_SIZE,
   canonicalizeExtractedProductFields,
   heuristicSpreadsheetItems,
   parseSpreadsheetBufferAsync,
@@ -21,6 +19,8 @@ import {
   type ManifestProgress,
   type ManifestUploadInput,
 } from "../../src/lib/shipment-manifest.js"
+import { ensureAppDocumentIdentifiers } from "./manifest-document-identifiers.js"
+import { validateManifestUpload } from "./manifest-upload-validation.js"
 
 type ProgressCallback = (progress: ManifestProgress) => void
 
@@ -75,45 +75,6 @@ function canonicalizeProductFields(item: ParsedManifestItem): ParsedManifestItem
       ...(canonical.translated ? { _translation: { originalProductName, canonicalProductName: canonical.productName, language: "ar", method: "deterministic-weapon-lexicon" } } : {}),
     },
   }
-}
-
-function validateUpload(input: ManifestUploadInput): { extension: string; mimeType: string; bytes: Uint8Array } {
-  if (typeof input?.fileName !== "string" || !input.fileName.trim() || /[\\/\0]/.test(input.fileName)) {
-    throw new Error("Invalid manifest file name")
-  }
-  const fileName = path.basename(input.fileName)
-  const extension = path.extname(fileName).toLowerCase()
-  if (!ALLOWED_MANIFEST_EXTENSIONS.has(extension)) throw new Error("Unsupported manifest file type")
-  const bytes = input.bytes instanceof Uint8Array ? input.bytes : new Uint8Array(input.bytes)
-  if (bytes.byteLength <= 0) throw new Error("The uploaded file is empty")
-  if (bytes.byteLength > MAX_MANIFEST_FILE_SIZE) throw new Error("The manifest exceeds the 30 MB size limit")
-  const startsWith = (...signature: number[]) => signature.every((value, index) => bytes[index] === value)
-  const signatures: Record<string, boolean> = {
-    ".xlsx": startsWith(0x50, 0x4b),
-    ".xls": startsWith(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1),
-    ".doc": startsWith(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1),
-    ".docx": startsWith(0x50, 0x4b),
-    ".pdf": startsWith(0x25, 0x50, 0x44, 0x46),
-    ".jpg": startsWith(0xff, 0xd8, 0xff),
-    ".jpeg": startsWith(0xff, 0xd8, 0xff),
-    ".png": startsWith(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a),
-    ".webp": startsWith(0x52, 0x49, 0x46, 0x46) && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50,
-    ".csv": startsWith(0xff, 0xfe) || startsWith(0xfe, 0xff) || !bytes.slice(0, Math.min(bytes.byteLength, 4096)).some((value) => value === 0),
-  }
-  if (!signatures[extension]) throw new Error("The file content does not match its extension")
-  const mimeType = input.mimeType?.trim() || ({
-    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ".xls": "application/vnd.ms-excel",
-    ".csv": "text/csv",
-    ".doc": "application/msword",
-    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ".pdf": "application/pdf",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".webp": "image/webp",
-  }[extension] ?? "application/octet-stream")
-  return { extension, mimeType, bytes }
 }
 
 const MONTHS: Record<string, number> = {
@@ -219,7 +180,7 @@ function mergeMetadata(native: AiManifestMetadata, ai: AiManifestMetadata | unde
 
 export async function extractShipmentManifest(input: ManifestUploadInput, progress?: ProgressCallback): Promise<ManifestExtractionResult> {
   progress?.({ stage: "uploading", percent: 5, message: "Validating uploaded document" })
-  const validated = validateUpload(input)
+  const validated = validateManifestUpload(input)
   const fileHash = createHash("sha256").update(validated.bytes).digest("hex")
   progress?.({ stage: "reading", percent: 20, message: "Reading document" })
   let native: NativeExtraction | undefined
@@ -255,7 +216,8 @@ export async function extractShipmentManifest(input: ManifestUploadInput, progre
       ? "AI extraction is required for PDF and image manifests"
       : "Local-only analysis supports XLSX, XLS, CSV, DOC, and DOCX manifests. Enable AI analysis for PDF and image files.")
   }
-  const metadata = mergeMetadata(nativeMetadata(native, input.fileName), ai?.shipment)
+  const extractedMetadata = mergeMetadata(nativeMetadata(native, input.fileName), ai?.shipment)
+  const { metadata, generated: appGeneratedIdentifiers } = ensureAppDocumentIdentifiers(extractedMetadata, fileHash)
   const normalizedItems = reconcileExtractedItems(heuristicItems, ai?.items ?? []).map(canonicalizeProductFields)
   if (normalizedItems.length === 0) throw new Error("No shipment items could be extracted from this document")
   const { items, verification } = verifyManifestExtraction({
@@ -290,6 +252,7 @@ export async function extractShipmentManifest(input: ManifestUploadInput, progre
     rawExtraction: {
       ...(native?.raw ?? {}),
       ...(!native && ai?.raw && typeof ai.raw === "object" && !Array.isArray(ai.raw) ? ai.raw as Record<string, unknown> : {}),
+      appGeneratedIdentifiers,
       verification,
     },
     verification,

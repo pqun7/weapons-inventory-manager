@@ -182,7 +182,7 @@ function ConnectedAppRoot({ provider }: { provider: DatabaseProvider }) {
             ready={ready}
             lang={lang}
             theme={(settings.theme ?? "system") as "dark" | "light" | "system"}
-            displayCurrency={userPreferences?.displayCurrency ?? settings.preferredDisplayCurrency ?? settings.currencyCode}
+            displayCurrency={userPreferences?.displayCurrency ?? "USD"}
             reportViewMode={userPreferences?.reportViewMode ?? "display"}
             locale={LANGUAGE_LOCALE[lang]}
             onThemeChange={(theme: AppProps["theme"]) => { void updateSettings({ theme }) }}

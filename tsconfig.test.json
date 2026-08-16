@@ -1,14 +1,26 @@
 {
     "extends": "./tsconfig.app.json",
-    "compilerOptions": {
-        "noUnusedLocals": false,
-        "noUnusedParameters": false,
-        "types": [
-            "vitest/globals"
-        ] // if you use global Vitest APIs (optional)
-    },
-    "include": [
-        "src/**/*.test.ts",
-        "src/**/*.test.tsx"
-    ]
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "types": [
+      "node",
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ],
+    "paths": {
+      "@/*": ["./src/*"],
+      "@electron/*": ["./electron/*"]
+    }
+  },
+  "include": [
+    "src/env.d.ts",
+    "src/global.d.ts",
+    "src/types/**/*.d.ts",
+    "tests/setup.ts",
+    "tests/unit/**/*.test.ts",
+    "tests/unit/**/*.test.tsx"
+  ],
+  "exclude": []
 }

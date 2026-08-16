@@ -55,6 +55,7 @@ export const dbUpsertUserPreferences: SupabaseDatabaseModule["dbUpsertUserPrefer
 export const dbInsertWeapon: SupabaseDatabaseModule["dbInsertWeapon"] = (...args) => routeOperation("dbInsertWeapon", args) as ReturnType<SupabaseDatabaseModule["dbInsertWeapon"]>
 export const dbBulkInsertWeapons: SupabaseDatabaseModule["dbBulkInsertWeapons"] = (...args) => routeOperation("dbBulkInsertWeapons", args) as ReturnType<SupabaseDatabaseModule["dbBulkInsertWeapons"]>
 export const dbUpdateWeapon: SupabaseDatabaseModule["dbUpdateWeapon"] = (...args) => routeOperation("dbUpdateWeapon", args) as ReturnType<SupabaseDatabaseModule["dbUpdateWeapon"]>
+export const dbUpdateWeaponDetails: SupabaseDatabaseModule["dbUpdateWeaponDetails"] = (...args) => routeOperation("dbUpdateWeaponDetails", args) as ReturnType<SupabaseDatabaseModule["dbUpdateWeaponDetails"]>
 export const dbInsertShipment: SupabaseDatabaseModule["dbInsertShipment"] = (...args) => routeOperation("dbInsertShipment", args) as ReturnType<SupabaseDatabaseModule["dbInsertShipment"]>
 export const dbUpdateShipment: SupabaseDatabaseModule["dbUpdateShipment"] = (...args) => routeOperation("dbUpdateShipment", args) as ReturnType<SupabaseDatabaseModule["dbUpdateShipment"]>
 export const dbInsertInvoice: SupabaseDatabaseModule["dbInsertInvoice"] = (...args) => routeOperation("dbInsertInvoice", args) as ReturnType<SupabaseDatabaseModule["dbInsertInvoice"]>

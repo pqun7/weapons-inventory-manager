@@ -341,6 +341,7 @@ export interface SaleLineItem {
   unitLandedCostAccounting?: number
   costAccountingCurrency?: string
   costSnapshotFinalizedAt?: string
+  costSnapshotSource?: "landed-cost-snapshot" | "trusted-base-valuation" | "trusted-legacy-base-valuation"
 }
 
 // ============ Saved Filters ============
@@ -708,7 +709,7 @@ export interface SystemSettings {
 
 export interface UserPreferences {
   userId: string
-  displayCurrency?: string
+  displayCurrency: string
   reportViewMode: "original" | "accounting" | "display"
   language?: string
   dateFormat?: string

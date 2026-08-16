@@ -5,9 +5,33 @@
 [![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-339933?logo=node.js&logoColor=white)](package.json)
 [![Electron](https://img.shields.io/badge/Desktop-Electron-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 
-Armory Store is an open-source desktop ERP for regulated inventory retailers. It brings serialized inventory, purchasing, shipment intake, sales, receivables, multi-currency accounting, user permissions, and operational audit history into one bilingual Electron application backed by Supabase PostgreSQL.
+Armory Store is an open-source desktop ERP for regulated inventory retailers. It brings serialized inventory, purchasing, shipment intake, sales, receivables, multi-currency accounting, user permissions, and operational audit history into one bilingual Electron application. Stores can run offline on a local SQLite database or use a shared Supabase PostgreSQL project for multi-device access.
 
 > This software helps manage records; it does not replace licensing, background checks, transfer procedures, tax rules, export controls, or any other legal obligation. Operators are responsible for configuring and using it in accordance with every law applicable to their jurisdiction.
+
+## What's New in 1.1.5
+
+- **Local store mode** — create a complete single-computer store backed by SQLite, with a local administrator account and no internet or Supabase requirement.
+- **Explicit storage selection** — first-run setup now clearly separates local SQLite from shared Supabase storage and preserves an existing local database when one is found.
+- **Provider migration** — administrators can move data between SQLite and Supabase from Store Connection settings. The source is preserved, the destination is backed up, and the new provider is activated only after verification succeeds.
+- **Safer inventory editing** — weapon-detail changes now use validated, permission-controlled, audited operations on both providers, including serial uniqueness and compatible type, subtype, caliber, brand, and model checks.
+- **More accurate reporting** — legacy sale lines receive trustworthy cost snapshots when they can be reconstructed safely, improving cost-of-goods and profit reporting. New user currency preferences default to USD.
+- **Improved shipment documents** — upload validation, application-generated document identifiers, optional local-only extraction for supported office formats, and clearer AI fallback behavior.
+- **Refined dashboard and weapon workspace** — clearer KPI interactions, profit visibility, editing flows, localized labels, and responsive presentation.
+- **Unified quality gate** — tests now live under `tests/`, and `npm test` runs type checking, linting, coverage, Python tests, and the SQLite provider integration test.
+
+## Local Store with SQLite
+
+Choose **Local storage — SQLite** on first launch when the store will be used on one computer:
+
+1. Enter the store name and local administrator details.
+2. Choose a strong password of at least eight characters containing upper-case and lower-case letters and a number. Only a hardened password hash is stored.
+3. Select **Initialize and test SQLite**. The application creates the database in its operating-system application-data directory, applies migrations, verifies integrity, and tests reading and writing before it activates the store.
+4. Sign in with the local administrator account. The store continues to work without an internet connection.
+
+Local SQLite data does not synchronize automatically with other computers. Keep regular backups outside the application-data directory. If a compatible database from an earlier installation is detected, the application opens it in place and creates a safety backup before applying required migrations.
+
+An administrator can later open **Settings → Store Connection** to migrate SQLite data into a prepared Supabase store. Migration requires the destination store code and Supabase administrator credentials. The reverse Supabase-to-SQLite path creates a new local administrator. Both directions require typing `MIGRATE`, preserve the source, back up the destination, transfer the supported records transactionally, and switch providers only after verification.
 
 ## Setting Up a Standalone Store on Supabase
 
@@ -85,8 +109,8 @@ A short, discoverable store code cannot be provided without operating a central 
 - **End-to-end shipment workflow** — manage draft, review, scheduled, delayed, arrived, received, failed, and cancelled states with documents, timeline events, landed-cost allocation, and reconciliation.
 - **Sales and receivables** — create retail or wholesale sales, reserve or sell inventory, track invoices and partial payments, identify overdue balances, extend due dates, and void records through controlled workflows.
 - **Multi-currency accounting** — preserve the original amount, transaction-time exchange rate, accounting value, rate source, and immutable historical context rather than recalculating old transactions.
-- **Defense-in-depth access control** — Supabase Auth, PostgreSQL RLS, a protected primary administrator, Admin/Employee roles, fine-grained employee capabilities, activation codes, and rate-limited account claiming.
-- **Audit and recovery** — business-focused audit events, notifications, personal/system backups, transaction-safe restore operations, and Supabase-managed backup guidance.
+- **Defense-in-depth access control** — hardened local authentication for SQLite; Supabase Auth and PostgreSQL RLS for cloud stores; protected administrators, Admin/Employee roles, fine-grained capabilities, activation codes, and controlled account claiming.
+- **Audit and recovery** — business-focused audit events, notifications, local safety backups, provider-migration safeguards, transaction-safe restore operations, and Supabase-managed backup guidance.
 - **Desktop-first, bilingual UI** — Electron packaging for Windows, macOS, and Linux; responsive React interface; Arabic/English localization; light/dark themes; Excel export and thermal-print settings.
 
 ## Technology
@@ -96,7 +120,7 @@ A short, discoverable store code cannot be provided without operating a central 
 | Desktop | Electron 43, electron-builder |
 | UI | React 19, TypeScript, Rsbuild, Tailwind CSS 4, Radix UI |
 | State and validation | Zustand, Zod, React Hook Form |
-| Data | Supabase PostgreSQL, Auth, RLS, Realtime, Edge Functions |
+| Data | Local SQLite (`node:sqlite`) or Supabase PostgreSQL, Auth, RLS, and Realtime |
 | Documents | SheetJS plus structural OOXML/legacy Word parsing, embedded-image detection, and optional AI extraction for PDF/images |
 | Optional AI | OpenAI with configurable DeepSeek fallback |
 | Quality | Vitest, Testing Library, TypeScript project references, Python `unittest` |
@@ -105,8 +129,8 @@ A short, discoverable store code cannot be provided without operating a central 
 
 - Node.js 24.15 or newer and npm 11 or newer
 - Python 3.10 or newer
-- A Supabase project with direct PostgreSQL connection access
-- Supabase CLI for deploying Edge Functions
+- A Supabase project with direct PostgreSQL connection access only when developing or operating the cloud provider
+- Supabase CLI only for Supabase maintenance and deployment tasks
 - Git
 
 ## Quick start
@@ -114,13 +138,13 @@ A short, discoverable store code cannot be provided without operating a central 
 1. Clone and install dependencies.
 
    ```bash
-   git clone https://github.com/pqun7/weapon_store.git
-   cd weapon_store
+   git clone https://github.com/pqun7/weapons-inventory-manager.git
+   cd weapons-inventory-manager
    npm ci
    python -m pip install -r scripts/requirements-migration.txt
    ```
 
-2. A generic release requires no `VITE_SUPABASE_*` values. For local development against an existing private project, copy `.env.example` to `.env.local` and optionally configure:
+2. A generic release and the local SQLite provider require no `VITE_SUPABASE_*` values. For development against an existing private Supabase project, copy `.env.example` to `.env.local` and optionally configure:
 
    ```env
    VITE_SUPABASE_URL=https://PROJECT_REF.supabase.co
@@ -141,7 +165,7 @@ A short, discoverable store code cannot be provided without operating a central 
    required authenticated session are retained on the device. PostgreSQL setup
    uses the pinned Supabase CA with full certificate and hostname verification.
 
-3. Apply the database migrations.
+3. When using Supabase, apply the database migrations.
 
    ```bash
    npm run supabase:schema:apply
@@ -240,7 +264,10 @@ The command refuses to run over existing business data. To return to a clean sys
 | `npm run dev` | Start the React dev server and Electron shell |
 | `npm run build` | Type-check and create the production renderer build |
 | `npm run electron:build` | Build the packaged desktop application |
-| `npm test` | Run the Vitest suite once |
+| `npm test` | Run the complete local/CI quality gate: type checks, lint, coverage, Python tests, and SQLite integration |
+| `npm run test:unit` | Run the Vitest unit suite without coverage reporting |
+| `npm run test:python` | Run the database-script Python unit tests |
+| `npm run test:sqlite-provider` | Compile Electron code and run the temporary SQLite provider integration test |
 | `npm run test:coverage` | Run tests with coverage |
 | `npm run typecheck` | Run TypeScript project checks |
 | `npm run lint` | Run the zero-warning ESLint quality gate |
@@ -264,12 +291,13 @@ are available; unsigned development builds should be identified clearly.
 
 ## Architecture and security boundaries
 
-- The React renderer receives only the selected store's Supabase URL and public client key. Generic release artifacts contain neither value.
+- Exactly one database provider is active at a time. SQLite stays in the Electron main process; for Supabase, the React renderer receives only the selected store's URL and public client key. Generic release artifacts contain no project values.
+- Local administrator passwords are stored only as hardened hashes. SQLite database operations enforce permissions and validation in the trusted Electron process rather than relying on renderer controls.
 - One-time database/server credentials are accepted only by Electron main-process IPC, are sanitized from errors, are never returned through preload, and are persisted only inside the store owner's Supabase Vault.
 - Store connection codes contain only public client configuration. They never contain database passwords, secret/service-role keys, owner passwords, or user activation codes.
 - RLS and security-definer RPCs are the authoritative authorization boundary; hiding a UI control is not treated as security.
 - Administrator Auth operations run through Supabase server-side facilities using service-role credentials that are never bundled into Electron.
-- Document bytes are validated by extension, size, and signature before parsing. AI output is untrusted, schema-constrained, and reviewed before database intake.
+- Document bytes are validated by extension, size, signature, archive structure, and supported document type before parsing. AI output is optional where deterministic local extraction is supported, remains untrusted and schema-constrained, and must be reviewed before database intake.
 - Monetary writes persist original and accounting values together with their transaction-time rate metadata.
 - Migration files are immutable after application: the migration runner records SHA-256 checksums and rejects altered applied migrations.
 
@@ -277,8 +305,8 @@ See [Supabase operations](docs/SUPABASE_OPERATIONS.md) and [RBAC user management
 
 ## Production checklist
 
-1. Use a dedicated production Supabase project and least-privilege operator accounts.
-2. Enable RLS on every exposed table and test anonymous, Employee, Admin, and primary-Admin boundaries.
+1. Choose SQLite only for a single-computer store; choose a dedicated Supabase project when users require shared, multi-device access.
+2. For Supabase, enable RLS on every exposed table and test anonymous, Employee, Admin, and primary-Admin boundaries. For SQLite, protect the operating-system account and maintain offline backups.
 3. Store secrets in a secrets manager or protected deployment environment; never commit `.env.local`.
 4. Configure exact allowed origins whenever the deployment has stable origins.
 5. Enable managed backups/PITR and rehearse restore procedures before accepting real records.

@@ -1,11 +1,10 @@
 import { createHash, randomUUID } from "node:crypto"
-import path from "node:path"
 import { getDb } from "../database.js"
 import { repo } from "../repositories/index.js"
 import { backendCurrencyService } from "./currency-service.js"
 import { analyzeManifestWithAi, userFacingAiError, type AiManifestMetadata } from "./openai-manifest-service.js"
 import {
-  ALLOWED_MANIFEST_EXTENSIONS, MAX_MANIFEST_FILE_SIZE, heuristicSpreadsheetItems, parseSpreadsheetBufferAsync,
+  heuristicSpreadsheetItems, parseSpreadsheetBufferAsync, parseWordDocumentBufferAsync,
   type NativeExtraction, type ParsedManifestItem,
 } from "./manifest-parser.js"
 import {
@@ -23,6 +22,8 @@ import {
   prepareShipmentCosts,
   type ShipmentItemCostBasis,
 } from "./product-cost-service.js"
+import { ensureAppDocumentIdentifiers } from "./manifest-document-identifiers.js"
+import { validateManifestUpload } from "./manifest-upload-validation.js"
 
 type CurrentUser = { id: string; name: string }
 type ProgressCallback = (progress: ManifestProgress) => void
@@ -90,30 +91,6 @@ export function authorizeManifest(user: CurrentUser, permission: "shipment.impor
 
 function emit(callback: ProgressCallback | undefined, progress: ManifestProgress): void {
   callback?.(progress)
-}
-
-function validateUpload(input: ManifestUploadInput): { extension: string; mimeType: string; bytes: Uint8Array } {
-  if (typeof input?.fileName !== "string" || !input.fileName.trim() || /[\\/\0]/.test(input.fileName)) throw new Error("Invalid manifest file name")
-  const fileName = path.basename(input.fileName)
-  const extension = path.extname(fileName).toLowerCase()
-  if (!ALLOWED_MANIFEST_EXTENSIONS.has(extension)) throw new Error("Unsupported manifest file type")
-  const bytes = input.bytes instanceof Uint8Array ? input.bytes : new Uint8Array(input.bytes)
-  if (bytes.byteLength <= 0) throw new Error("The uploaded file is empty")
-  if (bytes.byteLength > MAX_MANIFEST_FILE_SIZE) throw new Error("The manifest exceeds the 30 MB size limit")
-  const startsWith = (...signature: number[]) => signature.every((value, index) => bytes[index] === value)
-  const signatures: Record<string, boolean> = {
-    ".xlsx": startsWith(0x50, 0x4b),
-    ".xls": startsWith(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1),
-    ".pdf": startsWith(0x25, 0x50, 0x44, 0x46),
-    ".jpg": startsWith(0xff, 0xd8, 0xff),
-    ".jpeg": startsWith(0xff, 0xd8, 0xff),
-    ".png": startsWith(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a),
-    ".webp": startsWith(0x52, 0x49, 0x46, 0x46) && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50,
-    ".csv": startsWith(0xff, 0xfe) || startsWith(0xfe, 0xff) || !bytes.slice(0, Math.min(bytes.byteLength, 4096)).some((value) => value === 0),
-  }
-  if (!signatures[extension]) throw new Error("The file content does not match its extension")
-  const mimeType = input.mimeType?.trim() || ({ ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xls": "application/vnd.ms-excel", ".csv": "text/csv", ".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" }[extension] ?? "application/octet-stream")
-  return { extension, mimeType, bytes }
 }
 
 function mergeExtractedItems(nativeItems: ParsedManifestItem[], aiItems: ParsedManifestItem[]): ParsedManifestItem[] {
@@ -447,7 +424,7 @@ export function listManifestReviews(limit = 20): ManifestReviewSummary[] {
 export async function processManifestUpload(input: ManifestUploadInput, user: CurrentUser, progress?: ProgressCallback): Promise<ShipmentManifestReview> {
   requirePermission(user, "shipment.import")
   emit(progress, { stage: "uploading", percent: 5, message: "Validating uploaded document" })
-  const validated = validateUpload(input)
+  const validated = validateManifestUpload(input)
   const fileHash = createHash("sha256").update(validated.bytes).digest("hex")
   const duplicate = getDb().prepare(`SELECT id, shipment_id, shipment_number, status, prompt_version, schema_version FROM shipment_imports WHERE file_hash = ? AND status NOT IN ('failed','cancelled') ORDER BY created_at DESC LIMIT 1`).get(fileHash) as { id: string; shipment_id: string | null; shipment_number: string | null; status: ManifestWorkflowStatus; prompt_version: string | null; schema_version: string } | undefined
   if (duplicate && (duplicate.prompt_version === MANIFEST_PROMPT_VERSION && duplicate.schema_version === MANIFEST_SCHEMA_VERSION || Boolean(duplicate.shipment_id))) {
@@ -474,28 +451,37 @@ export async function processManifestUpload(input: ManifestUploadInput, user: Cu
     emit(progress, { importId, stage: "reading", percent: 20, message: "Reading document" })
     let native: NativeExtraction | undefined
     if ([".xlsx", ".xls", ".csv"].includes(validated.extension)) native = await parseSpreadsheetBufferAsync(validated.bytes)
+    else if ([".doc", ".docx"].includes(validated.extension)) native = await parseWordDocumentBufferAsync(validated.bytes)
     emit(progress, { importId, stage: "extracting", percent: 38, message: "Extracting tables and text" })
     const heuristicItems = native ? heuristicSpreadsheetItems(native) : []
-    emit(progress, { importId, stage: "analyzing", percent: 55, message: "Analyzing document semantics" })
+    const aiEnabled = input.aiEnabled !== false
+    emit(progress, { importId, stage: "analyzing", percent: 55, message: aiEnabled ? "Analyzing document semantics with AI" : "Analyzing document locally" })
     let ai: Awaited<ReturnType<typeof analyzeManifestWithAi>> = null
     let aiFallbackReason: string | null = null
-    try {
-      ai = await analyzeManifestWithAi({ fileName: input.fileName, mimeType: validated.mimeType, bytes: validated.bytes, nativeExtraction: native, nativeItems: heuristicItems })
-    } catch (error) {
-      const safeMessage = userFacingAiError(error)
-      console.error("[shipment-manifest] AI extraction failed; native extraction will be retained", error)
-      if (!native) throw new Error(safeMessage)
-      aiFallbackReason = safeMessage
+    if (aiEnabled) {
+      try {
+        ai = await analyzeManifestWithAi({ fileName: input.fileName, mimeType: validated.mimeType, bytes: validated.bytes, nativeExtraction: native, nativeItems: heuristicItems })
+      } catch (error) {
+        const safeMessage = userFacingAiError(error)
+        console.error("[shipment-manifest] AI extraction failed; native extraction will be retained", error)
+        if (!native) throw new Error(safeMessage)
+        aiFallbackReason = safeMessage
+      }
     }
-    if (!ai && !native) throw new Error("CHATGPT_API_KEY is required to process PDF and image manifests; DeepSeek fallback requires extracted text")
-    const metadata = mergeMetadata(nativeMetadata(native), ai?.shipment)
+    if (!ai && !native) {
+      throw new Error(aiEnabled
+        ? "AI extraction is required for PDF and image manifests"
+        : "Local-only analysis supports XLSX, XLS, CSV, DOC, and DOCX manifests. Enable AI analysis for PDF and image files.")
+    }
+    const extractedMetadata = mergeMetadata(nativeMetadata(native), ai?.shipment)
+    const { metadata, generated: appGeneratedIdentifiers } = ensureAppDocumentIdentifiers(extractedMetadata, fileHash)
     const items = enrichMappings(mergeExtractedItems(heuristicItems, ai?.items ?? []))
     if (items.length === 0) throw new Error("No shipment items could be extracted from this document")
     emit(progress, { importId, stage: "normalizing", percent: 72, message: "Normalizing extracted data" })
     getDb().transaction(() => {
       persistItems(importId, items)
       getDb().prepare(`UPDATE shipment_imports SET raw_extraction_json = ?, normalized_json = ?, shipment_number = ?, supplier_name = ?, supplier_reference = ?, invoice_number = ?, manifest_number = ?, shipment_date = ?, expected_arrival_date = ?, origin = ?, destination = ?, currency = ?, ai_provider = ?, ai_model = ?, ai_request_id = ?, ai_processing_ms = ?, ai_requested_at = ?, error_code = ?, error_message = ?, updated_at = datetime('now') WHERE id = ?`).run(
-        JSON.stringify(native?.raw ?? ai?.raw ?? {}), JSON.stringify({ shipment: metadata, itemCount: items.length }), metadata.shipmentNumber, metadata.supplier, metadata.supplierReference,
+        JSON.stringify({ ...(native?.raw ?? ai?.raw ?? {}), appGeneratedIdentifiers }), JSON.stringify({ shipment: metadata, itemCount: items.length, appGeneratedIdentifiers }), metadata.shipmentNumber, metadata.supplier, metadata.supplierReference,
         metadata.invoiceNumber, metadata.manifestNumber, metadata.shipmentDate, metadata.expectedArrivalDate, metadata.origin, metadata.destination, metadata.currency,
         ai?.provider ?? "native", ai?.model ?? null, ai?.requestId ?? null, ai?.durationMs ?? null, ai ? now : null,
         ai?.fallbackReason ? "AI_PROVIDER_FALLBACK" : aiFallbackReason ? "AI_FALLBACK" : null, ai?.fallbackReason ?? aiFallbackReason, importId,

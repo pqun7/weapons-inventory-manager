@@ -67,6 +67,24 @@ export interface SaleInput {
   currency?: string
 }
 
+export interface WeaponDetailsInput {
+  serialNumber: string
+  weaponTypeId: string
+  weaponSubtypeId: string
+  caliberId: string
+  brandId: string
+  modelId: string
+  storageLocationId: string | null
+  supplierId: string | null
+  condition: WeaponCondition
+  purchasePrice: number
+  retailPrice: number
+  wholesalePrice: number
+  retailPriceMode: PricingMode
+  wholesalePriceMode: PricingMode
+  currency: string
+}
+
 export interface ShipmentInput {
   shipmentNumber: string
   supplierId: string

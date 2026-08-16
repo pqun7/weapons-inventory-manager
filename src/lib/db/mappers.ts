@@ -1031,7 +1031,7 @@ function settingsToRow(s: SystemSettings): Record<string, unknown> {
 function rowToUserPreferences(r: UserPreferencesRow): UserPreferences {
   return {
     userId: r.user_id,
-    displayCurrency: r.display_currency ?? undefined,
+    displayCurrency: r.display_currency?.trim().toUpperCase() || "USD",
     reportViewMode: r.report_view_mode as UserPreferences["reportViewMode"],
     language: r.language ?? undefined,
     dateFormat: r.date_format ?? undefined,
@@ -1042,7 +1042,7 @@ function rowToUserPreferences(r: UserPreferencesRow): UserPreferences {
 function userPreferencesToRow(p: UserPreferences): Record<string, unknown> {
   return {
     user_id: p.userId,
-    display_currency: p.displayCurrency ?? null,
+    display_currency: p.displayCurrency.trim().toUpperCase() || "USD",
     report_view_mode: p.reportViewMode,
     language: p.language ?? null,
     date_format: p.dateFormat ?? null,

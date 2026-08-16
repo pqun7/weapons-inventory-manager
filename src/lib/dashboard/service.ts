@@ -97,6 +97,35 @@ export function buildLocalDashboardAnalytics(data: AllData, range: DashboardDate
   const weaponById = new Map(data.weapons.map((item) => [item.id, item]))
   const accessoryById = new Map(data.accessories.map((item) => [item.id, item]))
   const ammunitionById = new Map(data.ammunition.map((item) => [item.id, item]))
+  const accountingCurrency = data.settings.accountingCurrencyCode
+  const defaultCurrency = data.settings.currencyCode ?? accountingCurrency
+
+  const trustedProductUnitCost = (category: LocalSaleLine["category"], productId: string): number | null => {
+    const product = category === "weapon" ? weaponById.get(productId)
+      : category === "accessory" ? accessoryById.get(productId) : ammunitionById.get(productId)
+    if (!product) return null
+    const landed = product.costSnapshot ? Number(product.costSnapshot.finalLandedBaseAmount) : Number.NaN
+    if (Number.isFinite(landed) && landed >= 0) return landed
+    // A base purchase valuation is complete only when no separately managed
+    // product costs exist. Otherwise showing it as landed cost would understate
+    // COGS and profit.
+    if ((product.additionalCosts?.length ?? 0) > 0) return null
+
+    const valuation = category === "weapon" ? weaponById.get(productId)?.purchasePriceValuation
+      : category === "accessory" ? accessoryById.get(productId)?.priceValuation
+        : ammunitionById.get(productId)?.priceValuation
+    if (valuation && Number.isFinite(valuation.accountingAmount)
+      && (!valuation.accountingCurrency || valuation.accountingCurrency === accountingCurrency)) {
+      return valuation.accountingAmount
+    }
+
+    // Compatibility for legacy local rows: raw purchase prices were stored in
+    // the system currency. They are safe only when that is also the accounting
+    // currency; cross-currency guessing is deliberately rejected.
+    const raw = category === "weapon" ? weaponById.get(productId)?.purchasePrice
+      : category === "accessory" ? accessoryById.get(productId)?.price : ammunitionById.get(productId)?.price
+    return defaultCurrency === accountingCurrency && typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? raw : null
+  }
 
   const linesFor = (invoices: typeof sales): LocalSaleLine[] => invoices.flatMap((invoice) => {
     const originalTotal = invoice.lineItems.reduce((sum, item) => sum + Math.max(0, Number(item.total ?? item.unitPrice * item.quantity)), 0)
@@ -119,7 +148,12 @@ export function buildLocalDashboardAnalytics(data: AllData, range: DashboardDate
         productName: item.name || item.itemId,
         quantity,
         revenue: originalTotal > 0 ? invoiceRevenue * originalLineTotal / originalTotal : 0,
-        cost: typeof item.unitLandedCostAccounting === "number" ? item.unitLandedCostAccounting * quantity : null,
+        cost: typeof item.unitLandedCostAccounting === "number" && Number.isFinite(item.unitLandedCostAccounting)
+          ? item.unitLandedCostAccounting * quantity
+          : (() => {
+              const fallback = trustedProductUnitCost(category, item.itemId)
+              return fallback == null ? null : fallback * quantity
+            })(),
       }
     })
   })
@@ -129,8 +163,7 @@ export function buildLocalDashboardAnalytics(data: AllData, range: DashboardDate
     const lines = linesFor(invoices)
     const revenue = invoices.reduce((sum, invoice) => sum + (invoice.totalNegotiatedAccounting ?? invoice.totalNegotiated), 0)
     const cost = lines.reduce((sum, line) => sum + (line.cost ?? 0), 0)
-    const complete = invoices.length === 0 || invoices.every((invoice) => invoice.lineItems.length > 0
-      && invoice.lineItems.every((item) => typeof item.unitLandedCostAccounting === "number"))
+    const complete = invoices.length === 0 || (lines.length > 0 && lines.every((line) => line.cost != null))
     const unitsSold = lines.reduce((sum, line) => sum + line.quantity, 0)
     const receivables = invoices.reduce((sum, invoice) => sum + (invoice.balanceAccounting ?? invoice.balance), 0)
     const overdue = invoices.filter((invoice) => invoice.dueDate < today && (invoice.balanceAccounting ?? invoice.balance) > 0)
@@ -269,7 +302,7 @@ export function buildLocalDashboardAnalytics(data: AllData, range: DashboardDate
       deadStock: inventoryItems.filter((item) => item.status === "dead").length,
       slowCapital: round(slowItems.reduce((sum, item) => sum + (item.value ?? 0), 0)),
       slowCapitalComplete: slowItems.every((item) => item.value != null),
-      items: [...inventoryItems].sort((left, right) => statusPriority[left.status] - statusPriority[right.status] || (right.value ?? -1) - (left.value ?? -1)).slice(0, 12),
+      items: [...inventoryItems].sort((left, right) => statusPriority[left.status] - statusPriority[right.status] || (right.value ?? -1) - (left.value ?? -1)),
     },
     shipments: {
       pending: data.shipments.filter((item) => item.status === "Pending" || item.status === "Partial").length,

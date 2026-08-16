@@ -6,29 +6,112 @@ import type { Accessory, Ammunition, Customer, Invoice, PaymentRecord, Shipment,
 
 const PREFIX = "DEMO-"
 
+// Older SQLite installations were populated by src/lib/mock-data.ts before
+// demo records received the dedicated DEMO- namespace. Keep the exact ID
+// ranges here so those installations can be cleaned without treating later
+// user-created records as demonstration data.
+const LEGACY_DEMO_IDS = {
+  weapons: Array.from({ length: 140 }, (_, index) => `W${String(index + 1).padStart(5, "0")}`),
+  invoices: Array.from({ length: 65 }, (_, index) => `INV${String(index + 1).padStart(5, "0")}`),
+  payments: Array.from({ length: 55 }, (_, index) => `PAY${String(index + 1).padStart(5, "0")}`),
+  shipments: Array.from({ length: 12 }, (_, index) => `SHP${String(index + 1).padStart(4, "0")}`),
+  accessories: Array.from({ length: 6 }, (_, index) => `ACC${String(index + 1).padStart(3, "0")}`),
+  ammunition: Array.from({ length: 7 }, (_, index) => `AMM${String(index + 1).padStart(3, "0")}`),
+  customers: [
+    ...Array.from({ length: 15 }, (_, index) => `CUST${String(index + 1).padStart(4, "0")}`),
+    ...Array.from({ length: 4 }, (_, index) => `WB${String(index + 1).padStart(3, "0")}`),
+  ],
+  suppliers: Array.from({ length: 8 }, (_, index) => `SUP${String(index + 1).padStart(3, "0")}`),
+} as const
+
 function dateOffset(days: number): string {
   const value = new Date()
   value.setUTCDate(value.getUTCDate() + days)
   return value.toISOString().slice(0, 10)
 }
 
+function placeholders(values: readonly string[]): string {
+  return values.map(() => "?").join(",")
+}
+
+function hasLegacyDemoFingerprint(): boolean {
+  const db = getDb()
+  const row = db.prepare(`
+    SELECT
+      EXISTS(SELECT 1 FROM suppliers WHERE id = 'SUP001' AND name = 'Global Arms Distributors') AS supplier_match,
+      EXISTS(SELECT 1 FROM accessories WHERE id = 'ACC001' AND name = 'Pistol Case') AS accessory_match,
+      EXISTS(SELECT 1 FROM ammunition WHERE id = 'AMM001' AND caliber = '9x19') AS ammunition_match
+  `).get() as { supplier_match: number; accessory_match: number; ammunition_match: number }
+  return Number(row.supplier_match) + Number(row.accessory_match) + Number(row.ammunition_match) === 3
+}
+
+function deleteLegacyDemoRows(): void {
+  const db = getDb()
+  const ids = LEGACY_DEMO_IDS
+  const productIds = [...ids.weapons, ...ids.accessories, ...ids.ammunition]
+  const notificationEntityIds = [...productIds, ...ids.invoices, ...ids.shipments, ...ids.customers, ...ids.suppliers]
+
+  db.prepare(`DELETE FROM sale_operations WHERE invoice_id IN (${placeholders(ids.invoices)})`).run(...ids.invoices)
+  db.prepare(`DELETE FROM payment_records WHERE id IN (${placeholders(ids.payments)}) OR invoice_id IN (${placeholders(ids.invoices)})`).run(...ids.payments, ...ids.invoices)
+  db.prepare(`DELETE FROM audit_logs WHERE
+    (id GLOB 'LOG[0-9]*' AND description = 'Admin User logged into the system') OR
+    (id GLOB 'LOG[0-9]*' AND CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.invoiceId') END IN (${placeholders(ids.invoices)}))
+  `).run(...ids.invoices)
+  db.prepare(`DELETE FROM app_notifications WHERE id GLOB 'NTF[0-9]*' AND
+    (entity_id IN (${placeholders(notificationEntityIds)}) OR (type = 'BackupOmission' AND title = 'Backup Reminder'))
+  `).run(...notificationEntityIds)
+  db.prepare(`DELETE FROM invoices WHERE id IN (${placeholders(ids.invoices)})`).run(...ids.invoices)
+  db.prepare(`DELETE FROM inventory_transactions WHERE item_id IN (${placeholders(productIds)})`).run(...productIds)
+  db.prepare(`DELETE FROM stock_operations WHERE item_id IN (${placeholders([...ids.accessories, ...ids.ammunition])})`).run(...ids.accessories, ...ids.ammunition)
+  db.prepare(`DELETE FROM product_costs WHERE product_id IN (${placeholders(productIds)})`).run(...productIds)
+  db.prepare(`DELETE FROM inventory_cost_snapshots WHERE product_id IN (${placeholders(productIds)})`).run(...productIds)
+  db.prepare(`DELETE FROM ammunition_weapon_compatibility WHERE ammunition_id IN (${placeholders(ids.ammunition)}) OR weapon_id IN (${placeholders(ids.weapons)})`).run(...ids.ammunition, ...ids.weapons)
+  db.prepare(`DELETE FROM accessory_weapon_compatibility WHERE accessory_id IN (${placeholders(ids.accessories)}) OR weapon_id IN (${placeholders(ids.weapons)})`).run(...ids.accessories, ...ids.weapons)
+  db.prepare(`DELETE FROM weapons WHERE id IN (${placeholders(ids.weapons)})`).run(...ids.weapons)
+  db.prepare(`DELETE FROM shipments WHERE id IN (${placeholders(ids.shipments)})`).run(...ids.shipments)
+  db.prepare(`DELETE FROM accessories WHERE id IN (${placeholders(ids.accessories)})`).run(...ids.accessories)
+  db.prepare(`DELETE FROM ammunition WHERE id IN (${placeholders(ids.ammunition)})`).run(...ids.ammunition)
+  db.prepare(`DELETE FROM customers WHERE id IN (${placeholders(ids.customers)})`).run(...ids.customers)
+  db.prepare(`DELETE FROM suppliers WHERE id IN (${placeholders(ids.suppliers)})`).run(...ids.suppliers)
+}
+
+function countRemainingNamespacedDemoRows(): number {
+  const db = getDb()
+  const row = db.prepare(`SELECT
+    (SELECT count(*) FROM invoices WHERE id LIKE 'DEMO-%') +
+    (SELECT count(*) FROM shipments WHERE id LIKE 'DEMO-%') +
+    (SELECT count(*) FROM accessories WHERE id LIKE 'DEMO-%') +
+    (SELECT count(*) FROM ammunition WHERE id LIKE 'DEMO-%') +
+    (SELECT count(*) FROM customers WHERE id LIKE 'DEMO-%') +
+    (SELECT count(*) FROM suppliers WHERE id LIKE 'DEMO-%') AS count
+  `).get() as { count: number }
+  return Number(row.count)
+}
+
 function deleteDemoRows(): void {
   const db = getDb()
+  const legacyDemoDetected = hasLegacyDemoFingerprint()
   db.prepare("DELETE FROM sale_operations WHERE invoice_id LIKE 'DEMO-%'").run()
-    db.prepare("DELETE FROM payment_records WHERE id LIKE 'DEMO-%' OR invoice_id LIKE 'DEMO-%'").run()
-    db.prepare("DELETE FROM invoices WHERE id LIKE 'DEMO-%'").run()
-    db.prepare("DELETE FROM inventory_transactions WHERE id LIKE 'DEMO-%' OR item_id LIKE 'DEMO-%'").run()
-    db.prepare("DELETE FROM product_costs WHERE product_id LIKE 'DEMO-%'").run()
-    db.prepare("DELETE FROM inventory_cost_snapshots WHERE product_id LIKE 'DEMO-%'").run()
-    db.prepare("DELETE FROM shipment_items WHERE shipment_id LIKE 'DEMO-%'").run()
-    db.prepare("DELETE FROM shipments WHERE id LIKE 'DEMO-%'").run()
-    db.prepare("DELETE FROM accessories WHERE id LIKE 'DEMO-%'").run()
-    db.prepare("DELETE FROM ammunition WHERE id LIKE 'DEMO-%'").run()
-    db.prepare("DELETE FROM customers WHERE id LIKE 'DEMO-%'").run()
-    db.prepare("DELETE FROM suppliers WHERE id LIKE 'DEMO-%'").run()
-    db.prepare("DELETE FROM audit_logs WHERE id LIKE 'DEMO-%'").run()
-    db.prepare("DELETE FROM app_notifications WHERE id LIKE 'DEMO-%'").run()
-  db.prepare("UPDATE system_settings SET show_demo_data = 0 WHERE id = 1").run()
+  db.prepare("DELETE FROM payment_records WHERE id LIKE 'DEMO-%' OR invoice_id LIKE 'DEMO-%'").run()
+  db.prepare("DELETE FROM invoices WHERE id LIKE 'DEMO-%'").run()
+  db.prepare("DELETE FROM inventory_transactions WHERE id LIKE 'DEMO-%' OR item_id LIKE 'DEMO-%'").run()
+  db.prepare("DELETE FROM stock_operations WHERE item_id LIKE 'DEMO-%'").run()
+  db.prepare("DELETE FROM product_costs WHERE product_id LIKE 'DEMO-%'").run()
+  db.prepare("DELETE FROM inventory_cost_snapshots WHERE product_id LIKE 'DEMO-%'").run()
+  db.prepare("DELETE FROM shipment_items WHERE shipment_id LIKE 'DEMO-%'").run()
+  db.prepare("DELETE FROM shipments WHERE id LIKE 'DEMO-%'").run()
+  db.prepare("DELETE FROM accessories WHERE id LIKE 'DEMO-%'").run()
+  db.prepare("DELETE FROM ammunition WHERE id LIKE 'DEMO-%'").run()
+  db.prepare("DELETE FROM customers WHERE id LIKE 'DEMO-%'").run()
+  db.prepare("DELETE FROM suppliers WHERE id LIKE 'DEMO-%'").run()
+  db.prepare("DELETE FROM audit_logs WHERE id LIKE 'DEMO-%'").run()
+  db.prepare("DELETE FROM app_notifications WHERE id LIKE 'DEMO-%'").run()
+  if (legacyDemoDetected) deleteLegacyDemoRows()
+
+  const settingsUpdate = db.prepare("UPDATE system_settings SET show_demo_data = 0 WHERE id = 1").run()
+  if (settingsUpdate.changes !== 1 || countRemainingNamespacedDemoRows() !== 0 || (legacyDemoDetected && hasLegacyDemoFingerprint())) {
+    throw new Error("Demonstration data deletion could not be verified")
+  }
 }
 
 export function deleteDemoData(): void {

@@ -15,6 +15,7 @@ export interface PricingSectionProps {
     quantity: number
     onQuantityChange: (value: number) => void
     showQuantity?: boolean
+    showAdditionalCosts?: boolean
     additionalCosts: ProductAdditionalCostInput[]
     onAdditionalCostsChange: (costs: ProductAdditionalCostInput[]) => void
     finalCost: number
@@ -78,7 +79,7 @@ export function PricingSection(props: PricingSectionProps) {
                     </div>
                 )}
             </div>
-            <ProductCostEditor originalAmount={props.purchasePrice || "0"} originalCurrency={props.currency} costs={props.additionalCosts} onChange={props.onAdditionalCostsChange} />
+            {props.showAdditionalCosts !== false && <ProductCostEditor originalAmount={props.purchasePrice || "0"} originalCurrency={props.currency} costs={props.additionalCosts} onChange={props.onAdditionalCostsChange} />}
             <PricingFields finalCost={props.finalCost} currency={props.currency} retail={{ value: props.retailPrice, mode: props.retailPriceMode }} wholesale={{ value: props.wholesalePrice, mode: props.wholesalePriceMode }} onRetailChange={props.onRetailChange} onWholesaleChange={props.onWholesaleChange} />
             {props.errors?.retailPrice && <span className="text-[10px] text-destructive">{props.errors.retailPrice}</span>}
         </div>

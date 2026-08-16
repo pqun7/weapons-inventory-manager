@@ -129,7 +129,7 @@ export interface ExportLoginGuideResult {
 
 export const DATABASE_OPERATION_NAMES = [
   "dbGetCurrentUserId", "dbGetAll", "dbGetMasterData", "dbGetSettings", "dbUpdateSettings",
-  "dbGetUserPreferences", "dbUpsertUserPreferences", "dbInsertWeapon", "dbBulkInsertWeapons", "dbUpdateWeapon",
+  "dbGetUserPreferences", "dbUpsertUserPreferences", "dbInsertWeapon", "dbBulkInsertWeapons", "dbUpdateWeapon", "dbUpdateWeaponDetails",
   "dbInsertShipment", "dbUpdateShipment", "dbInsertInvoice", "dbUpdateInvoice", "dbInsertPayment",
   "dbInsertAccessory", "dbUpdateAccessory", "dbInsertAmmunition", "dbUpdateAmmunition", "dbInsertCustomer",
   "dbUpdateCustomer", "dbDeleteCustomer", "dbInsertSupplier", "dbInsertAuditLog", "dbInsertNotification",

@@ -52,6 +52,7 @@ import type {
   ShipmentInput,
   ShipmentLineItemInput,
   UpdateAmmoPackageInput,
+  WeaponDetailsInput,
 } from "../../src/lib/store-inputs.js"
 import { DATABASE_OPERATION_NAMES, type DatabaseOperationName } from "../../src/lib/database-provider.js"
 import { deleteDemoData, resetDemoData } from "./demo-data-service.js"
@@ -92,6 +93,75 @@ function requireInventoryEdit(): void {
   let permissions: Record<string, unknown> = {}
   try { permissions = JSON.parse(row?.permissions ?? "{}") as Record<string, unknown> } catch { /* invalid permissions grant nothing */ }
   if (permissions["inventory.edit"] !== true) throw new Error("Inventory edit permission is required")
+}
+
+function requireShipmentManage(): void {
+  const session = requireLocalSession()
+  if (session.role === "Admin") return
+  const row = getDb().prepare("SELECT permissions FROM users WHERE id = ?").get(session.userId) as { permissions?: string } | undefined
+  let permissions: Record<string, unknown> = {}
+  try { permissions = JSON.parse(row?.permissions ?? "{}") as Record<string, unknown> } catch { /* invalid permissions grant nothing */ }
+  if (!["shipment.import", "shipment.review", "shipment.edit", "shipment.receive"].some((key) => permissions[key] === true)) {
+    throw new Error("Shipment permission is required")
+  }
+}
+
+function updateWeaponDetailsControlled(weaponId: string, input: WeaponDetailsInput): void {
+  requireInventoryEdit()
+  const database = getDb()
+  const serialNumber = input.serialNumber?.trim()
+  const currency = input.currency?.trim().toUpperCase()
+  if (!serialNumber || serialNumber.length > 200) throw new Error("A valid serial number is required")
+  if (!/^[A-Z]{3}$/.test(currency)) throw new Error("A valid currency is required")
+  if (![input.purchasePrice, input.retailPrice, input.wholesalePrice].every((amount) => Number.isFinite(amount) && amount >= 0)) {
+    throw new Error("Weapon prices must be finite non-negative values")
+  }
+  if (input.wholesalePrice > input.retailPrice) throw new Error("Wholesale price cannot exceed retail price")
+  if (!new Set(["manual", "auto"]).has(input.retailPriceMode) || !new Set(["manual", "auto"]).has(input.wholesalePriceMode)) {
+    throw new Error("Invalid pricing mode")
+  }
+  if (!new Set(["Excellent", "Good", "Fair", "Poor"]).has(input.condition)) throw new Error("Invalid weapon condition")
+  const current = database.prepare("SELECT * FROM weapons WHERE id = ? AND deleted_at IS NULL").get(weaponId) as Record<string, unknown> | undefined
+  if (!current) throw new Error("Weapon not found")
+  if (database.prepare("SELECT 1 FROM weapons WHERE lower(trim(serial_number)) = lower(trim(?)) AND id <> ? AND deleted_at IS NULL LIMIT 1").get(serialNumber, weaponId)) {
+    throw new Error("Serial number already exists")
+  }
+  const subtype = database.prepare("SELECT weapon_type_id FROM weapon_subtypes WHERE id = ?").get(input.weaponSubtypeId) as { weapon_type_id: string } | undefined
+  if (!database.prepare("SELECT 1 FROM weapon_types WHERE id = ?").get(input.weaponTypeId) || subtype?.weapon_type_id !== input.weaponTypeId) {
+    throw new Error("Weapon type and subtype do not match")
+  }
+  const model = database.prepare("SELECT brand_id FROM models WHERE id = ?").get(input.modelId) as { brand_id: string | null } | undefined
+  if (!database.prepare("SELECT 1 FROM brands WHERE id = ?").get(input.brandId) || !model || model.brand_id !== input.brandId) {
+    throw new Error("Weapon brand and model do not match")
+  }
+  if (!database.prepare("SELECT 1 FROM calibers WHERE id = ?").get(input.caliberId)) throw new Error("Caliber not found")
+  if (!database.prepare("SELECT 1 FROM subtype_calibers WHERE subtype_id = ? AND caliber_id = ?").get(input.weaponSubtypeId, input.caliberId)) {
+    throw new Error("Caliber is not valid for the selected subtype")
+  }
+  if (input.supplierId && !database.prepare("SELECT 1 FROM suppliers WHERE id = ?").get(input.supplierId)) throw new Error("Supplier not found")
+  if (input.storageLocationId && !database.prepare("SELECT 1 FROM storage_locations WHERE id = ?").get(input.storageLocationId)) throw new Error("Storage location not found")
+
+  const purchaseValuation = backendCurrencyService.createValuation(input.purchasePrice, currency)
+  const retailValuation = backendCurrencyService.createValuation(input.retailPrice, currency)
+  const wholesaleValuation = backendCurrencyService.createValuation(input.wholesalePrice, currency)
+  const user = currentUser()
+  database.transaction(() => {
+    database.prepare(`UPDATE weapons SET
+      serial_number = ?, weapon_type_id = ?, weapon_subtype_id = ?, caliber_id = ?, brand_id = ?, model_id = ?,
+      storage_location_id = ?, supplier_id = ?, condition = ?, purchase_price = ?, retail_price = ?, wholesale_price = ?,
+      retail_price_mode = ?, wholesale_price_mode = ?, purchase_price_valuation = ?, retail_price_valuation = ?,
+      wholesale_price_valuation = ?, updated_at = datetime('now')
+      WHERE id = ? AND deleted_at IS NULL`).run(
+      serialNumber, input.weaponTypeId, input.weaponSubtypeId, input.caliberId, input.brandId, input.modelId,
+      input.storageLocationId || null, input.supplierId || null, input.condition, input.purchasePrice, input.retailPrice,
+      input.wholesalePrice, input.retailPriceMode, input.wholesalePriceMode, JSON.stringify(purchaseValuation),
+      JSON.stringify(retailValuation), JSON.stringify(wholesaleValuation), weaponId,
+    )
+    database.prepare("INSERT INTO audit_logs(id,timestamp,date,user_id,action_type,description,metadata) VALUES(?,?,?,?,?,?,?)")
+      .run(`AUD-${randomUUID()}`, new Date().toISOString(), new Date().toISOString().slice(0, 10), user.id, "Update", `Weapon ${serialNumber} details updated`, JSON.stringify({
+        entityType: "weapon", entityId: weaponId, previousValues: current, newValues: input,
+      }))
+  })()
 }
 
 function updateWeaponStatusControlled(weaponId: string, nextStatus: WeaponStatus, reason: string): void {
@@ -427,6 +497,7 @@ export function executeSqliteDatabaseOperation(operation: SqliteDatabaseOperatio
     case "dbInsertWeapon": repo.insertWeapon(value<Weapon>(args, 0)); return undefined
     case "dbBulkInsertWeapons": repo.bulkInsertWeapons(value<Weapon[]>(args, 0)); return undefined
     case "dbUpdateWeapon": requireInventoryEdit(); repo.updateWeapon(value<Weapon>(args, 0)); return undefined
+    case "dbUpdateWeaponDetails": updateWeaponDetailsControlled(text(args, 0, "Weapon ID"), value<WeaponDetailsInput>(args, 1)); return undefined
     case "dbInsertShipment": repo.insertShipment(value<Shipment>(args, 0)); return undefined
     case "dbUpdateShipment": repo.updateShipment(value<Shipment>(args, 0)); return undefined
     case "dbInsertInvoice": repo.insertInvoice(value<Invoice>(args, 0)); return undefined
@@ -534,8 +605,8 @@ export function executeSqliteDatabaseOperation(operation: SqliteDatabaseOperatio
     case "dbUpdateWeaponStatus": updateWeaponStatusControlled(text(args, 0, "Weapon ID"), text(args, 1, "Status") as WeaponStatus, text(args, 2, "Reason")); return undefined
     case "dbUpdateWeaponNotes": requireInventoryEdit(); getDb().prepare("UPDATE weapons SET notes=? WHERE id=? AND deleted_at IS NULL").run(text(args, 1, "Notes"), text(args, 0, "Weapon ID")); return undefined
     case "dbUpdateWeaponLocation": requireInventoryEdit(); getDb().prepare("UPDATE weapons SET storage_location_id=? WHERE id=? AND deleted_at IS NULL").run(typeof args[1] === "string" && args[1].trim() ? args[1] : null, text(args, 0, "Weapon ID")); return undefined
-    case "dbAppendWeaponImage": updateJsonArray("weapons", "images", text(args, 0, "Weapon ID"), (items) => [...items, text(args, 1, "Image")]); return undefined
-    case "dbBindWeaponToShipment": getDb().prepare("UPDATE weapons SET shipment_id=? WHERE id=? AND deleted_at IS NULL").run(text(args, 1, "Shipment ID"), text(args, 0, "Weapon ID")); return undefined
+    case "dbAppendWeaponImage": requireInventoryEdit(); updateJsonArray("weapons", "images", text(args, 0, "Weapon ID"), (items) => [...items, text(args, 1, "Image")]); return undefined
+    case "dbBindWeaponToShipment": requireShipmentManage(); getDb().prepare("UPDATE weapons SET shipment_id=? WHERE id=? AND deleted_at IS NULL").run(text(args, 1, "Shipment ID"), text(args, 0, "Weapon ID")); return undefined
     case "dbSetShipmentStatus": getDb().prepare("UPDATE shipments SET status=?,notes=CASE WHEN ?='' THEN notes ELSE notes||char(10)||? END,updated_at=datetime('now') WHERE id=?").run(text(args, 1, "Status"), text(args, 2, "Notes"), text(args, 2, "Notes"), text(args, 0, "Shipment ID")); return undefined
     case "dbUpdateShipmentDetails": {
       const id = text(args, 0, "Shipment ID"), patch = value<Partial<Shipment>>(args, 1)

@@ -100,7 +100,8 @@ export function CurrencyProvider({
   const resolvedDisplayCurrency = useMemo(() => {
     if (!isLoaded || currencies.length === 0) return displayCurrency
     if (currencies.some((currency) => currency.isoCode === displayCurrency)) return displayCurrency
-    return currencies.find((currency) => currency.isoCode === settings.preferredDisplayCurrency)?.isoCode
+    return currencies.find((currency) => currency.isoCode === "USD")?.isoCode
+      ?? currencies.find((currency) => currency.isoCode === settings.preferredDisplayCurrency)?.isoCode
       ?? currencies.find((currency) => currency.isoCode === transactionCurrency)?.isoCode
       ?? currencies.find((currency) => currency.isoCode === accountingCurrency)?.isoCode
       ?? currencies[0].isoCode

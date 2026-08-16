@@ -13,6 +13,7 @@ import * as db from "./db/index.js"
 import { optimisticShipment } from "./shipment-workflow.js"
 import { permissionsForRole } from "./rbac.js"
 import { invalidateDashboardAnalyticsCache } from "./dashboard/cache.js"
+import type { WeaponDetailsInput } from "./store-inputs.js"
 
 // ============ Input Types ============
 
@@ -237,7 +238,7 @@ export interface StoreState {
   // CRUD operations (async — go through IPC in Electron, fall back to db layer in browser)
   addBulkWeapons: (input: BulkIntakeInput) => Promise<{ success: boolean; added: number; duplicates: string[]; error?: string }>
   updateWeaponStatus: (weaponId: string, status: WeaponStatus, reason?: string) => Promise<{ success: boolean; error?: string }>
-  updateWeaponDetails: (weaponId: string, updates: Partial<Weapon>) => Promise<{ success: boolean; error?: string }>
+  updateWeaponDetails: (weaponId: string, updates: WeaponDetailsInput) => Promise<{ success: boolean; error?: string }>
   updateWeaponNotes: (weaponId: string, notes: string) => Promise<{ success: boolean; error?: string }>
   updateWeaponLocation: (weaponId: string, storageLocationId: string | null) => Promise<{ success: boolean; error?: string }>
   addWeaponImage: (weaponId: string, imageBase64: string) => Promise<{ success: boolean; error?: string }>
@@ -548,20 +549,12 @@ export const useStore = create<StoreState>()(
     },
 
     updateWeaponDetails: async (weaponId, updates) => {
-      const current = get().weapons.find((weapon) => weapon.id === weaponId)
-      if (!current) return { success: false, error: "Weapon not found" }
       const actor = get().getCurrentUser()
       if (actor.role !== "Admin" && actor.permissions?.["inventory.edit"] !== true) {
         return { success: false, error: "Inventory edit permission is required" }
       }
-      const protectedKeys = new Set(["id", "status", "movementHistory", "actualFinalPrice", "actualFinalPriceValuation", "salePriceValuation"])
-      const safeUpdates = Object.fromEntries(Object.entries(updates).filter(([key]) => !protectedKeys.has(key))) as Partial<Weapon>
-      const updated = { ...current, ...safeUpdates }
       try {
-        await db.dbUpdateWeapon(updated)
-        await db.dbWriteAuditEvent("Update", `Weapon ${current.serialNumber} details updated`, JSON.stringify({
-          entityType: "weapon", entityId: weaponId, previousValues: current, newValues: updated,
-        }))
+        await db.dbUpdateWeaponDetails(weaponId, updates)
         await get().refreshFromDb()
         return { success: true }
       } catch (error) {
@@ -999,7 +992,7 @@ export const useStore = create<StoreState>()(
       const previous = state.userPreferences
       const current = previous ?? {
         userId: state.currentUserId,
-        displayCurrency: state.settings.preferredDisplayCurrency ?? state.settings.currencyCode,
+        displayCurrency: "USD",
         reportViewMode: "display" as const,
       }
       const merged = { ...current, ...updates }

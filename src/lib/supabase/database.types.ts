@@ -31,6 +31,7 @@ type RpcName =
   | "adjust_inventory_stock_v2"
   | "register_payment"
   | "update_weapon_status"
+  | "update_weapon_details"
   | "currency_snapshot"
   | "current_app_user_id"
   | "current_app_role"

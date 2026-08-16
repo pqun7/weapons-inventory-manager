@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 15;
 
 export const CONFIGURE_INITIAL_CURRENCIES_V5_SQL = `
 UPDATE currencies
@@ -451,7 +451,7 @@ CREATE TABLE IF NOT EXISTS saved_filters (
 
 CREATE TABLE IF NOT EXISTS user_preferences (
   user_id          TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  display_currency TEXT,
+  display_currency TEXT NOT NULL DEFAULT 'USD',
   report_view_mode TEXT NOT NULL DEFAULT 'accounting',
   language         TEXT,
   date_format      TEXT,

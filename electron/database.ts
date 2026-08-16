@@ -310,6 +310,7 @@ function runMigrations(database: Database.Database): void {
     addColumnsIfMissing(database);
     database.exec(CREATE_TABLES_SQL);
     ensureProviderSchema(database);
+    backfillLegacySaleLineCosts(database);
     ensureDefaultUserPreferences(database);
 
     validateFinalSchema(database);
@@ -354,6 +355,7 @@ function runMigrations(database: Database.Database): void {
     addColumnsIfMissing(database);
     database.exec(CREATE_TABLES_SQL);
     ensureProviderSchema(database);
+    backfillLegacySaleLineCosts(database);
 
     ensureDefaultUserPreferences(database);
 
@@ -1175,6 +1177,116 @@ function backfillLegacyFinancialSnapshots(database: Database.Database): void {
   }
 }
 
+interface LegacySaleLine {
+  itemType?: "weapon" | "accessory" | "ammunition"
+  itemId?: string
+  unitLandedCostAccounting?: number
+  costAccountingCurrency?: string
+  costSnapshotFinalizedAt?: string
+  costSnapshotSource?: string
+  [key: string]: unknown
+}
+
+interface LegacyProductCostRow {
+  base_amount: number
+  valuation: string | null
+  date_added: string
+  shipment_id: string | null
+}
+
+/**
+ * V14 freezes safely reconstructable cost-of-goods values onto legacy sale
+ * lines. Older local demo/imported invoices kept the product ID and purchase
+ * cost but predated immutable invoice line snapshots, causing the dashboard to
+ * hide cost and profit even though the accounting value was available.
+ */
+function backfillLegacySaleLineCosts(database: Database.Database): void {
+  const tables = getExistingTables(database)
+  if (!["invoices", "weapons", "accessories", "ammunition", "inventory_cost_snapshots", "product_costs", "shipment_costs", "inventory_transactions", "system_settings"]
+    .every((table) => tables.has(table))) return
+
+  const settings = database.prepare("SELECT currency_code, accounting_currency_code FROM system_settings WHERE id = 1")
+    .get() as { currency_code: string; accounting_currency_code: string } | undefined
+  if (!settings) return
+
+  const snapshot = database.prepare(`
+    SELECT final_landed_base_amount, base_currency_code, finalized_at
+    FROM inventory_cost_snapshots WHERE product_type = ? AND product_id = ?
+  `)
+  const productCostExists = database.prepare("SELECT 1 FROM product_costs WHERE product_type = ? AND product_id = ? LIMIT 1")
+  const shipmentCostForWeapon = database.prepare(`
+    SELECT 1 FROM shipment_costs AS cost
+    JOIN weapons AS weapon ON weapon.shipment_id = cost.shipment_id
+    WHERE weapon.id = ? LIMIT 1
+  `)
+  const shipmentCostForStock = database.prepare(`
+    SELECT 1 FROM inventory_transactions AS transaction_row
+    JOIN shipment_costs AS cost ON cost.shipment_id = transaction_row.shipment_id
+    WHERE transaction_row.item_type = ? AND transaction_row.item_id = ? LIMIT 1
+  `)
+  const productStatements = {
+    weapon: database.prepare("SELECT purchase_price AS base_amount, purchase_price_valuation AS valuation, date_added, shipment_id FROM weapons WHERE id = ? AND deleted_at IS NULL"),
+    accessory: database.prepare("SELECT price AS base_amount, price_valuation AS valuation, date_added, NULL AS shipment_id FROM accessories WHERE id = ?"),
+    ammunition: database.prepare("SELECT price AS base_amount, price_valuation AS valuation, date_added, NULL AS shipment_id FROM ammunition WHERE id = ?"),
+  }
+  const invoices = database.prepare(`
+    SELECT id, date, accounting_currency, line_items
+    FROM invoices
+    WHERE type = 'Sale' AND voided = 0 AND json_valid(line_items) = 1
+  `).all() as Array<{ id: string; date: string; accounting_currency: string | null; line_items: string }>
+  const update = database.prepare("UPDATE invoices SET line_items = ? WHERE id = ?")
+
+  for (const invoice of invoices) {
+    let lines: LegacySaleLine[]
+    try {
+      const parsed = JSON.parse(invoice.line_items) as unknown
+      if (!Array.isArray(parsed)) continue
+      lines = parsed as LegacySaleLine[]
+    } catch {
+      continue
+    }
+    const accountingCurrency = invoice.accounting_currency?.trim().toUpperCase() || settings.accounting_currency_code
+    let changed = false
+
+    for (const line of lines) {
+      if (Number.isFinite(line.unitLandedCostAccounting) || !line.itemType || !line.itemId) continue
+      const landed = snapshot.get(line.itemType, line.itemId) as { final_landed_base_amount: string; base_currency_code: string; finalized_at: string } | undefined
+      if (landed && landed.base_currency_code === accountingCurrency && Number.isFinite(Number(landed.final_landed_base_amount))) {
+        line.unitLandedCostAccounting = Number(landed.final_landed_base_amount)
+        line.costAccountingCurrency = landed.base_currency_code
+        line.costSnapshotFinalizedAt = landed.finalized_at
+        line.costSnapshotSource = "landed-cost-snapshot"
+        changed = true
+        continue
+      }
+
+      const product = productStatements[line.itemType].get(line.itemId) as LegacyProductCostRow | undefined
+      if (!product) continue
+      if (productCostExists.get(line.itemType, line.itemId)) continue
+      if (line.itemType === "weapon" ? shipmentCostForWeapon.get(line.itemId) : shipmentCostForStock.get(line.itemType, line.itemId)) continue
+
+      let baseCost: number | null = null
+      try {
+        const valuation = product.valuation ? JSON.parse(product.valuation) as { accountingAmount?: unknown; accountingCurrency?: unknown } : null
+        if (valuation && Number.isFinite(Number(valuation.accountingAmount)) && (valuation.accountingCurrency == null || valuation.accountingCurrency === accountingCurrency)) {
+          baseCost = Number(valuation.accountingAmount)
+        }
+      } catch { /* malformed legacy valuation cannot be trusted */ }
+      if (baseCost == null && settings.currency_code === accountingCurrency && Number.isFinite(product.base_amount) && product.base_amount >= 0) {
+        baseCost = product.base_amount
+      }
+      if (baseCost == null) continue
+
+      line.unitLandedCostAccounting = baseCost
+      line.costAccountingCurrency = accountingCurrency
+      line.costSnapshotFinalizedAt = new Date().toISOString()
+      line.costSnapshotSource = "trusted-legacy-base-valuation"
+      changed = true
+    }
+    if (changed) update.run(JSON.stringify(lines), invoice.id)
+  }
+}
+
 
 // ============================================================
 // User Preferences
@@ -1199,14 +1311,21 @@ function ensureDefaultUserPreferences(
   const insertPreference = database.prepare(`
     INSERT OR IGNORE INTO user_preferences(
   user_id,
+  display_currency,
   report_view_mode
 )
-VALUES(?, 'accounting')
+VALUES(?, 'USD', 'accounting')
   `);
 
   for (const user of users) {
     insertPreference.run(user.id);
   }
+
+  database.prepare(`
+    UPDATE user_preferences
+    SET display_currency = 'USD'
+    WHERE display_currency IS NULL OR trim(display_currency) = ''
+  `).run();
 }
 
 

@@ -182,6 +182,12 @@ function GeneralSettings({ user }: { user: User }) {
   const [saving, setSaving] = useState(false)
   const [demoWorking, setDemoWorking] = useState(false)
   const showDemoData = useStore((state) => state.settings.showDemoData ?? false)
+  const legacyDemoData = useStore((state) =>
+    state.suppliers.some((item) => item.id === "SUP001" && item.name === "Global Arms Distributors") &&
+    state.accessories.some((item) => item.id === "ACC001" && item.name === "Pistol Case") &&
+    state.ammunition.some((item) => item.id === "AMM001" && item.caliber === "9x19")
+  )
+  const demoDataPresent = showDemoData || legacyDemoData
 
   useEffect(() => setEmail(user.email ?? ""), [user.email])
 
@@ -228,6 +234,10 @@ function GeneralSettings({ user }: { user: User }) {
     try {
       if (reset) await db.dbResetDemoData(); else await db.dbDeleteDemoData()
       await refreshFromDb()
+      const refreshed = useStore.getState()
+      const demoStillPresent = refreshed.settings.showDemoData === true ||
+        refreshed.invoices.some((item) => item.id.startsWith("DEMO-") || (legacyDemoData && /^INV\d{5}$/.test(item.id) && Number(item.id.slice(3)) <= 65))
+      if (!reset && demoStillPresent) throw new Error(t("settings.demoDeleteFailed"))
       toast.success(t(reset ? "settings.demoResetSuccess" : "settings.demoDeleteSuccess"))
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("toast.error"))
@@ -254,9 +264,9 @@ function GeneralSettings({ user }: { user: User }) {
         <Card className="lg:col-span-2">
           <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Database className="size-4" />{t("settings.demoData")}</CardTitle><CardDescription>{t("settings.demoDataHelp")}</CardDescription></CardHeader>
           <CardContent className="flex flex-wrap items-center gap-2">
-            <Badge variant={showDemoData ? "secondary" : "outline"}>{t(showDemoData ? "settings.demoEnabled" : "settings.demoDisabled")}</Badge>
-            <Button variant="outline" disabled={demoWorking} onClick={() => void changeDemoData(true)}><RotateCcw className="size-4" />{t("settings.resetDemoData")}</Button>
-            <Button variant="destructive" disabled={demoWorking || !showDemoData} onClick={() => void changeDemoData(false)}><Trash2 className="size-4" />{t("settings.deleteDemoData")}</Button>
+            <Badge variant={demoDataPresent ? "secondary" : "outline"}>{t(demoDataPresent ? "settings.demoEnabled" : "settings.demoDisabled")}</Badge>
+            {demoDataPresent && <Button variant="outline" disabled={demoWorking} onClick={() => void changeDemoData(true)}><RotateCcw className="size-4" />{t("settings.resetDemoData")}</Button>}
+            {demoDataPresent && <Button variant="destructive" disabled={demoWorking} onClick={() => void changeDemoData(false)}><Trash2 className="size-4" />{t("settings.deleteDemoData")}</Button>}
           </CardContent>
         </Card>
       )}

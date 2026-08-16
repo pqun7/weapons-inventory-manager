@@ -160,7 +160,7 @@ export function configureLocalAdministrator(input: InitializeSqliteInput): { use
         VALUES (?, ?, ?, 'Admin', ?, 1, ?, 1, 1, datetime('now'), datetime('now'))
       `).run(userId, adminUsername, adminName, JSON.stringify(ADMIN_PERMISSIONS), passwordHash)
     }
-    database.prepare("INSERT OR IGNORE INTO user_preferences(user_id, report_view_mode) VALUES (?, 'accounting')").run(userId)
+    database.prepare("INSERT OR IGNORE INTO user_preferences(user_id, display_currency, report_view_mode) VALUES (?, 'USD', 'accounting')").run(userId)
     database.prepare("UPDATE app_installation SET store_name = ?, setup_completed_at = datetime('now'), updated_at = datetime('now') WHERE singleton = 1").run(storeName)
     database.prepare("UPDATE system_settings SET company_name = ? WHERE id = 1").run(storeName)
     return { userId, identifier: adminUsername }

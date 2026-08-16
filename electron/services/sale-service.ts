@@ -289,6 +289,18 @@ export function completeSale(
 
       const saleCurrency = input.currency?.trim().toUpperCase() || backendCurrencyService.getDefaultTransactionCurrency()
       const rateSnapshot = backendCurrencyService.getRateSnapshot(saleCurrency)
+      const settings = repo.getSettings()
+      const productCostExists = db.prepare("SELECT 1 FROM product_costs WHERE product_type = ? AND product_id = ? LIMIT 1")
+      const weaponShipmentCostExists = db.prepare(`
+        SELECT 1 FROM shipment_costs AS cost
+        JOIN weapons AS weapon ON weapon.shipment_id = cost.shipment_id
+        WHERE weapon.id = ? LIMIT 1
+      `)
+      const stockShipmentCostExists = db.prepare(`
+        SELECT 1 FROM inventory_transactions AS transaction_row
+        JOIN shipment_costs AS cost ON cost.shipment_id = transaction_row.shipment_id
+        WHERE transaction_row.item_type = ? AND transaction_row.item_id = ? LIMIT 1
+      `)
       const canonicalLineItems = lineItems.map((item) => {
         const unitPrice = nonNegativeMoney(item.unitPrice, `Unit price for ${item.name}`)
           .toDecimalPlaces(rateSnapshot.transactionPrecision)
@@ -297,13 +309,47 @@ export function completeSale(
           FROM inventory_cost_snapshots
           WHERE product_type = ? AND product_id = ?
         `).get(item.itemType, item.itemId) as { final_landed_base_amount: string; base_currency_code: string; finalized_at: string } | undefined
+        let unitCost: number | undefined
+        let costCurrency: string | undefined
+        let costFinalizedAt: string | undefined
+        let costSource: "landed-cost-snapshot" | "trusted-base-valuation" | undefined
+        if (costRow?.base_currency_code === rateSnapshot.accountingCurrency) {
+          unitCost = decimalToNumber(nonNegativeMoney(costRow.final_landed_base_amount))
+          costCurrency = costRow.base_currency_code
+          costFinalizedAt = costRow.finalized_at
+          costSource = "landed-cost-snapshot"
+        } else {
+          const hasProductCosts = Boolean(productCostExists.get(item.itemType, item.itemId))
+          const hasShipmentCosts = item.itemType === "weapon"
+            ? Boolean(weaponShipmentCostExists.get(item.itemId))
+            : Boolean(stockShipmentCostExists.get(item.itemType, item.itemId))
+          if (!hasProductCosts && !hasShipmentCosts) {
+            const valuation = item.itemType === "weapon" ? weaponsById.get(item.itemId)?.purchasePriceValuation
+              : item.itemType === "ammunition" ? ammoById.get(item.itemId)?.priceValuation
+                : accessoryById.get(item.itemId)?.priceValuation
+            const legacyCost = item.itemType === "weapon" ? weaponsById.get(item.itemId)?.purchasePrice
+              : item.itemType === "ammunition" ? ammoById.get(item.itemId)?.price
+                : accessoryById.get(item.itemId)?.price
+            if (valuation && valuation.accountingCurrency === rateSnapshot.accountingCurrency) {
+              unitCost = decimalToNumber(nonNegativeMoney(valuation.accountingAmount))
+            } else if (settings.currencyCode === rateSnapshot.accountingCurrency && legacyCost != null) {
+              unitCost = decimalToNumber(nonNegativeMoney(legacyCost))
+            }
+            if (unitCost != null) {
+              costCurrency = rateSnapshot.accountingCurrency
+              costFinalizedAt = new Date().toISOString()
+              costSource = "trusted-base-valuation"
+            }
+          }
+        }
         return {
           ...item,
           unitPrice: decimalToNumber(unitPrice),
           total: decimalToNumber(unitPrice.times(item.quantity)),
-          unitLandedCostAccounting: costRow ? decimalToNumber(nonNegativeMoney(costRow.final_landed_base_amount)) : undefined,
-          costAccountingCurrency: costRow?.base_currency_code,
-          costSnapshotFinalizedAt: costRow?.finalized_at,
+          unitLandedCostAccounting: unitCost,
+          costAccountingCurrency: costCurrency,
+          costSnapshotFinalizedAt: costFinalizedAt,
+          costSnapshotSource: costSource,
         }
       })
       const requestedSubtotal = sumMoney(canonicalLineItems.map((item) => item.total))
@@ -364,7 +410,6 @@ export function completeSale(
         return { success: false, error: "Original total does not match authoritative inventory prices" }
       }
 
-      const settings = repo.getSettings()
       const taxPercent = nonNegativeMoney(settings.taxPercent, "Tax percent")
       const authoritativeTax = negotiatedSubtotal.times(taxPercent).dividedBy(100)
         .toDecimalPlaces(rateSnapshot.transactionPrecision)
