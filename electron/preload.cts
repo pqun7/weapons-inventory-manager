@@ -16,6 +16,7 @@ const electronAPI = {
   storage: {
     getBootstrap: () => ipcRenderer.invoke("storage:get-bootstrap"),
     initializeSelected: () => ipcRenderer.invoke("storage:initialize-selected"),
+    returnToSetup: () => ipcRenderer.invoke("storage:return-to-setup"),
     setupSqlite: (input: unknown) => ipcRenderer.invoke("storage:setup-sqlite", input),
     activateSupabase: () => ipcRenderer.invoke("storage:activate-supabase"),
     migrateToSupabase: (input: unknown) => ipcRenderer.invoke("storage:migrate-to-supabase", input),

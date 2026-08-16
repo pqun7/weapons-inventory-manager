@@ -25,6 +25,7 @@ describe("AuthScreen", () => {
         onResolve={onResolve}
         onSignIn={vi.fn()}
         onCompleteFirstLogin={vi.fn()}
+        onReturnToDatabaseSetup={vi.fn()}
       />,
     )
 
@@ -49,6 +50,7 @@ describe("AuthScreen", () => {
         onResolve={onResolve}
         onSignIn={vi.fn()}
         onCompleteFirstLogin={vi.fn()}
+        onReturnToDatabaseSetup={vi.fn()}
       />,
     )
 
@@ -66,10 +68,29 @@ describe("AuthScreen", () => {
         onResolve={vi.fn()}
         onSignIn={vi.fn()}
         onCompleteFirstLogin={vi.fn()}
+        onReturnToDatabaseSetup={vi.fn()}
       />,
     )
     const main = screen.getByRole("main")
     expect(main).toHaveAttribute("lang", "ar")
     expect(main).toHaveAttribute("dir", "rtl")
+  })
+
+  it("returns to database setup from the login screen", async () => {
+    const onReturnToDatabaseSetup = vi.fn().mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(
+      <AuthScreen
+        lang="en"
+        error={null}
+        onResolve={vi.fn()}
+        onSignIn={vi.fn()}
+        onCompleteFirstLogin={vi.fn()}
+        onReturnToDatabaseSetup={onReturnToDatabaseSetup}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Back to database setup" }))
+    expect(onReturnToDatabaseSetup).toHaveBeenCalledTimes(1)
   })
 })

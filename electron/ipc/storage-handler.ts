@@ -4,6 +4,7 @@ import {
   activateSupabaseProvider,
   getStorageBootstrapState,
   initializeSelectedProvider,
+  returnToStorageSetup,
   setupSqliteProvider,
 } from "../services/database-provider-manager.js"
 import { readStorageConfig } from "../services/storage-config-service.js"
@@ -90,7 +91,7 @@ function requireSqliteSelected(): void {
 
 export function registerStorageHandlers(): void {
   for (const channel of [
-    "storage:get-bootstrap", "storage:initialize-selected", "storage:setup-sqlite", "storage:activate-supabase",
+    "storage:get-bootstrap", "storage:initialize-selected", "storage:return-to-setup", "storage:setup-sqlite", "storage:activate-supabase",
     "local-auth:get-session", "local-auth:resolve", "local-auth:sign-in", "local-auth:claim", "local-auth:sign-out",
     "local-auth:update-password", "database:invoke", "account:export-login-guide",
     "storage:migrate-to-supabase", "storage:migrate-to-sqlite",
@@ -98,6 +99,7 @@ export function registerStorageHandlers(): void {
 
   ipcMain.handle("storage:get-bootstrap", () => result(getStorageBootstrapState))
   ipcMain.handle("storage:initialize-selected", () => asyncResult(initializeSelectedProvider))
+  ipcMain.handle("storage:return-to-setup", () => result(returnToStorageSetup))
   ipcMain.handle("storage:setup-sqlite", (event, input: unknown) => asyncResult(async () => {
     const validated = sqliteSetupSchema.parse(input)
     return setupSqliteProvider(validated, (stage: StorageSetupProgressStage) => {

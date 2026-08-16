@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react"
-import { ArrowLeft, LockKeyhole, WifiOff } from "lucide-react"
+import { ArrowLeft, Database, LockKeyhole, WifiOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -14,11 +14,12 @@ type AuthScreenProps = {
   onResolve: (identifier: string) => Promise<AccountResolution>
   onSignIn: (identifier: string, password: string) => Promise<void>
   onCompleteFirstLogin: (identifier: string, activationCode: string, password: string) => Promise<void>
+  onReturnToDatabaseSetup: () => Promise<void>
 }
 
 type Step = "identify" | "sign-in" | "setup"
 
-export function AuthScreen({ lang, error, onResolve, onSignIn, onCompleteFirstLogin }: AuthScreenProps) {
+export function AuthScreen({ lang, error, onResolve, onSignIn, onCompleteFirstLogin, onReturnToDatabaseSetup }: AuthScreenProps) {
   const t = (key: string, params?: Record<string, string>) => {
     let value = translations[lang][key] ?? translations.en[key] ?? key
     for (const [name, replacement] of Object.entries(params ?? {})) value = value.replaceAll(`{${name}}`, replacement)
@@ -66,6 +67,17 @@ export function AuthScreen({ lang, error, onResolve, onSignIn, onCompleteFirstLo
     setConfirmation("")
     setActivationCode("")
     setLocalError(null)
+  }
+  const returnToDatabaseSetup = async () => {
+    if (submitting) return
+    setLocalError(null)
+    setSubmitting(true)
+    try {
+      await onReturnToDatabaseSetup()
+    } catch (caught) {
+      setLocalError(caught instanceof Error ? caught.message : t("auth.failed"))
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -134,6 +146,10 @@ export function AuthScreen({ lang, error, onResolve, onSignIn, onCompleteFirstLo
             )}
             <Button type="submit" disabled={submitting}>
               {submitting ? t("auth.pleaseWait") : step === "identify" ? t("auth.continue") : step === "setup" ? t("auth.savePasswordSignIn") : t("auth.signIn")}
+            </Button>
+            <Button type="button" variant="outline" disabled={submitting} onClick={() => { void returnToDatabaseSetup() }}>
+              <Database className="size-4" />
+              {t("auth.backToDatabaseSetup")}
             </Button>
           </form>
         </CardContent>

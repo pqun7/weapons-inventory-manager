@@ -134,6 +134,15 @@ export function closeSelectedProvider(): void {
 }
 
 /**
+ * Returns this device to first-run provider selection without deleting the
+ * local SQLite database or the saved Supabase connection.
+ */
+export function returnToStorageSetup(): void {
+  closeSelectedProvider()
+  clearStorageConfig()
+}
+
+/**
  * Detaches this device from its selected Supabase store without making any
  * remote mutation. The user can reconnect later with the store connection
  * code; the Supabase project, application users, and business data remain.

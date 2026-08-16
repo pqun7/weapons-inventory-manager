@@ -48,6 +48,7 @@ export interface ElectronAPI {
   storage: {
     getBootstrap: () => Promise<IpcResult<StorageBootstrapState>>
     initializeSelected: () => Promise<IpcResult<{ config: AppStorageConfig; health: DatabaseHealthResult }>>
+    returnToSetup: () => Promise<IpcResult<void>>
     setupSqlite: (input: InitializeSqliteInput) => Promise<IpcResult<InitializeSqliteResult>>
     activateSupabase: () => Promise<IpcResult<ActivateSupabaseResult>>
     migrateToSupabase: (input: MigrateSqliteToSupabaseInput) => Promise<IpcResult<ProviderMigrationResult>>

@@ -108,6 +108,11 @@ function ConnectedAppRoot({ provider }: { provider: DatabaseProvider }) {
     const updateUserPreferences = useStore((state) => state.updateUserPreferences)
     const lang = (settings.appLanguage ?? "en") as Language
     const t = (key: string) => translations[lang][key] ?? translations.en[key] ?? key
+    const returnToDatabaseSetup = async () => {
+        const response = await window.electronAPI?.storage.returnToSetup()
+        if (!response?.success) throw new Error(response?.error ?? t("auth.databaseSetupReturnFailed"))
+        window.location.reload()
+    }
 
     useEffect(() => {
         let cancelled = false
@@ -146,6 +151,7 @@ function ConnectedAppRoot({ provider }: { provider: DatabaseProvider }) {
                 onResolve={auth.resolveAccount}
                 onSignIn={auth.signIn}
                 onCompleteFirstLogin={auth.completeFirstLogin}
+                onReturnToDatabaseSetup={returnToDatabaseSetup}
             />
         )
     }
