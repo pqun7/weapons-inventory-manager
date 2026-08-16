@@ -35,6 +35,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install Python test dependencies
+        run: python -m pip install -r scripts/requirements-migration.txt
+
       - name: Verify tag matches package version
         shell: pwsh
         run: |

@@ -9,7 +9,7 @@ Armory Store is an open-source desktop ERP for regulated inventory retailers. It
 
 > This software helps manage records; it does not replace licensing, background checks, transfer procedures, tax rules, export controls, or any other legal obligation. Operators are responsible for configuring and using it in accordance with every law applicable to their jurisdiction.
 
-## What's New in 1.1.5
+## What's New in 1.1.6
 
 - **Local store mode** — create a complete single-computer store backed by SQLite, with a local administrator account and no internet or Supabase requirement.
 - **Explicit storage selection** — first-run setup now clearly separates local SQLite from shared Supabase storage and preserves an existing local database when one is found.
