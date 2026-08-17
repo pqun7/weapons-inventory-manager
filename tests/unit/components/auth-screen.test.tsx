@@ -25,6 +25,8 @@ describe("AuthScreen", () => {
         onResolve={onResolve}
         onSignIn={vi.fn()}
         onCompleteFirstLogin={vi.fn()}
+        onRequestPasswordRecovery={vi.fn()}
+        onCompletePasswordRecovery={vi.fn()}
         onReturnToDatabaseSetup={vi.fn()}
       />,
     )
@@ -50,6 +52,8 @@ describe("AuthScreen", () => {
         onResolve={onResolve}
         onSignIn={vi.fn()}
         onCompleteFirstLogin={vi.fn()}
+        onRequestPasswordRecovery={vi.fn()}
+        onCompletePasswordRecovery={vi.fn()}
         onReturnToDatabaseSetup={vi.fn()}
       />,
     )
@@ -68,6 +72,8 @@ describe("AuthScreen", () => {
         onResolve={vi.fn()}
         onSignIn={vi.fn()}
         onCompleteFirstLogin={vi.fn()}
+        onRequestPasswordRecovery={vi.fn()}
+        onCompletePasswordRecovery={vi.fn()}
         onReturnToDatabaseSetup={vi.fn()}
       />,
     )
@@ -86,11 +92,40 @@ describe("AuthScreen", () => {
         onResolve={vi.fn()}
         onSignIn={vi.fn()}
         onCompleteFirstLogin={vi.fn()}
+        onRequestPasswordRecovery={vi.fn()}
+        onCompletePasswordRecovery={vi.fn()}
         onReturnToDatabaseSetup={onReturnToDatabaseSetup}
       />,
     )
 
     await user.click(screen.getByRole("button", { name: "Back to database setup" }))
     expect(onReturnToDatabaseSetup).toHaveBeenCalledTimes(1)
+  })
+
+  it("requests employee recovery and submits the administrator-approved code", async () => {
+    const onRequestPasswordRecovery = vi.fn().mockResolvedValue({ requestId: "11111111-1111-4111-8111-111111111111", channel: "admin_approval" })
+    const onCompletePasswordRecovery = vi.fn().mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(
+      <AuthScreen
+        lang="en"
+        error={null}
+        onResolve={vi.fn()}
+        onSignIn={vi.fn()}
+        onCompleteFirstLogin={vi.fn()}
+        onRequestPasswordRecovery={onRequestPasswordRecovery}
+        onCompletePasswordRecovery={onCompletePasswordRecovery}
+        onReturnToDatabaseSetup={vi.fn()}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: "Forgot password?" }))
+    await user.type(screen.getByLabelText("Name or Email"), "employee")
+    await user.click(screen.getByRole("button", { name: "Send recovery request" }))
+    expect(await screen.findByText(/sent to the store administrators/i)).toBeInTheDocument()
+    await user.type(screen.getByLabelText("Recovery code"), "123456")
+    await user.type(screen.getByLabelText("New password"), "SecurePass1")
+    await user.type(screen.getByLabelText("Confirm password"), "SecurePass1")
+    await user.click(screen.getByRole("button", { name: "Reset password and sign in" }))
+    expect(onCompletePasswordRecovery).toHaveBeenCalledWith(expect.objectContaining({ code: "123456", channel: "admin_approval" }))
   })
 })

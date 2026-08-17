@@ -17,6 +17,7 @@ export type PublicTableName =
   | "business_id_counters"
   | "inventory_product_types"
   | "app_backups"
+  | "password_recovery_requests"
 
 type GenericTable = {
   Row: Record<string, Json>
@@ -85,6 +86,10 @@ type RpcName =
   | "resolve_account"
   | "claim_account"
   | "dashboard_analytics"
+  | "request_password_recovery"
+  | "complete_employee_password_recovery"
+  | "list_pending_password_recovery"
+  | "approve_password_recovery"
 
 type GenericRpc = {
   Args: Record<string, Json | undefined>

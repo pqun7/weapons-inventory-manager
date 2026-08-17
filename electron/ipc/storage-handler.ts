@@ -27,6 +27,12 @@ import {
   migrateSupabaseToSqlite,
 } from "../services/provider-migration-service.js"
 import type { ProviderMigrationProgressStage } from "../../src/lib/database-provider.js"
+import {
+  approveLocalPasswordRecovery,
+  completeLocalPasswordRecovery,
+  listPendingLocalPasswordRecoveries,
+  requestLocalPasswordRecovery,
+} from "../services/password-recovery-service.js"
 
 const sqliteSetupSchema = z.object({
   storeName: z.string().trim().min(1).max(120),
@@ -64,6 +70,16 @@ const migrateToSqliteSchema = z.object({
   localAdministratorPassword: z.string().min(8).max(256),
   confirmation: migrationConfirmationSchema,
 }).strict()
+const recoveryIdentifierSchema = z.string().trim().min(1).max(160)
+const recoveryRequestIdSchema = z.uuid()
+const recoveryCompleteSchema = z.object({
+  requestId: recoveryRequestIdSchema,
+  identifier: recoveryIdentifierSchema,
+  code: z.string().trim().min(6).max(32),
+  password: z.string().min(8).max(256),
+  channel: z.enum(["admin_approval", "email"]),
+  recoveryEmail: z.string().email().max(254).optional(),
+}).strict()
 
 function safeError(error: unknown): string {
   const raw = error instanceof Error ? error.message : "The operation failed"
@@ -95,6 +111,7 @@ export function registerStorageHandlers(): void {
     "local-auth:get-session", "local-auth:resolve", "local-auth:sign-in", "local-auth:claim", "local-auth:sign-out",
     "local-auth:update-password", "database:invoke", "account:export-login-guide",
     "storage:migrate-to-supabase", "storage:migrate-to-sqlite",
+    "password-recovery:request", "password-recovery:complete", "password-recovery:list-pending", "password-recovery:approve",
   ]) ipcMain.removeHandler(channel)
 
   ipcMain.handle("storage:get-bootstrap", () => result(getStorageBootstrapState))
@@ -141,6 +158,25 @@ export function registerStorageHandlers(): void {
     requireSqliteSelected()
     const parsed = z.object({ currentPassword: authPasswordSchema, newPassword: authPasswordSchema }).strict().parse(input)
     updateLocalPassword(parsed.currentPassword, parsed.newPassword)
+  }))
+
+  ipcMain.handle("password-recovery:request", (_event, input: unknown) => asyncResult(() => {
+    requireSqliteSelected()
+    const parsed = z.object({ identifier: recoveryIdentifierSchema }).strict().parse(input)
+    return requestLocalPasswordRecovery(parsed.identifier)
+  }))
+  ipcMain.handle("password-recovery:complete", (_event, input: unknown) => result(() => {
+    requireSqliteSelected()
+    return completeLocalPasswordRecovery(recoveryCompleteSchema.parse(input))
+  }))
+  ipcMain.handle("password-recovery:list-pending", () => result(() => {
+    requireSqliteSelected()
+    return listPendingLocalPasswordRecoveries()
+  }))
+  ipcMain.handle("password-recovery:approve", (_event, input: unknown) => result(() => {
+    requireSqliteSelected()
+    const parsed = z.object({ requestId: recoveryRequestIdSchema }).strict().parse(input)
+    return approveLocalPasswordRecovery(parsed.requestId)
   }))
 
   ipcMain.handle("database:invoke", (_event, input: unknown) => result(() => {

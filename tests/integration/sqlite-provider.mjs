@@ -25,6 +25,7 @@ const summary = {
 
 const databaseModule = await compiled("electron/database.js")
 const auth = await compiled("electron/services/local-auth-service.js")
+const recovery = await compiled("electron/services/password-recovery-service.js")
 const commands = await compiled("electron/services/sqlite-command-service.js")
 const providerMigration = await compiled("electron/services/provider-migration-service.js")
 
@@ -46,7 +47,7 @@ try {
   summary.initialization.firstOpenMs = Math.round(performance.now() - initializationStarted)
   assert.equal(fs.existsSync(testDbPath), true)
   assert.equal(path.dirname(testDbPath), databaseModule.getDbDirectory())
-  assert.equal(Number(db().pragma("user_version", { simple: true })), 15)
+  assert.equal(Number(db().pragma("user_version", { simple: true })), 16)
   assert.equal(Number(db().pragma("foreign_keys", { simple: true })), 1)
   assert.equal(String(db().pragma("journal_mode", { simple: true })).toLowerCase(), "wal")
   assert.equal(Number(db().pragma("busy_timeout", { simple: true })), 5000)
@@ -57,7 +58,7 @@ try {
     "warehouses", "storage_locations", "suppliers", "customers", "shipments", "invoices",
     "payment_records", "accessories", "ammunition", "audit_logs", "system_settings",
     "app_notifications", "saved_filters", "user_preferences", "inventory_product_types",
-    "app_installation", "database_health_probes",
+    "app_installation", "database_health_probes", "password_recovery_requests",
   ]
   const actualTables = new Set(db().prepare("SELECT name FROM sqlite_schema WHERE type='table'").all().map((row) => row.name))
   for (const table of requiredTables) assert.ok(actualTables.has(table), `Missing table ${table}`)
@@ -68,7 +69,7 @@ try {
 
   databaseModule.closeDatabase()
   await databaseModule.initDatabase()
-  assert.equal(Number(db().pragma("user_version", { simple: true })), 15)
+  assert.equal(Number(db().pragma("user_version", { simple: true })), 16)
   summary.initialization.idempotentReopen = true
 
   const administrator = auth.configureLocalAdministrator({
@@ -236,6 +237,38 @@ try {
   })
   assert.match(recreatedUser.activationCode, /^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/)
   assert.equal(db().prepare("SELECT is_active FROM users WHERE id = ?").get(createdUser.userId).is_active, 0)
+
+  auth.signOutLocal()
+  auth.claimLocalAccount("employee.contract", recreatedUser.activationCode, "EmployeePass123")
+  auth.signOutLocal()
+  const recoveryRequest = await recovery.requestLocalPasswordRecovery("employee.contract")
+  assert.equal(recoveryRequest.channel, "admin_approval")
+  auth.signInLocal("contract.admin", "StrongPass123")
+  assert.ok(recovery.listPendingLocalPasswordRecoveries().some((request) => request.id === recoveryRequest.requestId))
+  const approvedRecovery = recovery.approveLocalPasswordRecovery(recoveryRequest.requestId)
+  assert.match(approvedRecovery.code, /^\d{6}$/)
+  const wrongRecoveryCode = approvedRecovery.code === "000000" ? "000001" : "000000"
+  expectThrows(() => recovery.completeLocalPasswordRecovery({
+    requestId: recoveryRequest.requestId, identifier: "employee.contract", code: wrongRecoveryCode,
+    password: "RecoveredPass123", channel: "admin_approval",
+  }), /invalid or expired/i)
+  assert.equal(db().prepare("SELECT attempts FROM password_recovery_requests WHERE id = ?").get(recoveryRequest.requestId).attempts, 1)
+  const recoveredSession = recovery.completeLocalPasswordRecovery({
+    requestId: recoveryRequest.requestId, identifier: "employee.contract", code: approvedRecovery.code,
+    password: "RecoveredPass123", channel: "admin_approval",
+  })
+  assert.equal(recoveredSession.userId, recreatedUser.userId)
+  auth.signOutLocal()
+  expectThrows(() => auth.signInLocal("employee.contract", "EmployeePass123"), /invalid account or password/i)
+  assert.equal(auth.signInLocal("employee.contract", "RecoveredPass123").userId, recreatedUser.userId)
+  expectThrows(() => recovery.completeLocalPasswordRecovery({
+    requestId: recoveryRequest.requestId, identifier: "employee.contract", code: approvedRecovery.code,
+    password: "ReplayPass123", channel: "admin_approval",
+  }), /invalid or expired/i)
+  await assert.rejects(() => recovery.requestLocalPasswordRecovery("employee.contract"), /two minutes/i)
+  auth.signOutLocal()
+  auth.signInLocal("contract.admin", "StrongPass123")
+  summary.authentication.passwordRecovery = { employeeApproval: true, attemptLimitPersisted: true, oneTimeCode: true, cooldown: true }
 
   const all = op("dbGetAll")
   const expectedContractKeys = ["weapons", "accessories", "ammunition", "shipments", "invoices", "payments", "customers", "suppliers", "auditLogs", "notifications", "users", "settings", "savedFilters", "inventoryProductTypes"]
@@ -419,7 +452,7 @@ try {
     before.close()
     await databaseModule.initDatabase()
     const afterVersion = Number(db().pragma("user_version", { simple: true }))
-    assert.equal(afterVersion, 14)
+    assert.equal(afterVersion, 16)
     assert.equal(tableCount("users"), beforeUsers)
     assert.equal(db().prepare("PRAGMA integrity_check").get().integrity_check, "ok")
     assert.equal(db().prepare("PRAGMA foreign_key_check").all().length, 0)

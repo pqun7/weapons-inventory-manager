@@ -9,7 +9,7 @@ Armory Store is an open-source desktop ERP for regulated inventory retailers. It
 
 > This software helps manage records; it does not replace licensing, background checks, transfer procedures, tax rules, export controls, or any other legal obligation. Operators are responsible for configuring and using it in accordance with every law applicable to their jurisdiction.
 
-## What's New in 1.1.7
+## What's New in 1.1.8
 
 - **Local store mode** — create a complete single-computer store backed by SQLite, with a local administrator account and no internet or Supabase requirement.
 - **Explicit storage selection** — first-run setup now clearly separates local SQLite from shared Supabase storage and preserves an existing local database when one is found.
@@ -20,6 +20,7 @@ Armory Store is an open-source desktop ERP for regulated inventory retailers. It
 - **Refined dashboard and weapon workspace** — clearer KPI interactions, profit visibility, editing flows, localized labels, and responsive presentation.
 - **Unified quality gate** — tests now live under `tests/`, and `npm test` runs type checking, linting, coverage, Python tests, and the SQLite provider integration test.
 - **Database setup navigation** — the login screen now includes a bilingual button that returns to database-provider setup without deleting the local SQLite database or saved Supabase connection.
+- **Protected password recovery** — employee resets require an administrator's in-app approval and a one-time code, while administrator resets use Gmail verification for both SQLite and Supabase stores. See [Password Recovery and Gmail SMTP](docs/PASSWORD_RECOVERY.md).
 
 ## Local Store with SQLite
 
@@ -94,6 +95,7 @@ A short, discoverable store code cannot be provided without operating a central 
 
 ### Administration, Recovery, and Common Issues
 
+- Password recovery is available below the sign-in form. Employee requests appear under **Settings → Users** for administrator approval; administrator requests are verified by email. Complete Gmail setup using [Password Recovery and Gmail SMTP](docs/PASSWORD_RECOVERY.md) before relying on administrator recovery.
 - The administrator can copy the connection code again or disconnect the device from **Settings → Store Connection**. Disconnecting removes only the connection and session from that device; it does not delete the Supabase project.
 - If `incompatible schema` appears, the project owner must update the database schema before employees can connect the new application version.
 - If a PostgreSQL connection is unavailable on an IPv4 network, use the **Session pooler** on port `5432` instead of a direct connection. Do not use port `6543` to apply migrations.

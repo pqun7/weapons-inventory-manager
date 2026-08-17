@@ -185,6 +185,22 @@ describe("Supabase security boundary", () => {
     expect(reliableActivation).toContain("Auth API status")
   })
 
+  it("protects password recovery with RLS, administrator approval, expiry, and durable attempt limits", () => {
+    const recovery = migration("20260817000100_password_recovery.sql")
+    expect(recovery).toContain("alter table public.password_recovery_requests enable row level security")
+    expect(recovery).toContain("revoke all on public.password_recovery_requests from public, anon, authenticated")
+    expect(recovery).toContain("if not public.is_app_admin() then")
+    expect(recovery).toContain("for update of r")
+    expect(recovery).toContain("interval '15 minutes'")
+    expect(recovery).toContain("recent_count >= 5")
+    expect(recovery).toContain("interval '2 minutes'")
+    expect(recovery).toContain("recovery.id::text || ':' || upper(btrim(p_code))")
+    expect(recovery).toContain("set attempts=attempts+1")
+    expect(recovery).toContain("return jsonb_build_object('success',false")
+    expect(recovery).toContain("grant execute on function public.approve_password_recovery(uuid) to authenticated")
+    expect(recovery).not.toContain("grant execute on function public.approve_password_recovery(uuid) to anon")
+  })
+
   it("keeps the production runtime independent from a local database", () => {
     const packageJson = read("package.json")
     const main = read("electron/main.ts")

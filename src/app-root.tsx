@@ -151,6 +151,8 @@ function ConnectedAppRoot({ provider }: { provider: DatabaseProvider }) {
                 onResolve={auth.resolveAccount}
                 onSignIn={auth.signIn}
                 onCompleteFirstLogin={auth.completeFirstLogin}
+                onRequestPasswordRecovery={auth.requestPasswordRecovery}
+                onCompletePasswordRecovery={auth.completePasswordRecovery}
                 onReturnToDatabaseSetup={returnToDatabaseSetup}
             />
         )

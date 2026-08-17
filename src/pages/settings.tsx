@@ -17,6 +17,7 @@ import { MasterDataPanel } from "@/components/master-data-panel"
 import { StoreConnectionPanel } from "@/components/store-connection-panel"
 import { getSupabaseClient } from "@/lib/supabase/client"
 import { getDatabaseProvider } from "@/lib/database-runtime"
+import type { ApprovedPasswordRecoveryRequest, PendingPasswordRecoveryRequest } from "@/lib/database-provider"
 import * as db from "@/lib/db"
 import { useStore } from "@/lib/store"
 import type { User, UserPermissions, UserRole } from "@/lib/types"
@@ -89,7 +90,9 @@ export function SettingsPage() {
         <TabsContent value="master"><MasterDataPanel readOnly={!admin} /></TabsContent>
         {admin && (
           <TabsContent value="users">
-            <Card>
+            <div className="grid gap-4">
+              <PasswordRecoveryRequestsPanel />
+              <Card>
               <CardHeader className="flex-row items-start justify-between gap-4">
                 <div>
                   <CardTitle className="flex items-center gap-2 text-base"><Shield className="size-4" />{t("settings.users")}</CardTitle>
@@ -114,7 +117,8 @@ export function SettingsPage() {
                   </Table>
                 </div>
               </CardContent>
-            </Card>
+              </Card>
+            </div>
           </TabsContent>
         )}
         {admin && <TabsContent value="store-connection"><StoreConnectionPanel /></TabsContent>}
@@ -168,6 +172,109 @@ export function SettingsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+function PasswordRecoveryRequestsPanel() {
+  const { t, lang } = useI18n()
+  const [requests, setRequests] = useState<PendingPasswordRecoveryRequest[]>([])
+  const [loading, setLoading] = useState(true)
+  const [approving, setApproving] = useState<string | null>(null)
+  const [approved, setApproved] = useState<ApprovedPasswordRecoveryRequest | null>(null)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      if (getDatabaseProvider() === "sqlite") {
+        const response = await window.electronAPI?.passwordRecovery.listPending()
+        if (!response?.success) throw new Error(response?.error ?? t("settings.recoveryLoadFailed"))
+        setRequests(response.data ?? [])
+        return
+      }
+      const { data, error } = await getSupabaseClient().rpc("list_pending_password_recovery")
+      if (error) throw new Error(error.message)
+      const rows = Array.isArray(data) ? data : []
+      setRequests(rows.flatMap((value) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return []
+        const row = value as Record<string, unknown>
+        if (typeof row.id !== "string" || typeof row.user_id !== "string" || typeof row.user_name !== "string" || typeof row.requested_at !== "string") return []
+        return [{ id: row.id, userId: row.user_id, userName: row.user_name, requestedAt: row.requested_at }]
+      }))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("settings.recoveryLoadFailed"))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void load() }, [])
+
+  const approve = async (requestId: string) => {
+    setApproving(requestId)
+    try {
+      let result: ApprovedPasswordRecoveryRequest
+      if (getDatabaseProvider() === "sqlite") {
+        const response = await window.electronAPI?.passwordRecovery.approve({ requestId })
+        if (!response?.success || !response.data) throw new Error(response?.error ?? t("settings.recoveryApproveFailed"))
+        result = response.data
+      } else {
+        const { data, error } = await getSupabaseClient().rpc("approve_password_recovery", { p_request_id: requestId })
+        if (error) throw new Error(error.message)
+        if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error(t("settings.recoveryApproveFailed"))
+        const row = data as Record<string, unknown>
+        if ([row.requestId, row.userId, row.userName, row.code, row.expiresAt].some((value) => typeof value !== "string")) {
+          throw new Error(t("settings.recoveryApproveFailed"))
+        }
+        result = row as unknown as ApprovedPasswordRecoveryRequest
+      }
+      setApproved(result)
+      setRequests((current) => current.filter((request) => request.id !== requestId))
+      toast.success(t("settings.recoveryApproved"))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("settings.recoveryApproveFailed"))
+    } finally {
+      setApproving(null)
+    }
+  }
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="flex-row items-start justify-between gap-4">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base"><KeyRound className="size-4" />{t("settings.recoveryRequests")}</CardTitle>
+            <CardDescription>{t("settings.recoveryRequestsHelp")}</CardDescription>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading}><RotateCcw className="size-4" />{t("settings.refreshRequests")}</Button>
+        </CardHeader>
+        <CardContent>
+          {loading ? <p className="text-sm text-muted-foreground">{t("auth.pleaseWait")}</p> : requests.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t("settings.noRecoveryRequests")}</p>
+          ) : (
+            <div className="overflow-hidden rounded-md border">
+              <Table>
+                <TableHeader><TableRow><TableHead>{t("common.name")}</TableHead><TableHead>{t("settings.requestedAt")}</TableHead><TableHead className="text-end">{t("common.actions")}</TableHead></TableRow></TableHeader>
+                <TableBody>{requests.map((request) => (
+                  <TableRow key={request.id}>
+                    <TableCell className="font-medium">{request.userName}</TableCell>
+                    <TableCell>{new Date(request.requestedAt).toLocaleString(lang === "ar" ? "ar-SA" : "en-US")}</TableCell>
+                    <TableCell className="text-end"><Button size="sm" onClick={() => void approve(request.id)} disabled={approving === request.id}>{approving === request.id ? t("auth.pleaseWait") : t("settings.approveRecovery")}</Button></TableCell>
+                  </TableRow>
+                ))}</TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      <Dialog open={Boolean(approved)} onOpenChange={(open) => { if (!open) setApproved(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>{t("settings.recoveryCodeTitle")}</DialogTitle><DialogDescription>{t("settings.recoveryCodeShareHelp", { name: approved?.userName ?? "" })}</DialogDescription></DialogHeader>
+          <div className="select-all rounded-md border bg-muted p-4 text-center font-mono text-3xl font-bold tracking-[0.3em]">{approved?.code}</div>
+          <p className="text-sm text-muted-foreground">{t("settings.recoveryCodeOnce")}</p>
+          <DialogFooter><Button onClick={() => setApproved(null)}>{t("settings.savedActivationCode")}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 

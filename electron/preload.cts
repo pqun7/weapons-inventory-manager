@@ -40,6 +40,12 @@ const electronAPI = {
     signOut: () => ipcRenderer.invoke("local-auth:sign-out"),
     updatePassword: (input: unknown) => ipcRenderer.invoke("local-auth:update-password", input),
   },
+  passwordRecovery: {
+    request: (input: unknown) => ipcRenderer.invoke("password-recovery:request", input),
+    complete: (input: unknown) => ipcRenderer.invoke("password-recovery:complete", input),
+    listPending: () => ipcRenderer.invoke("password-recovery:list-pending"),
+    approve: (input: unknown) => ipcRenderer.invoke("password-recovery:approve", input),
+  },
   accounts: {
     exportLoginGuide: (input: unknown) => ipcRenderer.invoke("account:export-login-guide", input),
   },

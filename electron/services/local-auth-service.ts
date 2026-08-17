@@ -261,3 +261,19 @@ export function updateLocalPassword(currentPassword: string, newPassword: string
   getDb().prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?")
     .run(hashPassword(newPassword), current.userId)
 }
+
+export function resetLocalPasswordWithRecovery(userId: string, newPassword: string): LocalSession {
+  const passwordHash = hashPassword(newPassword)
+  const row = getDb().prepare(`
+    SELECT id, username, name, role, password_set, password_hash, activation_token_hash,
+           activation_expires_at, is_active, failed_login_attempts, locked_until
+    FROM users WHERE id = ? AND is_active = 1
+  `).get(userId) as unknown as LocalUserRow | undefined
+  if (!row) throw new Error("Account not found or inactive")
+  getDb().prepare(`
+    UPDATE users SET password_hash = ?, password_set = 1, failed_login_attempts = 0,
+      locked_until = NULL, updated_at = datetime('now') WHERE id = ?
+  `).run(passwordHash, userId)
+  session = toSession(row)
+  return session
+}

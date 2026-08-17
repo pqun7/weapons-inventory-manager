@@ -115,6 +115,39 @@ export interface LocalSession {
   role: "Admin" | "Employee"
 }
 
+export type PasswordRecoveryChannel = "admin_approval" | "email"
+
+export interface PasswordRecoveryRequestResult {
+  requestId: string
+  channel: PasswordRecoveryChannel
+  destinationHint?: string
+  recoveryEmail?: string
+}
+
+export interface PasswordRecoveryCompleteInput {
+  requestId: string
+  identifier: string
+  code: string
+  password: string
+  channel: PasswordRecoveryChannel
+  recoveryEmail?: string
+}
+
+export interface PendingPasswordRecoveryRequest {
+  id: string
+  userId: string
+  userName: string
+  requestedAt: string
+}
+
+export interface ApprovedPasswordRecoveryRequest {
+  requestId: string
+  userId: string
+  userName: string
+  code: string
+  expiresAt: string
+}
+
 export interface ExportLoginGuideInput {
   userId: string
   accountName: string

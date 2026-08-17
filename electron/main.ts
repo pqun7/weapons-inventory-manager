@@ -54,6 +54,12 @@ const runtimeEnvironmentKeys = new Set([
   "VITE_SUPABASE_URL",
   "VITE_SUPABASE_PUBLISHABLE_KEY",
   "VITE_SUPABASE_ANON_KEY",
+  "SMTP_HOST",
+  "SMTP_PORT",
+  "SMTP_USER",
+  "SMTP_APP_PASSWORD",
+  "SMTP_FROM_EMAIL",
+  "SMTP_FROM_NAME",
 ])
 
 function loadRuntimeEnvironment(): void {

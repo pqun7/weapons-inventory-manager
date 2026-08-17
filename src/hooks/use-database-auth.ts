@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import type { Session } from "@supabase/supabase-js"
 import { getDatabaseProvider } from "@/lib/database-runtime"
 import { getSupabaseClient } from "@/lib/supabase/client"
-import type { LocalSession } from "@/lib/database-provider"
+import type { LocalSession, PasswordRecoveryCompleteInput, PasswordRecoveryRequestResult } from "@/lib/database-provider"
 
 export interface AccountResolution {
   passwordSet: boolean
@@ -26,6 +26,20 @@ function readLoginEmail(value: unknown): string {
     throw new Error("Password setup returned an invalid response")
   }
   return String((value as Record<string, unknown>).loginEmail)
+}
+
+function parseRecoveryRequest(value: unknown): PasswordRecoveryRequestResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Password recovery returned an invalid response")
+  const record = value as Record<string, unknown>
+  if (typeof record.requestId !== "string" || (record.channel !== "admin_approval" && record.channel !== "email")) {
+    throw new Error("Password recovery returned an invalid response")
+  }
+  return {
+    requestId: record.requestId,
+    channel: record.channel,
+    destinationHint: typeof record.destinationHint === "string" ? record.destinationHint : undefined,
+    recoveryEmail: typeof record.recoveryEmail === "string" ? record.recoveryEmail : undefined,
+  }
 }
 
 export async function signOutActiveDatabase(options?: { localOnly?: boolean }): Promise<void> {
@@ -132,10 +146,67 @@ export function useDatabaseAuth() {
     }
   }
 
+  const requestPasswordRecovery = async (identifier: string): Promise<PasswordRecoveryRequestResult> => {
+    setError(null)
+    if (provider === "sqlite") {
+      const response = await window.electronAPI?.passwordRecovery.request({ identifier })
+      if (!response?.success || !response.data) throw new Error(response?.error ?? "Password recovery request failed")
+      return response.data
+    }
+    const client = getSupabaseClient()
+    const { data, error: requestError } = await client.rpc("request_password_recovery", { p_identifier: identifier.trim() })
+    if (requestError) throw new Error(requestError.message)
+    const recovery = parseRecoveryRequest(data)
+    if (recovery.channel === "email") {
+      if (!recovery.recoveryEmail) throw new Error("The administrator recovery email is not configured")
+      const { error: emailError } = await client.auth.resetPasswordForEmail(recovery.recoveryEmail)
+      if (emailError) throw new Error(emailError.message)
+    }
+    return recovery
+  }
+
+  const completePasswordRecovery = async (input: PasswordRecoveryCompleteInput): Promise<void> => {
+    setError(null)
+    if (provider === "sqlite") {
+      const response = await window.electronAPI?.passwordRecovery.complete(input)
+      if (!response?.success || !response.data) throw new Error(response?.error ?? "Password recovery failed")
+      setSession(response.data)
+      return
+    }
+    const client = getSupabaseClient()
+    if (input.channel === "email") {
+      if (!input.recoveryEmail) throw new Error("The administrator recovery email is missing")
+      const { data: verified, error: verifyError } = await client.auth.verifyOtp({
+        email: input.recoveryEmail,
+        token: input.code.trim(),
+        type: "recovery",
+      })
+      if (verifyError || !verified.session) throw new Error(verifyError?.message ?? "Recovery code is invalid or expired")
+      const { error: updateError } = await client.auth.updateUser({ password: input.password })
+      if (updateError) throw new Error(updateError.message)
+      setSession(verified.session)
+      return
+    }
+    const { data, error: completeError } = await client.rpc("complete_employee_password_recovery", {
+      p_request_id: input.requestId,
+      p_identifier: input.identifier.trim(),
+      p_code: input.code.trim(),
+      p_password: input.password,
+    })
+    if (completeError) throw new Error(completeError.message)
+    if (data && typeof data === "object" && !Array.isArray(data) && "success" in data && data.success === false) {
+      throw new Error(typeof data.error === "string" ? data.error : "Recovery code is invalid or expired")
+    }
+    const loginEmail = readLoginEmail(data)
+    const { data: signedIn, error: signInError } = await client.auth.signInWithPassword({ email: loginEmail, password: input.password })
+    if (signInError || !signedIn.session) throw new Error(signInError?.message ?? "Sign-in failed")
+    setSession(signedIn.session)
+  }
+
   const signOut = async (): Promise<void> => {
     await signOutActiveDatabase()
     setSession(null)
   }
 
-  return { session, loading, error, resolveAccount, signIn, completeFirstLogin, signOut }
+  return { session, loading, error, resolveAccount, signIn, completeFirstLogin, requestPasswordRecovery, completePasswordRecovery, signOut }
 }

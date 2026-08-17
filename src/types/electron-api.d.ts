@@ -25,6 +25,10 @@ import type {
   MigrateSupabaseToSqliteInput,
   ProviderMigrationProgressStage,
   ProviderMigrationResult,
+  PasswordRecoveryCompleteInput,
+  PasswordRecoveryRequestResult,
+  PendingPasswordRecoveryRequest,
+  ApprovedPasswordRecoveryRequest,
   StorageBootstrapState,
   StorageSetupProgressStage,
 } from "../lib/database-provider"
@@ -63,6 +67,12 @@ export interface ElectronAPI {
     claim: (input: { identifier: string; activationCode: string; password: string }) => Promise<IpcResult<LocalSession>>
     signOut: () => Promise<IpcResult<void>>
     updatePassword: (input: { currentPassword: string; newPassword: string }) => Promise<IpcResult<void>>
+  }
+  passwordRecovery: {
+    request: (input: { identifier: string }) => Promise<IpcResult<PasswordRecoveryRequestResult>>
+    complete: (input: PasswordRecoveryCompleteInput) => Promise<IpcResult<LocalSession>>
+    listPending: () => Promise<IpcResult<PendingPasswordRecoveryRequest[]>>
+    approve: (input: { requestId: string }) => Promise<IpcResult<ApprovedPasswordRecoveryRequest>>
   }
   accounts: {
     exportLoginGuide: (input: ExportLoginGuideInput) => Promise<IpcResult<ExportLoginGuideResult>>

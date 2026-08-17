@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 16;
 
 export const CONFIGURE_INITIAL_CURRENCIES_V5_SQL = `
 UPDATE currencies
@@ -405,6 +405,24 @@ CREATE TABLE IF NOT EXISTS users (
   password_set  INTEGER NOT NULL DEFAULT 0,
   password_hash TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS password_recovery_requests (
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  account_role  TEXT NOT NULL CHECK (account_role IN ('Admin','Employee')),
+  status        TEXT NOT NULL CHECK (status IN ('pending','approved','completed','cancelled')),
+  code_hash     TEXT,
+  attempts      INTEGER NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 5),
+  requested_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at    TEXT,
+  approved_by   TEXT REFERENCES users(id) ON DELETE SET NULL,
+  approved_at   TEXT,
+  completed_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_password_recovery_user_time
+  ON password_recovery_requests(user_id, requested_at DESC);
+CREATE INDEX IF NOT EXISTS idx_password_recovery_pending
+  ON password_recovery_requests(status, requested_at DESC);
 
 CREATE TABLE IF NOT EXISTS system_settings (
   id                      INTEGER PRIMARY KEY CHECK (id = 1),
