@@ -64,6 +64,11 @@ export async function initializeSelectedProvider(): Promise<{
   const connection = readStoredConnection()
   if (!connection) throw new Error("The selected Supabase connection is missing or damaged")
   const verified = await verifyStoreConnection(connection.supabaseUrl, connection.publishableKey)
+  if (connection.schemaVersion !== verified.schemaVersion
+    || connection.storeName !== verified.storeName
+    || connection.installationId !== verified.installationId) {
+    saveStoredConnection(verified)
+  }
   return {
     config: stored.config,
     health: {

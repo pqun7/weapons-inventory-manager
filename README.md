@@ -9,7 +9,7 @@ Armory Store is an open-source desktop ERP for regulated inventory retailers. It
 
 > This software helps manage records; it does not replace licensing, background checks, transfer procedures, tax rules, export controls, or any other legal obligation. Operators are responsible for configuring and using it in accordance with every law applicable to their jurisdiction.
 
-## What's New in 1.1.8
+## What's New in 1.1.9
 
 - **Local store mode** — create a complete single-computer store backed by SQLite, with a local administrator account and no internet or Supabase requirement.
 - **Explicit storage selection** — first-run setup now clearly separates local SQLite from shared Supabase storage and preserves an existing local database when one is found.
@@ -21,6 +21,7 @@ Armory Store is an open-source desktop ERP for regulated inventory retailers. It
 - **Unified quality gate** — tests now live under `tests/`, and `npm test` runs type checking, linting, coverage, Python tests, and the SQLite provider integration test.
 - **Database setup navigation** — the login screen now includes a bilingual button that returns to database-provider setup without deleting the local SQLite database or saved Supabase connection.
 - **Protected password recovery** — employee resets require an administrator's in-app approval and a one-time code, while administrator resets use Gmail verification for both SQLite and Supabase stores. See [Password Recovery and Gmail SMTP](docs/PASSWORD_RECOVERY.md).
+- **Supabase upgrade compatibility** — saved public connection metadata from an earlier schema is revalidated and refreshed after migrations instead of being incorrectly reported as damaged.
 
 ## Local Store with SQLite
 

@@ -201,6 +201,12 @@ describe("Supabase security boundary", () => {
     expect(recovery).not.toContain("grant execute on function public.approve_password_recovery(uuid) to anon")
   })
 
+  it("publishes the latest installation compatibility version after password recovery migrations", () => {
+    const compatibility = migration("20260817000200_password_recovery_connection_compatibility.sql")
+    expect(compatibility).toContain("update public.app_installation")
+    expect(compatibility).toContain("schema_version = '20260817000200'")
+  })
+
   it("keeps the production runtime independent from a local database", () => {
     const packageJson = read("package.json")
     const main = read("electron/main.ts")

@@ -683,7 +683,7 @@ function validatedStoredConnection(value: unknown): StoreConnectionConfiguration
   if (typeof record.storeName !== "string"
     || typeof record.installationId !== "string"
     || typeof record.schemaVersion !== "string"
-    || record.schemaVersion !== REQUIRED_SCHEMA_VERSION) {
+    || !/^\d{14}$/.test(record.schemaVersion)) {
     throw new Error("Invalid stored connection")
   }
   return {

@@ -57,6 +57,14 @@ describe("Electron storage IPC boundary", () => {
     expect(panel).toContain('sessionStorage.setItem("armory-store:disconnect-notice"')
   })
 
+  it("revalidates older saved Supabase metadata instead of treating it as damaged", () => {
+    const store = source("electron/services/store-installation-service.ts")
+    const manager = source("electron/services/database-provider-manager.ts")
+    expect(store).toContain('!/^\\d{14}$/.test(record.schemaVersion)')
+    expect(store).not.toContain("record.schemaVersion !== REQUIRED_SCHEMA_VERSION")
+    expect(manager).toContain("saveStoredConnection(verified)")
+  })
+
   it("keeps local password recovery behind validated, role-checked IPC methods", () => {
     const preload = source("electron/preload.cts")
     const storage = source("electron/ipc/storage-handler.ts")
