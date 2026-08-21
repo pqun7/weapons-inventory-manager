@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { Bell, CheckCheck, X, AlertTriangle, Package, TrendingDown, Database, Truck } from "lucide-react"
+import { Bell, X, AlertTriangle, Package, TrendingDown, Database, Truck, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -54,12 +54,15 @@ export function NotificationCenter() {
   const markRead = useStore((s) => s.markNotificationRead)
   const markAllRead = useStore((s) => s.markAllNotificationsRead)
   const dismiss = useStore((s) => s.dismissNotification)
+  const clearNotifications = useStore((s) => s.clearNotifications)
   const shipments = useStore((s) => s.shipments)
   const receiveScheduledShipment = useStore((s) => s.receiveScheduledShipment)
   const { navigate, setFinancialFilter } = useNav()
   const { t } = useI18n()
   const [filterUnread, setFilterUnread] = useState(false)
   const [arrivalBusy, setArrivalBusy] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+  const [clearing, setClearing] = useState(false)
 
   const confirmArrival = async (shipmentId: string) => {
     setArrivalBusy(shipmentId)
@@ -69,11 +72,33 @@ export function NotificationCenter() {
     setArrivalBusy(null)
   }
 
-  const unreadCount = notifications.filter((n) => !n.read).length
+  const unreadCount = useMemo(() => notifications.reduce((count, notification) => count + (notification.read ? 0 : 1), 0), [notifications])
   const displayed = useMemo(
     () => filterUnread ? notifications.filter((n) => !n.read) : notifications,
     [notifications, filterUnread]
   )
+  const scheduledShipmentById = useMemo(
+    () => new Map(shipments.filter((shipment) => shipment.workflowStatus === "scheduled").map((shipment) => [shipment.id, shipment])),
+    [shipments],
+  )
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen)
+    if (!nextOpen) return
+    setFilterUnread(false)
+    if (unreadCount > 0) {
+      void markAllRead().then((result) => {
+        if (!result.success) toast.error(result.error ?? t("notif.markReadFailed"))
+      })
+    }
+  }
+
+  const handleClear = async () => {
+    setClearing(true)
+    const result = await clearNotifications()
+    if (!result.success) toast.error(result.error ?? t("notif.clearFailed"))
+    setClearing(false)
+  }
 
   const handleNotifClick = (notifType: NotificationType, _entityId: string | null) => {
     if (notifType === "OverdueDebt") {
@@ -87,9 +112,9 @@ export function NotificationCenter() {
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm" className="relative">
+        <Button variant="ghost" size="icon-sm" className="relative" aria-label={t("notif.open")}>
           <Bell className="size-4" />
           {unreadCount > 0 && (
             <span className="absolute -right-0.5 -top-0.5 flex size-4 items-center justify-center rounded-full bg-status-sold text-[10px] font-bold text-status-sold-fg">
@@ -115,9 +140,9 @@ export function NotificationCenter() {
             >
               {t("notif.unread")}
             </Button>
-            <Button size="xs" variant="ghost" onClick={markAllRead} className="h-6" disabled={unreadCount === 0}>
-              <CheckCheck className="size-3" />
-              {t("notif.all")}
+            <Button size="xs" variant="ghost" onClick={() => void handleClear()} className="h-6" disabled={notifications.length === 0 || clearing}>
+              <Trash2 className="size-3" />
+              {t("notif.clearAll")}
             </Button>
           </div>
         </div>
@@ -128,7 +153,7 @@ export function NotificationCenter() {
               {displayed.map((n) => {
                 const Icon = NOTIF_ICONS[n.type]
                 const colorClass = NOTIF_COLORS[n.type]
-                const scheduledShipment = shipments.find((shipment) => shipment.id === n.entityId && shipment.workflowStatus === "scheduled")
+                const scheduledShipment = n.entityId ? scheduledShipmentById.get(n.entityId) : undefined
                 return (
                   <div
                     key={n.id}
@@ -138,7 +163,8 @@ export function NotificationCenter() {
                     <div
                       className="flex min-w-0 flex-1 cursor-pointer flex-col"
                       onClick={() => {
-                        markRead(n.id)
+                        void markRead(n.id)
+                        setOpen(false)
                         handleNotifClick(n.type, n.entityId)
                       }}
                     >
@@ -148,7 +174,7 @@ export function NotificationCenter() {
                       {scheduledShipment && (
                         <div className="mt-2 flex gap-1">
                           <Button size="xs" className="h-6 text-[10px]" disabled={arrivalBusy === scheduledShipment.id} onClick={(event) => { event.stopPropagation(); void confirmArrival(scheduledShipment.id) }}>✓ {t("ship.shipmentArrived")}</Button>
-                          <Button size="xs" variant="outline" className="h-6 text-[10px]" onClick={(event) => { event.stopPropagation(); markRead(n.id); navigate("shipments") }}>{t("ship.notArrivedYet")}</Button>
+                          <Button size="xs" variant="outline" className="h-6 text-[10px]" onClick={(event) => { event.stopPropagation(); void markRead(n.id); setOpen(false); navigate("shipments") }}>{t("ship.notArrivedYet")}</Button>
                         </div>
                       )}
                     </div>
@@ -156,7 +182,8 @@ export function NotificationCenter() {
                       size="icon-xs"
                       variant="ghost"
                       className="opacity-0 group-hover:opacity-100"
-                      onClick={() => dismiss(n.id)}
+                      aria-label={t("notif.dismiss")}
+                      onClick={() => void dismiss(n.id).then((result) => { if (!result.success) toast.error(result.error ?? t("notif.dismissFailed")) })}
                     >
                       <X className="size-3" />
                     </Button>
@@ -172,7 +199,7 @@ export function NotificationCenter() {
         </ScrollArea>
         <DropdownMenuSeparator />
         <div className="flex items-center justify-center p-2">
-          <Button size="sm" variant="ghost" className="w-full" onClick={() => setFilterUnread(false)}>
+          <Button size="sm" variant="ghost" className="w-full" onClick={() => { setOpen(false); navigate("audit") }}>
             {t("notif.viewAll")}
           </Button>
         </div>

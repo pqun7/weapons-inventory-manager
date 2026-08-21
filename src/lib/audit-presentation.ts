@@ -2,6 +2,7 @@ import type { AuditActionType, AuditLog } from "@/lib/types"
 
 export type AuditTranslator = (key: string, params?: Record<string, string | number>) => string
 export type AuditMetadataGroup = "identity" | "money" | "changes" | "details"
+export interface AuditChangeRow { key: string; before: unknown; after: unknown }
 
 const SENSITIVE_KEY = /(password|secret|token|authorization|cookie|base64|imageData|fileData)/i
 const MONEY_KEY = /(amount|price|cost|total|subtotal|tax|paid|balance|rate|currency)/i
@@ -92,10 +93,33 @@ export function groupedAuditMetadata(metadata: Record<string, unknown> | null): 
   }
   if (!metadata) return groups
   for (const [key, value] of Object.entries(metadata)) {
-    if (!isSafeAuditKey(key) || value === undefined) continue
+    if (!isSafeAuditKey(key) || value === undefined || key === "previousValues" || key === "newValues") continue
     groups[auditMetadataGroup(key)].push([key, value])
   }
   return groups
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+export function auditChangeRows(metadata: Record<string, unknown> | null): AuditChangeRow[] {
+  if (!metadata) return []
+  const before = recordValue(metadata.previousValues)
+  const after = recordValue(metadata.newValues)
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])]
+    .filter(isSafeAuditKey)
+    .filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
+    .map((key) => ({ key, before: before[key], after: after[key] }))
+}
+
+export function auditOperationExplanation(
+  log: AuditLog,
+  metadata: Record<string, unknown> | null,
+  t: AuditTranslator,
+  actorName?: string,
+): string {
+  return t("audit.operationExplanation", { summary: auditSummary(log, metadata, t, actorName) })
 }
 
 export function humanizeAuditKey(key: string, t: AuditTranslator): string {

@@ -7,6 +7,11 @@ import type {
   LocalSession,
 } from "../../src/lib/database-provider.js"
 import type { UserPermissions } from "../../src/lib/types.js"
+import {
+  readSecureAuthValue,
+  removeSecureAuthValue,
+  writeSecureAuthValue,
+} from "./secure-auth-storage-service.js"
 
 const PASSWORD_N = 32_768
 const PASSWORD_R = 8
@@ -15,6 +20,7 @@ const PASSWORD_KEY_LENGTH = 64
 const MAX_FAILED_ATTEMPTS = 5
 const LOCK_DURATION_MS = 15 * 60 * 1_000
 const ACTIVATION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1_000
+const LOCAL_SESSION_STORAGE_KEY = "sqlite-local-session"
 
 const ADMIN_PERMISSIONS: UserPermissions = {
   canImportExcel: true,
@@ -61,6 +67,23 @@ interface LocalUserRow {
 }
 
 let session: LocalSession | null = null
+
+function sessionTokenHash(token: string): string {
+  return createHash("sha256").update(`local-session-v1:${token}`, "utf8").digest("hex")
+}
+
+function readStoredSessionToken(): string | null {
+  let token: string | null
+  try {
+    token = readSecureAuthValue(LOCAL_SESSION_STORAGE_KEY)
+  } catch {
+    return null
+  }
+  if (!token) return null
+  if (/^[A-Za-z0-9_-]{43}$/.test(token)) return token
+  try { removeSecureAuthValue(LOCAL_SESSION_STORAGE_KEY) } catch { /* corrupt sessions remain unusable */ }
+  return null
+}
 
 function normalizedIdentifier(value: string): string {
   const identifier = value.trim().toLocaleLowerCase("en")
@@ -122,6 +145,33 @@ function account(identifier: string): LocalUserRow | undefined {
 
 function toSession(row: LocalUserRow): LocalSession {
   return { userId: row.id, username: row.username, name: row.name, role: row.role }
+}
+
+function activeUserById(userId: string): LocalUserRow | undefined {
+  return getDb().prepare(`
+    SELECT id, username, name, role, password_set, password_hash, activation_token_hash,
+           activation_expires_at, is_active, failed_login_attempts, locked_until
+    FROM users WHERE id = ? AND is_active = 1 AND password_set = 1
+  `).get(userId) as unknown as LocalUserRow | undefined
+}
+
+function rememberSession(row: LocalUserRow): LocalSession {
+  const database = getDb()
+  const previousToken = readStoredSessionToken()
+  if (previousToken) database.prepare("DELETE FROM local_auth_sessions WHERE token_hash = ?").run(sessionTokenHash(previousToken))
+
+  const token = randomBytes(32).toString("base64url")
+  const tokenHash = sessionTokenHash(token)
+  database.prepare("INSERT INTO local_auth_sessions(id, user_id, token_hash) VALUES (?, ?, ?)")
+    .run(randomUUID(), row.id, tokenHash)
+  try {
+    writeSecureAuthValue(LOCAL_SESSION_STORAGE_KEY, token)
+  } catch (error) {
+    database.prepare("DELETE FROM local_auth_sessions WHERE token_hash = ?").run(tokenHash)
+    throw error
+  }
+  session = toSession(row)
+  return session
 }
 
 function auditAttempt(identifier: string, succeeded: boolean): void {
@@ -197,8 +247,7 @@ export function signInLocal(rawIdentifier: string, password: string): LocalSessi
   }
   getDb().prepare("UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?").run(row.id)
   auditAttempt(identifier, true)
-  session = toSession(row)
-  return session
+  return rememberSession(row)
 }
 
 export function claimLocalAccount(rawIdentifier: string, activationCode: string, password: string): LocalSession {
@@ -217,8 +266,7 @@ export function claimLocalAccount(rawIdentifier: string, activationCode: string,
       activation_expires_at = NULL, failed_login_attempts = 0, locked_until = NULL, updated_at = datetime('now')
     WHERE id = ?
   `).run(passwordHash, row.id)
-  session = toSession(row)
-  return session
+  return rememberSession(row)
 }
 
 export function createLocalActivationCode(userId: string): string {
@@ -238,16 +286,53 @@ export function createLocalActivationCode(userId: string): string {
 }
 
 export function getLocalSession(): LocalSession | null {
+  if (session) {
+    const current = activeUserById(session.userId)
+    if (current) {
+      session = toSession(current)
+      return session
+    }
+    signOutLocal()
+    return null
+  }
+
+  const token = readStoredSessionToken()
+  if (!token) return null
+  const row = getDb().prepare(`
+    SELECT u.id, u.username, u.name, u.role, u.password_set, u.password_hash,
+           u.activation_token_hash, u.activation_expires_at, u.is_active,
+           u.failed_login_attempts, u.locked_until
+    FROM local_auth_sessions s
+    JOIN users u ON u.id = s.user_id
+    WHERE s.token_hash = ? AND u.is_active = 1 AND u.password_set = 1
+    LIMIT 1
+  `).get(sessionTokenHash(token)) as unknown as LocalUserRow | undefined
+  if (!row) {
+    try { removeSecureAuthValue(LOCAL_SESSION_STORAGE_KEY) } catch { /* invalid sessions remain signed out */ }
+    return null
+  }
+  getDb().prepare("UPDATE local_auth_sessions SET last_used_at = datetime('now') WHERE token_hash = ?")
+    .run(sessionTokenHash(token))
+  session = toSession(row)
   return session
 }
 
 export function requireLocalSession(): LocalSession {
-  if (!session) throw new Error("Authentication is required")
-  return session
+  const current = getLocalSession()
+  if (!current) throw new Error("Authentication is required")
+  return current
 }
 
 export function signOutLocal(): void {
-  session = null
+  const token = readStoredSessionToken()
+  let databaseError: unknown = null
+  if (token) {
+    try { getDb().prepare("DELETE FROM local_auth_sessions WHERE token_hash = ?").run(sessionTokenHash(token)) }
+    catch (error) { databaseError = error }
+  }
+  try { removeSecureAuthValue(LOCAL_SESSION_STORAGE_KEY) }
+  finally { session = null }
+  if (databaseError) throw databaseError
 }
 
 export function closeLocalAuth(): void {
@@ -274,6 +359,5 @@ export function resetLocalPasswordWithRecovery(userId: string, newPassword: stri
     UPDATE users SET password_hash = ?, password_set = 1, failed_login_attempts = 0,
       locked_until = NULL, updated_at = datetime('now') WHERE id = ?
   `).run(passwordHash, userId)
-  session = toSession(row)
-  return session
+  return rememberSession(row)
 }

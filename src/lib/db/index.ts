@@ -72,7 +72,8 @@ export const dbInsertSupplier: SupabaseDatabaseModule["dbInsertSupplier"] = (...
 export const dbInsertAuditLog: SupabaseDatabaseModule["dbInsertAuditLog"] = (...args) => routeOperation("dbInsertAuditLog", args) as ReturnType<SupabaseDatabaseModule["dbInsertAuditLog"]>
 export const dbInsertNotification: SupabaseDatabaseModule["dbInsertNotification"] = (...args) => routeOperation("dbInsertNotification", args) as ReturnType<SupabaseDatabaseModule["dbInsertNotification"]>
 export const dbUpdateNotification: SupabaseDatabaseModule["dbUpdateNotification"] = (...args) => routeOperation("dbUpdateNotification", args) as ReturnType<SupabaseDatabaseModule["dbUpdateNotification"]>
-export const dbMarkAllNotificationsRead: SupabaseDatabaseModule["dbMarkAllNotificationsRead"] = (...args) => routeOperation("dbMarkAllNotificationsRead", args) as ReturnType<SupabaseDatabaseModule["dbMarkAllNotificationsRead"]>
+export const dbMarkNotificationsRead: SupabaseDatabaseModule["dbMarkNotificationsRead"] = (...args) => routeOperation("dbMarkNotificationsRead", args) as ReturnType<SupabaseDatabaseModule["dbMarkNotificationsRead"]>
+export const dbDismissNotifications: SupabaseDatabaseModule["dbDismissNotifications"] = (...args) => routeOperation("dbDismissNotifications", args) as ReturnType<SupabaseDatabaseModule["dbDismissNotifications"]>
 export const dbDeleteNotification: SupabaseDatabaseModule["dbDeleteNotification"] = (...args) => routeOperation("dbDeleteNotification", args) as ReturnType<SupabaseDatabaseModule["dbDeleteNotification"]>
 export const dbCreateNotification: SupabaseDatabaseModule["dbCreateNotification"] = (...args) => routeOperation("dbCreateNotification", args) as ReturnType<SupabaseDatabaseModule["dbCreateNotification"]>
 export const dbFlagOverdueShipments: SupabaseDatabaseModule["dbFlagOverdueShipments"] = (...args) => routeOperation("dbFlagOverdueShipments", args) as ReturnType<SupabaseDatabaseModule["dbFlagOverdueShipments"]>
