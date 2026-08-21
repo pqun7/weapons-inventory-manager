@@ -488,7 +488,7 @@ export function executeSqliteDatabaseOperation(operation: SqliteDatabaseOperatio
   const user = currentUser()
   switch (operation) {
     case "dbGetCurrentUserId": return user.id
-    case "dbGetAll": return repo.getAll()
+    case "dbGetAll": return repo.getAll(user.id)
     case "dbGetMasterData": return repo.getMasterData()
     case "dbGetSettings": return repo.getSettings()
     case "dbUpdateSettings": repo.updateSettings(value<SystemSettings>(args, 0)); return undefined
@@ -522,7 +522,30 @@ export function executeSqliteDatabaseOperation(operation: SqliteDatabaseOperatio
     case "dbInsertAuditLog": repo.insertAuditLog(value<AuditLog>(args, 0)); return undefined
     case "dbInsertNotification": repo.insertNotification(value<AppNotification>(args, 0)); return undefined
     case "dbUpdateNotification": repo.updateNotification(value<AppNotification>(args, 0)); return undefined
-    case "dbMarkAllNotificationsRead": getDb().prepare("UPDATE app_notifications SET is_read = 1 WHERE user_id IS NULL OR user_id = ?").run(user.id); return undefined
+    case "dbMarkNotificationsRead": {
+      const ids = [...new Set(value<string[]>(args, 0).filter((id) => typeof id === "string" && id.trim()))].slice(0, 1000)
+      const upsert = getDb().prepare(`
+        INSERT INTO notification_user_state(notification_id,user_id,read_at,dismissed_at,updated_at)
+        SELECT id, ?, datetime('now'), NULL, datetime('now') FROM app_notifications
+        WHERE id = ? AND (user_id IS NULL OR user_id = ?)
+        ON CONFLICT(notification_id,user_id) DO UPDATE SET
+          read_at=excluded.read_at,dismissed_at=NULL,updated_at=excluded.updated_at
+      `)
+      getDb().transaction(() => { for (const id of ids) upsert.run(user.id, id, user.id) })()
+      return undefined
+    }
+    case "dbDismissNotifications": {
+      const ids = [...new Set(value<string[]>(args, 0).filter((id) => typeof id === "string" && id.trim()))].slice(0, 1000)
+      const upsert = getDb().prepare(`
+        INSERT INTO notification_user_state(notification_id,user_id,read_at,dismissed_at,updated_at)
+        SELECT id, ?, datetime('now'), datetime('now'), datetime('now') FROM app_notifications
+        WHERE id = ? AND (user_id IS NULL OR user_id = ?)
+        ON CONFLICT(notification_id,user_id) DO UPDATE SET
+          read_at=excluded.read_at,dismissed_at=excluded.dismissed_at,updated_at=excluded.updated_at
+      `)
+      getDb().transaction(() => { for (const id of ids) upsert.run(user.id, id, user.id) })()
+      return undefined
+    }
     case "dbDeleteNotification": repo.deleteNotification(text(args, 0, "Notification ID")); return undefined
     case "dbCreateNotification": repo.insertNotification({ id: `N-${randomUUID()}`, type: text(args, 0, "Type") as AppNotification["type"], title: text(args, 1, "Title"), message: text(args, 2, "Message"), date: new Date().toISOString(), read: false, entityId: typeof args[3] === "string" ? args[3] : null }); return undefined
     case "dbFlagOverdueShipments": getDb().prepare("UPDATE shipments SET status = 'Delayed' WHERE expected_arrival_date < date('now') AND status NOT IN ('Received','Cancelled')").run(); return undefined

@@ -128,7 +128,7 @@ export async function dbGetAll(): Promise<AllData> {
     masterData,
     weaponsResult, accessoriesResult, ammunitionResult, shipmentsResult,
     invoicesResult, paymentsResult, customersResult, suppliersResult,
-    auditResult, notificationsResult, usersResult, settingsResult, filtersResult,
+    auditResult, notificationsResult, notificationStateResult, usersResult, settingsResult, filtersResult,
     productCostsResult, inventoryCostsResult, shipmentCostsResult, shipmentScopesResult, shipmentAllocationsResult,
     productTypesResult,
   ] = await Promise.all([
@@ -143,6 +143,7 @@ export async function dbGetAll(): Promise<AllData> {
     client.from("suppliers").select(SUPPLIER_COLUMNS).order("date_added", { ascending: false }).limit(5000),
     client.from("audit_logs").select(AUDIT_COLUMNS).order("timestamp", { ascending: false }).limit(1000),
     client.from("app_notifications").select(NOTIFICATION_COLUMNS).order("date", { ascending: false }).limit(500),
+    client.from("notification_user_state").select("notification_id,read_at,dismissed_at").limit(1000),
     // Deleted accounts are retained server-side for referential integrity and audit history,
     // but must never be restored into the active user list on the next bootstrap.
     client.from("users").select(USER_COLUMNS).eq("is_active", true).order("id", { ascending: true }).limit(500),
@@ -234,6 +235,10 @@ export async function dbGetAll(): Promise<AllData> {
     .map((row) => mappers.rowToShipment(asMapperInput<typeof mappers.rowToShipment>(row)))
     .map((shipment) => ({ ...shipment, additionalCosts: shipmentCostsByShipment.get(shipment.id) ?? [] }))
 
+  const notificationState = new Map(
+    requireRows(notificationStateResult.data, notificationStateResult.error, "Load notification state")
+      .map((row) => [String(row.notification_id), row] as const),
+  )
   const allData: AllData = {
     weapons,
     accessories,
@@ -250,7 +255,11 @@ export async function dbGetAll(): Promise<AllData> {
     auditLogs: requireRows(auditResult.data, auditResult.error, "Load audit logs")
       .map((row) => mappers.rowToAuditLog(asMapperInput<typeof mappers.rowToAuditLog>(row))),
     notifications: requireRows(notificationsResult.data, notificationsResult.error, "Load notifications")
-      .map((row) => mappers.rowToNotification(asMapperInput<typeof mappers.rowToNotification>(row))),
+      .filter((row) => notificationState.get(String(row.id))?.dismissed_at == null)
+      .map((row) => mappers.rowToNotification(asMapperInput<typeof mappers.rowToNotification>({
+        ...row,
+        is_read: row.is_read === true || notificationState.get(String(row.id))?.read_at != null,
+      }))),
     users: requireRows(usersResult.data, usersResult.error, "Load users")
       .map((row) => mappers.rowToUser(asMapperInput<typeof mappers.rowToUser>(row))),
     settings: mappers.rowToSettings(asMapperInput<typeof mappers.rowToSettings>(
@@ -356,11 +365,19 @@ export async function dbInsertSupplier(supplier: Supplier): Promise<void> { awai
 export async function dbInsertAuditLog(log: AuditLog): Promise<void> { await insertRow("audit_logs", mappers.auditLogToRow(log), "Insert audit log") }
 export async function dbInsertNotification(notification: AppNotification): Promise<void> { await insertRow("app_notifications", mappers.notificationToRow(notification), "Insert notification") }
 export async function dbUpdateNotification(notification: AppNotification): Promise<void> { await updateRow("app_notifications", notification.id, mappers.notificationToRow(notification), "Update notification") }
-export async function dbMarkAllNotificationsRead(): Promise<void> {
-  const userId = await dbGetCurrentUserId()
-  const { error } = await getSupabaseClient().from("app_notifications").update({ is_read: true })
-    .eq("user_id", userId).eq("is_read", false)
+export async function dbMarkNotificationsRead(notificationIds: string[]): Promise<void> {
+  if (notificationIds.length === 0) return
+  const { error } = await getSupabaseClient().rpc("set_notification_user_state", {
+    p_notification_ids: [...new Set(notificationIds)].slice(0, 1000), p_dismissed: false,
+  })
   if (error) throw new Error(`Mark notifications read: ${error.message}`)
+}
+export async function dbDismissNotifications(notificationIds: string[]): Promise<void> {
+  if (notificationIds.length === 0) return
+  const { error } = await getSupabaseClient().rpc("set_notification_user_state", {
+    p_notification_ids: [...new Set(notificationIds)].slice(0, 1000), p_dismissed: true,
+  })
+  if (error) throw new Error(`Dismiss notifications: ${error.message}`)
 }
 export async function dbDeleteNotification(id: string): Promise<void> {
   const { error } = await getSupabaseClient().from("app_notifications").delete().eq("id", id)

@@ -33,6 +33,11 @@ import {
   listPendingLocalPasswordRecoveries,
   requestLocalPasswordRecovery,
 } from "../services/password-recovery-service.js"
+import {
+  readSecureAuthValue,
+  removeSecureAuthValue,
+  writeSecureAuthValue,
+} from "../services/secure-auth-storage-service.js"
 
 const sqliteSetupSchema = z.object({
   storeName: z.string().trim().min(1).max(120),
@@ -80,6 +85,10 @@ const recoveryCompleteSchema = z.object({
   channel: z.enum(["admin_approval", "email"]),
   recoveryEmail: z.string().email().max(254).optional(),
 }).strict()
+// Renderer access is limited to Supabase SDK keys. The SQLite session token is
+// deliberately main-process-only and can never be requested through preload.
+const authStorageKeySchema = z.string().trim().min(1).max(200).regex(/^weapon-store-auth-[A-Za-z0-9._:-]+$/)
+const authStorageValueSchema = z.string().max(2 * 1024 * 1024)
 
 function safeError(error: unknown): string {
   const raw = error instanceof Error ? error.message : "The operation failed"
@@ -110,6 +119,7 @@ export function registerStorageHandlers(): void {
     "storage:get-bootstrap", "storage:initialize-selected", "storage:return-to-setup", "storage:setup-sqlite", "storage:activate-supabase",
     "local-auth:get-session", "local-auth:resolve", "local-auth:sign-in", "local-auth:claim", "local-auth:sign-out",
     "local-auth:update-password", "database:invoke", "account:export-login-guide",
+    "auth-storage:get", "auth-storage:set", "auth-storage:remove",
     "storage:migrate-to-supabase", "storage:migrate-to-sqlite",
     "password-recovery:request", "password-recovery:complete", "password-recovery:list-pending", "password-recovery:approve",
   ]) ipcMain.removeHandler(channel)
@@ -159,6 +169,12 @@ export function registerStorageHandlers(): void {
     const parsed = z.object({ currentPassword: authPasswordSchema, newPassword: authPasswordSchema }).strict().parse(input)
     updateLocalPassword(parsed.currentPassword, parsed.newPassword)
   }))
+  ipcMain.handle("auth-storage:get", (_event, input: unknown) => result(() => readSecureAuthValue(authStorageKeySchema.parse(input))))
+  ipcMain.handle("auth-storage:set", (_event, input: unknown) => result(() => {
+    const parsed = z.object({ key: authStorageKeySchema, value: authStorageValueSchema }).strict().parse(input)
+    writeSecureAuthValue(parsed.key, parsed.value)
+  }))
+  ipcMain.handle("auth-storage:remove", (_event, input: unknown) => result(() => removeSecureAuthValue(authStorageKeySchema.parse(input))))
 
   ipcMain.handle("password-recovery:request", (_event, input: unknown) => asyncResult(() => {
     requireSqliteSelected()

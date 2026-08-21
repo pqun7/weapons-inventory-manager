@@ -295,6 +295,7 @@ export interface StoreState {
   markNotificationRead: (id: string) => Promise<{ success: boolean; error?: string }>
   markAllNotificationsRead: () => Promise<{ success: boolean; error?: string }>
   dismissNotification: (id: string) => Promise<{ success: boolean; error?: string }>
+  clearNotifications: () => Promise<{ success: boolean; error?: string }>
   pushNotification: (type: NotificationType, title: string, message: string, entityId?: string) => Promise<{ success: boolean; error?: string }>
   refreshNotifications: () => Promise<{ success: boolean; error?: string }>
 
@@ -1071,34 +1072,56 @@ export const useStore = create<StoreState>()(
     setCurrentUser: (userId) => { set({ currentUserId: userId }) },
 
     markNotificationRead: async (id) => {
-      set((state) => ({ notifications: state.notifications.map((n) => n.id === id ? { ...n, read: true } : n) }))
-      const n = get().notifications.find((n) => n.id === id)
-      if (n) {
-        try { await db.dbUpdateNotification(n) } catch (e) {
-          console.error("DB persist failed:", e)
-          await get().refreshFromDb()
-          return { success: false, error: String(e) }
-        }
+      const previous = get().notifications
+      const notification = previous.find((item) => item.id === id)
+      if (!notification || notification.read) return { success: true }
+      set({ notifications: previous.map((item) => item.id === id ? { ...item, read: true } : item) })
+      try {
+        await db.dbMarkNotificationsRead([id])
+        return { success: true }
+      } catch (error) {
+        set({ notifications: previous })
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
-      return { success: true }
     },
 
     markAllNotificationsRead: async () => {
+      const previous = get().notifications
+      const unreadIds = previous.filter((item) => !item.read).map((item) => item.id)
+      if (!unreadIds.length) return { success: true }
+      set({ notifications: previous.map((item) => ({ ...item, read: true })) })
       try {
-        await db.dbMarkAllNotificationsRead()
-        await get().refreshFromDb()
+        await db.dbMarkNotificationsRead(unreadIds)
         return { success: true }
       } catch (error) {
+        set({ notifications: previous })
         return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
     },
 
     dismissNotification: async (id) => {
+      const previous = get().notifications
+      if (!previous.some((item) => item.id === id)) return { success: true }
+      set({ notifications: previous.filter((item) => item.id !== id) })
       try {
-        await db.dbDeleteNotification(id)
-        await get().refreshFromDb()
+        await db.dbDismissNotifications([id])
         return { success: true }
       } catch (error) {
+        set({ notifications: previous })
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    },
+
+    clearNotifications: async () => {
+      const previous = get().notifications
+      const notificationIds = previous.map((item) => item.id)
+      if (!notificationIds.length) return { success: true }
+      set({ notifications: [] })
+      try {
+        await db.dbDismissNotifications(notificationIds)
+        return { success: true }
+      } catch (error) {
+        set({ notifications: previous })
         return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
     },

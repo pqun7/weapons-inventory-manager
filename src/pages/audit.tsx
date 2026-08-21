@@ -13,8 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   AUDIT_ACTIONS, auditActionLabel, auditDetails, auditMoneyCurrencyKey, auditSummary,
-  getAuditCurrency, groupedAuditMetadata, humanizeAuditKey,
-  isBusinessAuditLog, type AuditMetadataGroup,
+  auditChangeRows, auditOperationExplanation, getAuditCurrency, groupedAuditMetadata, humanizeAuditKey,
+  isBusinessAuditLog, isSafeAuditKey, type AuditMetadataGroup,
 } from "@/lib/audit-presentation"
 import { resolveAuditEntity } from "@/lib/audit-entity"
 import { useCurrency } from "@/lib/currency-context"
@@ -119,7 +119,7 @@ export function AuditPage() {
               <div className="mb-1 text-[9px] font-semibold text-muted-foreground">{t("audit.itemNumber", { number: index + 1 })}</div>
               {item && typeof item === "object" && !Array.isArray(item) ? (
                 <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
-                  {Object.entries(item as Record<string, unknown>).map(([childKey, childValue]) => (
+                  {Object.entries(item as Record<string, unknown>).filter(([childKey]) => isSafeAuditKey(childKey)).map(([childKey, childValue]) => (
                     <div key={childKey} className="flex min-w-0 items-baseline justify-between gap-2 text-[10px]">
                       <span className="shrink-0 text-muted-foreground">{humanizeAuditKey(childKey, t)}</span>
                       <span className="min-w-0 break-words text-end font-medium">{primitiveText(childValue, locale, t)}</span>
@@ -135,7 +135,7 @@ export function AuditPage() {
     if (value && typeof value === "object") {
       return (
         <div className="grid gap-1 rounded-md bg-muted/20 p-2">
-          {Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => (
+          {Object.entries(value as Record<string, unknown>).filter(([childKey]) => isSafeAuditKey(childKey)).map(([childKey, childValue]) => (
             <div key={childKey} className="flex min-w-0 justify-between gap-3 text-[10px]">
               <span className="text-muted-foreground">{humanizeAuditKey(childKey, t)}</span>
               <span className="break-words text-end font-medium">{primitiveText(childValue, locale, t)}</span>
@@ -171,12 +171,18 @@ export function AuditPage() {
   const selectedLog = selectedLogId ? businessLogs.find((log) => log.id === selectedLogId) ?? null : null
   const selectedMetadata = selectedLog ? auditDetails(selectedLog) : null
   const selectedGroups = groupedAuditMetadata(selectedMetadata)
+  const selectedChanges = auditChangeRows(selectedMetadata)
   const selectedUser = selectedLog ? userById.get(selectedLog.userId) : undefined
   const selectedActor = selectedLog?.userName || selectedUser?.name || t("audit.systemUser")
   const selectedTarget = selectedLog ? resolveAuditEntity(selectedLog) : null
 
   return (
     <div className="flex flex-col gap-3 p-3 lg:p-4">
+      <header>
+        <h1 className="text-lg font-semibold tracking-tight">{t("audit.title")}</h1>
+        <p className="mt-1 max-w-3xl text-xs leading-relaxed text-muted-foreground">{t("audit.descriptionHelp")}</p>
+      </header>
+
       <div className="grid gap-2 sm:grid-cols-3">
         <Card className="py-3"><CardContent className="flex items-center gap-3 px-3"><ScrollText className="size-5 text-primary" /><div><div className="text-lg font-bold tabular-nums">{businessLogs.length}</div><div className="text-[10px] text-muted-foreground">{t("audit.total")}</div></div></CardContent></Card>
         <Card className="py-3"><CardContent className="flex items-center gap-3 px-3"><Clock3 className="size-5 text-chart-2" /><div><div className="text-lg font-bold tabular-nums">{todayCount}</div><div className="text-[10px] text-muted-foreground">{t("audit.today")}</div></div></CardContent></Card>
@@ -293,6 +299,17 @@ export function AuditPage() {
                 <DialogDescription>{t("audit.detailDescription")}</DialogDescription>
               </DialogHeader>
 
+              <section className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+                <h3 className="text-xs font-semibold">{t("audit.operationOverview")}</h3>
+                <p className="mt-1 text-sm leading-relaxed">{auditOperationExplanation(selectedLog, selectedMetadata, t, selectedActor)}</p>
+                {selectedLog.description ? (
+                  <div className="mt-3 border-t border-primary/15 pt-2">
+                    <div className="text-[10px] font-medium text-muted-foreground">{t("audit.recordedDescription")}</div>
+                    <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{selectedLog.description}</p>
+                  </div>
+                ) : null}
+              </section>
+
               <div className="grid gap-3 rounded-xl border bg-muted/20 p-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div><div className="text-[10px] text-muted-foreground">{t("audit.user")}</div><div className="text-sm font-medium">{selectedActor}</div>{selectedUser?.username ? <div className="text-[10px] text-muted-foreground">{selectedUser.username}</div> : null}</div>
                 <div><div className="text-[10px] text-muted-foreground">{t("audit.timestamp")}</div><div className="text-sm font-medium">{formatDateTime(selectedLog.timestamp)}</div></div>
@@ -300,12 +317,23 @@ export function AuditPage() {
                 <div><div className="text-[10px] text-muted-foreground">{t("audit.logId")}</div><div className="break-all font-mono text-xs font-medium">{selectedLog.id}</div></div>
               </div>
 
-              {/* {selectedLog.description ? (
-                <section className="rounded-xl border bg-background p-3">
-                  <h3 className="mb-1 text-[10px] font-semibold text-muted-foreground">{t("audit.originalRecord")}</h3>
-                  <p className="text-sm leading-relaxed">{selectedLog.description}</p>
+              {selectedChanges.length ? (
+                <section className="overflow-hidden rounded-xl border bg-background">
+                  <div className="flex items-center gap-2 border-b bg-muted/30 px-3 py-2"><Activity className="size-3.5 text-primary" /><h3 className="text-xs font-semibold">{t("audit.changedFields")}</h3></div>
+                  <Table>
+                    <TableHeader><TableRow><TableHead className="text-[10px]">{t("audit.changedField")}</TableHead><TableHead className="text-[10px]">{t("audit.before")}</TableHead><TableHead className="text-[10px]">{t("audit.after")}</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {selectedChanges.map((change) => (
+                        <TableRow key={change.key}>
+                          <TableCell className="text-xs font-medium">{humanizeAuditKey(change.key, t)}</TableCell>
+                          <TableCell className="max-w-[20rem] break-words text-xs text-muted-foreground">{formatAuditValue(change.key, change.before, selectedMetadata ?? {})}</TableCell>
+                          <TableCell className="max-w-[20rem] break-words text-xs font-medium">{formatAuditValue(change.key, change.after, selectedMetadata ?? {})}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </section>
-              ) : null} */}
+              ) : null}
 
               {selectedMetadata ? (
                 <div className="grid gap-3 lg:grid-cols-2">

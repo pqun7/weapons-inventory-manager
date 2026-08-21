@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
   auditMetadataGroup,
+  auditChangeRows,
   auditDetails,
   auditMoneyCurrencyKey,
   auditSummary,
+  auditOperationExplanation,
   getAuditCurrency,
   groupedAuditMetadata,
   humanizeAuditKey,
@@ -16,6 +18,7 @@ const t = (key: string, params?: Record<string, string | number>) => {
   if (key === "audit.summary.shipment") return `Shipment activity for ${params?.shipment}`
   if (key === "audit.summary.update") return `Record updated: ${params?.item}`
   if (key === "audit.sentence.withSummary") return `${params?.actor}: ${params?.summary}`
+  if (key === "audit.operationExplanation") return `EXPLANATION: ${params?.summary}`
   if (key === "audit.field.invoiceNumber") return "Invoice number"
   return key
 }
@@ -55,6 +58,13 @@ describe("audit presentation", () => {
     expect(renderedKeys).not.toContain("imageData")
   })
 
+  it("creates a safe, changed-only before-and-after breakdown", () => {
+    expect(auditChangeRows({
+      previousValues: { status: "Pending", quantity: 2, password: "old" },
+      newValues: { status: "Paid", quantity: 2, password: "new" },
+    })).toEqual([{ key: "status", before: "Pending", after: "Paid" }])
+  })
+
   it("groups identity, monetary and change details predictably", () => {
     expect(auditMetadataGroup("invoiceNumber")).toBe("identity")
     expect(auditMetadataGroup("paymentAmount")).toBe("money")
@@ -77,6 +87,7 @@ describe("audit presentation", () => {
     expect(auditSummary(log, { invoiceNumber: "INV-22" }, t)).toBe("Payment for INV-22")
     expect(humanizeAuditKey("invoiceNumber", t)).toBe("Invoice number")
     expect(humanizeAuditKey("customField", t)).toBe("Custom Field")
+    expect(auditOperationExplanation(log, { invoiceNumber: "INV-22" }, t)).toBe("EXPLANATION: Payment for INV-22")
   })
 
   it("uses the recorded description instead of rendering a missing shipment reference", () => {

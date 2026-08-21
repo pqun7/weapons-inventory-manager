@@ -68,6 +68,11 @@ export interface ElectronAPI {
     signOut: () => Promise<IpcResult<void>>
     updatePassword: (input: { currentPassword: string; newPassword: string }) => Promise<IpcResult<void>>
   }
+  authStorage: {
+    get: (key: string) => Promise<IpcResult<string | null>>
+    set: (key: string, value: string) => Promise<IpcResult<void>>
+    remove: (key: string) => Promise<IpcResult<void>>
+  }
   passwordRecovery: {
     request: (input: { identifier: string }) => Promise<IpcResult<PasswordRecoveryRequestResult>>
     complete: (input: PasswordRecoveryCompleteInput) => Promise<IpcResult<LocalSession>>

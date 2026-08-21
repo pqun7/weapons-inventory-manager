@@ -18,6 +18,7 @@ export type PublicTableName =
   | "inventory_product_types"
   | "app_backups"
   | "password_recovery_requests"
+  | "notification_user_state"
 
 type GenericTable = {
   Row: Record<string, Json>
@@ -90,6 +91,7 @@ type RpcName =
   | "complete_employee_password_recovery"
   | "list_pending_password_recovery"
   | "approve_password_recovery"
+  | "set_notification_user_state"
 
 type GenericRpc = {
   Args: Record<string, Json | undefined>

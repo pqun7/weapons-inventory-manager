@@ -84,6 +84,7 @@ import {
   shipmentToManifestReview,
 } from "@/lib/shipment-workflow"
 import { ManifestItemsTable } from "@/components/shipments/manifest-items-table"
+import { ManifestReviewProblemsAlert } from "@/components/manifest-review-problems-alert"
 
 interface Props {
   open: boolean
@@ -806,15 +807,7 @@ export function ShipmentManifestImportDialog({ open, onOpenChange, onComplete, e
                         <button onClick={() => setShowWarning(false)} className="shrink-0 rounded p-1 hover:bg-amber-500/20 transition-colors"><X className="size-3.5" /></button>
                       </div>
                     )}
-                    {review?.extractionVerification && !review.extractionVerification.complete && (
-                      <div className="mx-3 mt-2 flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-                        <AlertTriangle className="size-3.5 shrink-0" />
-                        <span>{t("ship.manifestExtractionIncomplete", {
-                          warnings: review.extractionVerification.anomalyCounts.warnings,
-                          errors: review.extractionVerification.anomalyCounts.errors,
-                        })}</span>
-                      </div>
-                    )}
+                    <ManifestReviewProblemsAlert key={review.id} review={review} missingFieldsById={missingFieldsById} />
 
                     {/* Toolbar */}
                     <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-background px-3 py-2.5 sm:px-4">

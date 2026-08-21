@@ -166,7 +166,7 @@ export const DATABASE_OPERATION_NAMES = [
   "dbInsertShipment", "dbUpdateShipment", "dbInsertInvoice", "dbUpdateInvoice", "dbInsertPayment",
   "dbInsertAccessory", "dbUpdateAccessory", "dbInsertAmmunition", "dbUpdateAmmunition", "dbInsertCustomer",
   "dbUpdateCustomer", "dbDeleteCustomer", "dbInsertSupplier", "dbInsertAuditLog", "dbInsertNotification",
-  "dbUpdateNotification", "dbMarkAllNotificationsRead", "dbDeleteNotification", "dbCreateNotification", "dbFlagOverdueShipments",
+  "dbUpdateNotification", "dbMarkNotificationsRead", "dbDismissNotifications", "dbDeleteNotification", "dbCreateNotification", "dbFlagOverdueShipments",
   "dbWriteAuditEvent", "dbInsertUser", "dbUpdateUser", "dbDeleteUser", "dbResetUserActivation", "dbUpdateOwnEmail",
   "dbListBackups", "dbCreateSystemBackup", "dbRestoreSystemBackup", "dbDeleteBackup", "dbInsertSavedFilter", "dbDeleteSavedFilter",
   "dbInsertMasterWeaponType", "dbInsertMasterWeaponSubtype", "dbInsertMasterCaliber", "dbLinkSubtypeCaliber",

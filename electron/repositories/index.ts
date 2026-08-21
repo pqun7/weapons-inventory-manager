@@ -37,7 +37,7 @@ function assertValidPaymentMethod(method: string): void {
 }
 
 export class AppRepository {
-  getAll(): AllData {
+  getAll(notificationUserId?: string): AllData {
     const db = getDb()
 
     const snapshotsByProduct = new Map(
@@ -96,7 +96,18 @@ export class AppRepository {
       .map((r) => mappers.rowToSupplier(r as never))
     const auditLogs = (db.prepare("SELECT * FROM audit_logs ORDER BY timestamp DESC").all() as Record<string, unknown>[])
       .map((r) => mappers.rowToAuditLog(r as never))
-    const notifications = (db.prepare("SELECT * FROM app_notifications ORDER BY date DESC").all() as Record<string, unknown>[])
+    const notificationRows = notificationUserId
+      ? db.prepare(`
+          SELECT n.id, n.type, n.title, n.message, n.date, n.entity_id,
+                 CASE WHEN state.read_at IS NOT NULL THEN 1 ELSE n.is_read END AS is_read
+          FROM app_notifications AS n
+          LEFT JOIN notification_user_state AS state
+            ON state.notification_id = n.id AND state.user_id = ?
+          WHERE (n.user_id IS NULL OR n.user_id = ?) AND state.dismissed_at IS NULL
+          ORDER BY n.date DESC, n.id DESC
+        `).all(notificationUserId, notificationUserId)
+      : db.prepare("SELECT * FROM app_notifications ORDER BY date DESC").all()
+    const notifications = (notificationRows as Record<string, unknown>[])
       .map((r) => mappers.rowToNotification(r as never))
     const users = (db.prepare("SELECT * FROM users WHERE is_active = 1 ORDER BY id").all() as Record<string, unknown>[])
       .map((r) => mappers.rowToUser(r as never))

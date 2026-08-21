@@ -984,6 +984,27 @@ function ensureProviderSchema(database: Database.Database): void {
       attempted_at TEXT NOT NULL DEFAULT (datetime('now'))
     ) STRICT;
 
+    CREATE TABLE IF NOT EXISTS local_auth_sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_used_at TEXT NOT NULL DEFAULT (datetime('now'))
+    ) STRICT;
+    CREATE INDEX IF NOT EXISTS idx_local_auth_sessions_user
+      ON local_auth_sessions(user_id, last_used_at DESC);
+
+    CREATE TABLE IF NOT EXISTS notification_user_state (
+      notification_id TEXT NOT NULL REFERENCES app_notifications(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      read_at TEXT,
+      dismissed_at TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (notification_id, user_id)
+    ) STRICT;
+    CREATE INDEX IF NOT EXISTS idx_notification_user_state_user
+      ON notification_user_state(user_id, dismissed_at, updated_at DESC);
+
     CREATE TABLE IF NOT EXISTS business_id_counters (
       prefix TEXT PRIMARY KEY,
       last_value INTEGER NOT NULL CHECK (last_value >= 0)
@@ -1950,6 +1971,8 @@ function validateFinalSchema(
     "inventory_product_types",
     "app_backups",
     "account_auth_attempts",
+    "local_auth_sessions",
+    "notification_user_state",
     "business_id_counters",
     "database_health_probes",
     "sale_operations",

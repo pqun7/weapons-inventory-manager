@@ -38,6 +38,20 @@ describe("Supabase security boundary", () => {
     expect(read("src/lib/supabase/client.ts")).toMatch(/VITE_SUPABASE_ANON_KEY/)
   })
 
+  it("keeps remembered sessions encrypted and the SQLite token outside the renderer", () => {
+    const preload = read("electron/preload.cts")
+    const handler = read("electron/ipc/storage-handler.ts")
+    const secureStorage = read("electron/services/secure-auth-storage-service.ts")
+    const localAuth = read("electron/services/local-auth-service.ts")
+
+    expect(secureStorage).toContain("electronSafeStorage.encryptString")
+    expect(secureStorage).toContain('backend !== "basic_text"')
+    expect(handler).toContain("/^weapon-store-auth-")
+    expect(preload).not.toContain("sqlite-local-session")
+    expect(localAuth).toContain('LOCAL_SESSION_STORAGE_KEY = "sqlite-local-session"')
+    expect(localAuth).toContain('update(`local-session-v1:${token}`')
+  })
+
   it("accepts owner-supplied provisioning values only for the one-time main-process setup", () => {
     const screen = read("src/components/first-run-setup-screen.tsx")
     const handler = read("electron/ipc/store-installation-handler.ts")
@@ -205,6 +219,17 @@ describe("Supabase security boundary", () => {
     const compatibility = migration("20260817000200_password_recovery_connection_compatibility.sql")
     expect(compatibility).toContain("update public.app_installation")
     expect(compatibility).toContain("schema_version = '20260817000200'")
+  })
+
+  it("keeps notification state private per application user and compatible with the installation schema", () => {
+    const notificationState = migration("20260817000300_per_user_notification_state.sql")
+    expect(notificationState).toContain("create table if not exists public.notification_user_state")
+    expect(notificationState).toContain("alter table public.notification_user_state enable row level security")
+    expect(notificationState).toContain("user_id = public.current_app_user_id()")
+    expect(notificationState).toContain("security definer")
+    expect(notificationState).toContain("schema_version = '20260817000300'")
+    expect(notificationState).not.toMatch(/app_installation[\s\S]{0,120}updated_at/i)
+    expect(notificationState).toContain("notify pgrst, 'reload schema'")
   })
 
   it("keeps the production runtime independent from a local database", () => {

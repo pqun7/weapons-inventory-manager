@@ -25,6 +25,7 @@ const summary = {
 
 const databaseModule = await compiled("electron/database.js")
 const auth = await compiled("electron/services/local-auth-service.js")
+const secureAuthStorage = await compiled("electron/services/secure-auth-storage-service.js")
 const recovery = await compiled("electron/services/password-recovery-service.js")
 const commands = await compiled("electron/services/sqlite-command-service.js")
 const providerMigration = await compiled("electron/services/provider-migration-service.js")
@@ -42,12 +43,13 @@ function expectThrows(operation, pattern) {
 
 try {
   databaseModule.setDatabasePathForTests(testDbPath)
+  secureAuthStorage.setSecureAuthStorageRootForTests(path.join(tempRoot, "secure-auth"))
   const initializationStarted = performance.now()
   await databaseModule.initDatabase()
   summary.initialization.firstOpenMs = Math.round(performance.now() - initializationStarted)
   assert.equal(fs.existsSync(testDbPath), true)
   assert.equal(path.dirname(testDbPath), databaseModule.getDbDirectory())
-  assert.equal(Number(db().pragma("user_version", { simple: true })), 16)
+  assert.equal(Number(db().pragma("user_version", { simple: true })), 18)
   assert.equal(Number(db().pragma("foreign_keys", { simple: true })), 1)
   assert.equal(String(db().pragma("journal_mode", { simple: true })).toLowerCase(), "wal")
   assert.equal(Number(db().pragma("busy_timeout", { simple: true })), 5000)
@@ -58,7 +60,7 @@ try {
     "warehouses", "storage_locations", "suppliers", "customers", "shipments", "invoices",
     "payment_records", "accessories", "ammunition", "audit_logs", "system_settings",
     "app_notifications", "saved_filters", "user_preferences", "inventory_product_types",
-    "app_installation", "database_health_probes", "password_recovery_requests",
+    "app_installation", "database_health_probes", "password_recovery_requests", "local_auth_sessions", "notification_user_state",
   ]
   const actualTables = new Set(db().prepare("SELECT name FROM sqlite_schema WHERE type='table'").all().map((row) => row.name))
   for (const table of requiredTables) assert.ok(actualTables.has(table), `Missing table ${table}`)
@@ -69,7 +71,7 @@ try {
 
   databaseModule.closeDatabase()
   await databaseModule.initDatabase()
-  assert.equal(Number(db().pragma("user_version", { simple: true })), 16)
+  assert.equal(Number(db().pragma("user_version", { simple: true })), 18)
   summary.initialization.idempotentReopen = true
 
   const administrator = auth.configureLocalAdministrator({
@@ -83,8 +85,11 @@ try {
   assert.equal(storedPassword.includes("StrongPass123"), false)
   const session = auth.signInLocal("contract.admin", "StrongPass123")
   assert.equal(session.role, "Admin")
+  auth.closeLocalAuth()
+  assert.equal(auth.getLocalSession()?.userId, session.userId)
+  assert.equal(tableCount("local_auth_sessions"), 1)
   assert.equal(auth.resolveLocalAccount("contract.admin").requiresActivation, false)
-  summary.authentication = { passwordHash: "scrypt-v1", mainOwnedSession: true, primaryAdminId: session.userId }
+  summary.authentication = { passwordHash: "scrypt-v1", mainOwnedSession: true, restartPersistence: true, primaryAdminId: session.userId }
   assert.ok(db().prepare("SELECT id FROM invoices WHERE id = 'DEMO-INVOICE'").get())
 
   // Pre-DEMO-namespace installations used these deterministic IDs. A failed
@@ -211,6 +216,11 @@ try {
 
   op("dbInsertAuditLog", { id: "AUD-CONTRACT", timestamp: new Date().toISOString(), date: today, userId: session.userId, actionType: "Update", description: "contract audit", metadata: "{}" })
   op("dbInsertNotification", { id: "NTF-CONTRACT", type: "System", title: "Contract", message: "notification", date: today, read: false, entityId: weapon.id })
+  op("dbMarkNotificationsRead", ["NTF-CONTRACT"])
+  assert.equal(op("dbGetAll").notifications.find((notification) => notification.id === "NTF-CONTRACT")?.read, true)
+  op("dbDismissNotifications", ["NTF-CONTRACT"])
+  assert.equal(op("dbGetAll").notifications.some((notification) => notification.id === "NTF-CONTRACT"), false)
+  assert.ok(db().prepare("SELECT id FROM app_notifications WHERE id = 'NTF-CONTRACT'").get(), "dismissal must not delete a shared notification")
   op("dbInsertSavedFilter", { id: "FILTER-CONTRACT", name: "Available", entityType: "weapons", filterState: { status: "Available" } })
   op("dbUpsertUserPreferences", { userId: session.userId, displayCurrency: "SAR", reportViewMode: "accounting", language: "ar", dateFormat: "yyyy-MM-dd", inventoryVisibleColumns: ["serialNumber", "status"] })
   assert.deepEqual(op("dbGetUserPreferences", session.userId).inventoryVisibleColumns, ["serialNumber", "status"])
@@ -239,6 +249,9 @@ try {
   assert.equal(db().prepare("SELECT is_active FROM users WHERE id = ?").get(createdUser.userId).is_active, 0)
 
   auth.signOutLocal()
+  auth.closeLocalAuth()
+  assert.equal(auth.getLocalSession(), null)
+  assert.equal(tableCount("local_auth_sessions"), 0)
   auth.claimLocalAccount("employee.contract", recreatedUser.activationCode, "EmployeePass123")
   auth.signOutLocal()
   const recoveryRequest = await recovery.requestLocalPasswordRecovery("employee.contract")

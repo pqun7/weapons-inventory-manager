@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 16;
+export const SCHEMA_VERSION = 18;
 
 export const CONFIGURE_INITIAL_CURRENCIES_V5_SQL = `
 UPDATE currencies
