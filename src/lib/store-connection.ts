@@ -1,5 +1,5 @@
 export const STORE_CONNECTION_CODE_PREFIX = "ARMORY1."
-export const REQUIRED_SCHEMA_VERSION = "20260817000200"
+export const REQUIRED_SCHEMA_VERSION = "20260817000300"
 
 export interface StoreConnectionConfiguration {
   supabaseUrl: string
